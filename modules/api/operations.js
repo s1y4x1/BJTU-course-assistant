@@ -775,21 +775,44 @@
     }
   }
 
+  const DOC_LABELS = Object.freeze({
+    parameters: '参数',
+    example: '调用示例',
+    returns: '返回',
+    returnExample: '返回示例'
+  });
+
+  function renderOperationDoc(name, { title, blocks }) {
+    // Keep operation-specific notes and fenced examples in their declared order.
+    return [`## ${name} —— ${title}`, ...blocks.map((block) => {
+      if (typeof block === 'string') return block;
+      const [label, value] = block;
+      return `**${DOC_LABELS[label] ?? label}**：${value}`;
+    })].join('\n\n');
+  }
+
+  const CITEL_COURSE_PARAMETER = '必填，课程 ID；先调用 citel.courseList 获取';
+  const CITEL_ASSIGNMENT_PARAMETERS = {
+    "status": '可选，all|pending|submitted|overdue|unknown|resource，默认 all',
+    "type": '可选，all|workshop|programming|resource|url|forum 或对应的中文类型名，默认 all'
+  };
+  const CITEL_ASSIGNMENT_DOC = '只读已加载的活动缓存，不自动登录；请先调用 `citel.login()` 或在 CITEL 网页登录后启用平台。互评、编程练习默认显示；文件、网页地址、讨论区默认隐藏，按扩展选项加载。互评须本人提交区有明确证据，编程按页面结果导航链接判断；无法确认时为 `unknown`。无提交状态的资源为 `resource`。时间戳单位为毫秒：`startTime` 为开始时间，`deadline` 为截止时间（编程采用关闭时间），`assessmentEnd` 为评分结束时间，`discountTime` 为折扣时间；未提供的时间为 0。';
+  const docJson = (value) => '`' + JSON.stringify(value) + '`';
+
   const OPERATIONS = [
     {
       module: 've',
       name: 've.currentUser',
       summary: '获取智慧课程平台当前登录账号的用户信息',
-      doc: [
-        '## ve.currentUser —— 当前登录用户',
-        '',
-        '获取智慧课程平台当前登录账号的信息。',
-        '',
-        '**调用示例**：`ve.currentUser()`',
-        '',
-        '**返回示例**：{"userId":"…","userName":"张三","loginName":"zhangsan","roleCode":"student","roleName":"学生"}',
-        '未登录时返回 {"ok":false,"code":"LOGIN_REQUIRED"}。'
-      ].join('\n'),
+      doc: {
+        title: '当前登录用户',
+        blocks: [
+          '获取智慧课程平台当前登录账号的信息。',
+          ['example', '`ve.currentUser()`'],
+          ['returnExample', '`{"userId":"…","userName":"张三","loginName":"zhangsan","roleCode":"student","roleName":"学生"}`'],
+          '未登录时返回 {"ok":false,"code":"LOGIN_REQUIRED"}。'
+        ]
+      },
       async run() {
         const core = await veHomework();
         const user = await core.fetchCurrentUserInfo();
@@ -801,15 +824,14 @@
       module: 've',
 name: 've.accounts',
       summary: '列出智慧课程平台登录历史中的账号',
-      doc: [
-        '## ve.accounts —— 登录历史账号',
-        '',
-        '列出智慧课程平台登录历史中的账号（不含密码等敏感字段），并按最近登录时间排序。',
-        '',
-        '**调用示例**：`ve.accounts()`',
-        '',
-        '**返回示例**：[{"loginName":"zhangsan","userName":"张三","roleName":"学生","lastLoginAt":1735689600000}]'
-      ].join('\n'),
+      doc: {
+        title: '登录历史账号',
+        blocks: [
+          '列出智慧课程平台登录历史中的账号（不含密码等敏感字段），并按最近登录时间排序。',
+          ['example', '`ve.accounts()`'],
+          ['returnExample', '`[{"loginName":"zhangsan","userName":"张三","roleName":"学生","lastLoginAt":1735689600000}]`']
+        ]
+      },
       async run() {
         const store = requireGlobal('BjtuAccountStore');
         const stored = await chrome.storage.local.get('loginAccountHistory');
@@ -839,18 +861,16 @@ name: 've.accounts',
       module: 've',
       name: 've.semester',
       summary: '读取或设置智慧课程平台要查看的学期',
-      doc: [
-        '## ve.semester —— 学期选择',
-        '',
-        '读取智慧课程平台的学期列表和当前选择；传入 `xqCode` 时切换要查看的学期，并立即重新拉取课程与作业，全部加载完成后才返回。',
-        '',
-        '**参数**：{"xqCode":"可选，要切换到的学期代码；省略时只读取"}',
-        '',
-        '**调用示例**：`ve.semester()`；`ve.semester({ xqCode: "2025-2026-1" })`',
-        '',
-        '**返回示例**：读取时：{"terms":[{"xqCode":"2025-2026-1","xqName":"2025-2026学年第一学期","beginDate":"…","endDate":"…"}],"current":"2025-2026-1","selected":"2025-2026-1"}；设置成功时：{"selected":"2025-2026-1"}',
-        '`current` 是平台当前学期，`selected` 是扩展选择的学期。设置成功后只返回 `selected`；学期不存在会报错，课程或作业加载失败也会报错。'
-      ].join('\n'),
+      doc: {
+        title: '学期选择',
+        blocks: [
+          '读取智慧课程平台的学期列表和当前选择；传入 `xqCode` 时切换要查看的学期，并立即重新拉取课程与作业，全部加载完成后才返回。',
+          ['parameters', '`{"xqCode":"可选，要切换到的学期代码；省略时只读取"}`'],
+          ['example', '`ve.semester()`；`ve.semester({ "xqCode": "2025-2026-1" })`'],
+          ['returnExample', '读取时：`{"terms":[{"xqCode":"2025-2026-1","xqName":"2025-2026学年第一学期","beginDate":"…","endDate":"…"}],"current":"2025-2026-1","selected":"2025-2026-1"}`；设置成功时：`{"selected":"2025-2026-1"}`'],
+          '`current` 是平台当前学期，`selected` 是扩展选择的学期。设置成功后只返回 `selected`；学期不存在会报错，课程或作业加载失败也会报错。'
+        ]
+      },
       async run(args) {
         if (String(args?.xqCode || '').trim()) {
           return pageInvoke('ve', 'semester', args || {}, 120000);
@@ -880,18 +900,16 @@ name: 've.accounts',
       module: 've',
       name: 've.courseList',
       summary: '获取智慧课程平台的课程列表',
-      doc: [
-        '## ve.courseList —— 课程列表',
-        '',
-        '在扩展后台获取智慧课程平台的课程列表。若不传 xqCode 则使用 ve.semester 当前选择的学期。课程接口首次使用 pagesize=100；若返回 total>100，则使用 pagesize=total 重新获取完整列表，不传 page 参数。',
-        '',
-        '**参数**：{"xqCode":"可选，学期代码，如 2025-2026-1"}',
-        '',
-        '**调用示例**：`ve.courseList()`',
-        '',
-        '**返回示例**：[{"id":"…","name":"高等数学"}]',
-        '返回的每一项至少包含 id（课程ID）、name（课程名）。'
-      ].join('\n'),
+      doc: {
+        title: '课程列表',
+        blocks: [
+          '在扩展后台获取智慧课程平台的课程列表。若不传 xqCode 则使用 ve.semester 当前选择的学期。课程接口首次使用 pagesize=100；若返回 total>100，则使用 pagesize=total 重新获取完整列表，不传 page 参数。',
+          ['parameters', '`{"xqCode":"可选，学期代码，如 2025-2026-1"}`'],
+          ['example', '`ve.courseList()`'],
+          ['returnExample', '`[{"id":"…","name":"高等数学"}]`'],
+          '返回的每一项至少包含 id（课程ID）、name（课程名）。'
+        ]
+      },
       async run(args) {
         const core = await veHomework();
         let xqCode = String(args?.xqCode || '').trim();
@@ -909,18 +927,16 @@ name: 've.accounts',
       module: 've',
       name: 've.resourceSpaceList',
       summary: '获取智慧课程平台的资源空间文件列表',
-      doc: [
-        '## ve.resourceSpaceList —— 资源空间列表',
-        '',
-        '获取智慧课程平台资源空间中的文件列表。内部会自动读取总数并拉取全部结果，不需要调用方分页。',
-        '',
-        '**参数**：{"searchName":"可选，文件名搜索关键词，默认空字符串"}',
-        '',
-        '**调用示例**：`ve.resourceSpaceList()`；`ve.resourceSpaceList({ searchName: "课件" })`',
-        '',
-        '**返回示例**：{"items":[{"id":"rp-123456","name":"第一章课件.pdf","extName":"pdf","url":"http://123.121.147.7:8081/rp/2026/09/14/xxx.pdf","inputTime":"2026-09-14 17:35:12","sizeMb":"1.24 MB","sizeMbRaw":1.24}],"total":1}',
-        '成功时不返回 error 字段。当前账号为学生且列表为空时，返回 {"items":[],"total":0,"error":"请先登录教师账号"}。未登录或登录失效时抛出 LOGIN_REQUIRED 错误。'
-      ].join('\n'),
+      doc: {
+        title: '资源空间列表',
+        blocks: [
+          '获取智慧课程平台资源空间中的文件列表。内部会自动读取总数并拉取全部结果，不需要调用方分页。',
+          ['parameters', '`{"searchName":"可选，文件名搜索关键词，默认空字符串"}`'],
+          ['example', '`ve.resourceSpaceList()`；`ve.resourceSpaceList({ "searchName": "课件" })`'],
+          ['returnExample', '`{"items":[{"id":"rp-123456","name":"第一章课件.pdf","extName":"pdf","url":"http://123.121.147.7:8081/rp/2026/09/14/xxx.pdf","inputTime":"2026-09-14 17:35:12","sizeMb":"1.24 MB","sizeMbRaw":1.24}],"total":1}`'],
+          '成功时不返回 error 字段。当前账号为学生且列表为空时，返回 {"items":[],"total":0,"error":"请先登录教师账号"}。未登录或登录失效时抛出 LOGIN_REQUIRED 错误。'
+        ]
+      },
       async run(args) {
         return pageInvoke('ve', 'resourceSpaceList', args || {}, 120000);
       }
@@ -929,21 +945,18 @@ name: 've.accounts',
       module: 've',
       name: 've.batchDownloadWorks',
       summary: '批量下载教师课程的已交作业包',
-      doc: [
-        '## ve.batchDownloadWorks —— 批量下载已交作业',
-        '',
-        '将教师课程的已交作业打包下载。仅教师/助教可用；下载前会检查平台返回的状态，没有文件或权限不足时抛出错误。',
-        '',
-        '**参数**：{"assignmentId":"作业 id，必填（ve.assignments / ve.assignments_of_ 的 id）","destination":"可选，browser-downloads（默认）或 extension-downloads"}',
-        '',
-        '- `browser-downloads`：交给浏览器下载管理器保存到浏览器默认下载目录，返回浏览器记录的绝对路径；不弹另存为窗口。',
-        '- `extension-downloads`：保存到扩展已授权的保存目录下的 `downloads/`，返回相对路径 `downloads/文件名`。',
-        '',
-        '**调用示例**：`ve.batchDownloadWorks({ assignmentId: "123456" })`；`ve.batchDownloadWorks({ assignmentId: "123456", destination: "extension-downloads" })`',
-        '',
-        '**返回示例**：{"ok":true,"destination":"extension-downloads","filename":"作业包-123456.zip","path":"downloads/作业包-123456.zip","bytes":1048576}',
-        '浏览器下载还会返回 downloadId。扩展目录未授权时抛出错误，请先在聊天室设置中授权保存目录。暂不支持通过 Bridge 传输。'
-      ].join('\n'),
+      doc: {
+        title: '批量下载已交作业',
+        blocks: [
+          '将教师课程的已交作业打包下载。仅教师/助教可用；下载前会检查平台返回的状态，没有文件或权限不足时抛出错误。',
+          ['parameters', '`{"assignmentId":"作业 id，必填（ve.assignments / ve.assignments_of_ 的 id）","destination":"可选，browser-downloads（默认）或 extension-downloads"}`'],
+          '- `browser-downloads`：交给浏览器下载管理器保存到浏览器默认下载目录，返回浏览器记录的绝对路径；不弹另存为窗口。',
+          '- `extension-downloads`：保存到扩展已授权的保存目录下的 `downloads/`，返回相对路径 `downloads/文件名`。',
+          ['example', '`ve.batchDownloadWorks({ "assignmentId": "123456" })`；`ve.batchDownloadWorks({ "assignmentId": "123456", "destination": "extension-downloads" })`'],
+          ['returnExample', '`{"ok":true,"destination":"extension-downloads","filename":"作业包-123456.zip","path":"downloads/作业包-123456.zip","bytes":1048576}`'],
+          '浏览器下载还会返回 downloadId。扩展目录未授权时抛出错误，请先在聊天室设置中授权保存目录。暂不支持通过 Bridge 传输。'
+        ]
+      },
       async run(args) {
         const assignmentId = String(args?.assignmentId || '').trim();
         if (!assignmentId) throw new Error('缺少参数 assignmentId');
@@ -958,17 +971,15 @@ name: 've.accounts',
       module: 've',
       name: 've.assignments_of_',
       summary: '获取指定智慧课程平台课程的作业列表',
-      doc: [
-        '## ve.assignments_of_ —— 课程作业',
-        '',
-        '获取指定课程的作业列表（含已交/未交及详情）。courseId 为课程ID，可先调用 ve.courseList 获取。status、type 与 ve.assignments 使用相同筛选规则，省略时均为 all。',
-        '',
-        '**参数**：{"courseId":"课程ID，必填","status":"all|pending|submitted|overdue，默认 all","type":"all|作业|课程报告|实验，默认 all"}',
-        '',
-        '**调用示例**：`ve.assignments_of_({courseId: "xxx", status: "pending", type: "实验"})`；也可直接按课程名组合调用：`ve.assignments_of_({ courseId: ve.courseList().find(item => item.name === "高等数学").id })`',
-        '',
-        '**返回示例**：[{"id":"…","title":"作业标题","content":"作业要求","type":"作业","status":"pending","startTime":0,"deadline":1767225600000,"submittedAt":0,"score":"","attachments":[],"submittedCount":0}]。id 为平台原始作业 id；content 为作业正文，attachments 为详情接口返回的附件。'
-      ].join('\n'),
+      doc: {
+        title: '课程作业',
+        blocks: [
+          '获取指定课程的作业列表（含已交/未交及详情）。courseId 为课程ID，可先调用 ve.courseList 获取。status、type 与 ve.assignments 使用相同筛选规则，省略时均为 all。',
+          ['parameters', '`{"courseId":"课程ID，必填","status":"可选，all|pending|submitted|overdue，默认 all","type":"可选，all|作业|课程报告|实验，默认 all"}`'],
+          ['example', '`ve.assignments_of_({"courseId": "xxx", "status": "pending", "type": "实验"})`；也可直接按课程名组合调用：`ve.courseList().then(courses => ve.assignments_of_({"courseId": courses.find(item => item.name === "高等数学").id}))`'],
+          ['returnExample', '`[{"id":"…","title":"作业标题","content":"作业要求","type":"作业","status":"pending","startTime":0,"deadline":1767225600000,"submittedAt":0,"score":"","attachments":[],"submittedCount":0}]`。id 为平台原始作业 id；content 为作业正文，attachments 为详情接口返回的附件。']
+        ]
+      },
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
         if (!courseId) throw new Error('缺少参数 courseId，请先调用 ve.courseList 获取有效ID');
@@ -1032,39 +1043,33 @@ name: 've.accounts',
       module: 've',
       name: 've.uploadFile',
       summary: '向智慧课程平台上传文件并返回下载链接和可直接提交的 fileList',
-      doc: [
-        '## ve.uploadFile —— 上传文件',
-        '',
-        '向智慧课程平台上传文件，返回可原样传给 ve.submitAssignment 的 fileList。不提供文件内容来源时，会打开一个独立上传窗口；请在其中点击或向 drop-zone 拖入本地文件。上传过程会显示在窗口的 file-list 中，完成后窗口自动关闭并返回结果。',
-        '',
-        '**参数**：不传参数时由用户选择本地文件，可用 accept 限制文件类型；也可传 fileName，并从 text/content（文本）、base64/dataBase64、bytes（0~255 数组）或 url 四种可序列化来源中选择一种；mimeType 可选。使用 url 时若省略 fileName，会从 URL 推断。',
-        '',
-        '**调用示例**：`ve.uploadFile()`；`ve.uploadFile({accept:".pdf,.doc,.docx"})`；`ve.uploadFile({fileName:"answer.txt", text:"作业内容", mimeType:"text/plain"})`',
-        '',
-        '**返回示例**：`{"fileList":[{"fileNameNoExt":"answer","fileExtName":"txt","fileSize":"12","visitName":"W:\\\\Root\\\\answer.txt","pid":"","ftype":"insert"}]}`。无论上传一个还是多个文件，均只返回这一结构。',
-        '',
-        '**下载链接转换**：将 visitName 中的 `W:\\Root\\` 替换为 `http://123.121.147.7:8081/`，再将其余反斜杠替换为正斜杠。',
-        '',
-        '### 本地程序直接上传本地文件',
-        '',
-        '通过本地 Bridge 调用时，可在 `arguments` 中传入仅供 Bridge 使用的 `filePath`。Bridge 会生成一个 15 分钟有效、首次读取后立即失效的一次性本地文件地址，并以文件流响应扩展的读取。扩展读取后仍交给现有上传管理器，通过智慧课程平台原上传接口提交。可选的 `fileName` 用于覆盖原文件名，`mimeType` 默认为 `application/octet-stream`。文件上限为 1 GiB。',
-        '',
-        '**MCP 调用**：使用 `BJTUCA_call`，参数为 `{"name":"ve.uploadFile","arguments":{"filePath":"D:\\\\作业\\\\answer.pdf","mimeType":"application/pdf"}}`。',
-        '',
-        '**HTTP 调用**：向原有的 `POST /api/v1/call` 发送同样的 JSON 请求体，并携带配对得到的 Bearer token。成功响应仍只有 `fileList`。',
-        '',
-        '```powershell',
-        '$headers = @{ Authorization = "Bearer $env:BJTU_CA_BRIDGE_TOKEN" }',
-        '$body = @{',
-        "  name = 've.uploadFile'",
-        '  arguments = @{',
-        "    filePath = 'D:\\作业\\answer.pdf'",
-        "    mimeType = 'application/pdf'",
-        '  }',
-        '} | ConvertTo-Json -Depth 10',
-        "Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:1896/api/v1/call' -Headers $headers -ContentType 'application/json' -Body $body",
-        '```'
-      ].join('\n'),
+      doc: {
+        title: '上传文件',
+        blocks: [
+          '向智慧课程平台上传文件，返回可原样传给 ve.submitAssignment 的 fileList。不提供文件内容来源时，会打开一个独立上传窗口；请在其中点击或向 drop-zone 拖入本地文件。上传过程会显示在窗口的 file-list 中，完成后窗口自动关闭并返回结果。',
+          ['parameters', '不传参数时由用户选择本地文件，可用 accept 限制文件类型；也可传 fileName，并从 text/content（文本）、base64/dataBase64、bytes（0~255 数组）或 url 四种可序列化来源中选择一种；mimeType 可选。使用 url 时若省略 fileName，会从 URL 推断。'],
+          ['example', '`ve.uploadFile()`；`ve.uploadFile({"accept":".pdf,.doc,.docx"})`；`ve.uploadFile({"fileName":"answer.txt", "text":"作业内容", "mimeType":"text/plain"})`'],
+          ['returnExample', '`{"fileList":[{"fileNameNoExt":"answer","fileExtName":"txt","fileSize":"12","visitName":"W:\\\\Root\\\\answer.txt","pid":"","ftype":"insert"}]}`。无论上传一个还是多个文件，均只返回这一结构。'],
+          ['下载链接转换', '将 visitName 中的 `W:\\Root\\` 替换为 `http://123.121.147.7:8081/`，再将其余反斜杠替换为正斜杠。'],
+          '### 本地程序直接上传本地文件',
+          '通过本地 Bridge 调用时，可在 `arguments` 中传入仅供 Bridge 使用的 `filePath`。Bridge 会生成一个 15 分钟有效、首次读取后立即失效的一次性本地文件地址，并以文件流响应扩展的读取。扩展读取后仍交给现有上传管理器，通过智慧课程平台原上传接口提交。可选的 `fileName` 用于覆盖原文件名，`mimeType` 默认为 `application/octet-stream`。文件上限为 1 GiB。',
+          ['MCP 调用', '使用 `BJTUCA_call`，参数为 `{"name":"ve.uploadFile","arguments":{"filePath":"D:\\\\作业\\\\answer.pdf","mimeType":"application/pdf"}}`。'],
+          ['HTTP 调用', '向原有的 `POST /api/v1/call` 发送同样的 JSON 请求体，并携带配对得到的 Bearer token。成功响应仍只有 `fileList`。'],
+          [
+            '```powershell',
+            '$headers = @{ Authorization = "Bearer $env:BJTU_CA_BRIDGE_TOKEN" }',
+            '$body = @{',
+            "  name = 've.uploadFile'",
+            '  arguments = @{',
+            "    filePath = 'D:\\作业\\answer.pdf'",
+            "    mimeType = 'application/pdf'",
+            '  }',
+            '} | ConvertTo-Json -Depth 10',
+            "Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:1896/api/v1/call' -Headers $headers -ContentType 'application/json' -Body $body",
+            '```'
+          ].join('\n')
+        ]
+      },
       async run(args) {
         return hasSerializedUploadSource(args)
           ? pageInvoke('ve', 'uploadFile', args || {}, 120000)
@@ -1075,17 +1080,15 @@ name: 've.accounts',
       module: 've',
       name: 've.uploadedFiles',
       summary: '获取智慧课程平台可直接提交的已上传文件 fileList',
-      doc: [
-        '## ve.uploadedFiles —— 获取已上传文件',
-        '',
-        '获取扩展本地保存的智慧课程平台已上传文件，返回可直接传给 ve.submitAssignment 的 fileList。',
-        '',
-        '**路径映射**：将 visitName 中的 `W:\\Root\\` 替换为 `http://123.121.147.7:8081/`，再将其余反斜杠替换为正斜杠，即可得到对应的 HTTP 文件地址。',
-        '',
-        '**调用示例**：`ve.uploadedFiles()`',
-        '',
-        '**返回示例**：`{"fileList":[{"fileNameNoExt":"%E4%BD%9C%E4%B8%9A","fileExtName":"pdf","fileSize":"12345","visitName":"W:\\\\Root\\\\example.pdf","pid":"","ftype":"insert"}]}`'
-      ].join('\n'),
+      doc: {
+        title: '获取已上传文件',
+        blocks: [
+          '获取扩展本地保存的智慧课程平台已上传文件，返回可直接传给 ve.submitAssignment 的 fileList。',
+          ['路径映射', '将 visitName 中的 `W:\\Root\\` 替换为 `http://123.121.147.7:8081/`，再将其余反斜杠替换为正斜杠，即可得到对应的 HTTP 文件地址。'],
+          ['example', '`ve.uploadedFiles()`'],
+          ['returnExample', '`{"fileList":[{"fileNameNoExt":"%E4%BD%9C%E4%B8%9A","fileExtName":"pdf","fileSize":"12345","visitName":"W:\\\\Root\\\\example.pdf","pid":"","ftype":"insert"}]}`']
+        ]
+      },
       async run() {
         const current = await pageInvoke('ve', 'uploadedFiles', { includePrivate: true }).catch(() => []);
         if (Array.isArray(current) && current.length) return veUploadedFilesPayload(current);
@@ -1102,17 +1105,15 @@ name: 've.accounts',
       module: 've',
       name: 've.submitAssignment',
       summary: '向智慧课程平台指定课程提交作业正文和已上传附件',
-      doc: [
-        '## ve.submitAssignment —— 提交作业',
-        '',
-        '提交智慧课程平台作业。courseId 不限于当前学期课程；assignmentId 可从对应课程的 ve.assignments_of_ 获取。附件可直接使用 ve.uploadFile 返回的 fileList，无需再调用 ve.uploadedFiles。正文与附件至少提供一项。若该作业不允许重复提交，真正发送前会弹出浏览器原生确认框。',
-        '',
-        '**参数**：{"courseId":"课程ID，必填","assignmentId":"作业ID，必填","content":"正文，可选","fileList":"ve.uploadFile 返回的 fileList 数组，可选"}',
-        '',
-        '**调用示例**：`const uploaded = await ve.uploadFile(); return ve.submitAssignment({courseId: "xxx", assignmentId: "yyy", content: "作业正文", fileList: uploaded.fileList})`',
-        '',
-        '**返回示例**：{"submitted":true}'
-      ].join('\n'),
+      doc: {
+        title: '提交作业',
+        blocks: [
+          '提交智慧课程平台作业。courseId 不限于当前学期课程；assignmentId 可从对应课程的 ve.assignments_of_ 获取。附件可直接使用 ve.uploadFile 返回的 fileList，无需再调用 ve.uploadedFiles。正文与附件至少提供一项。若该作业不允许重复提交，真正发送前会弹出浏览器原生确认框。',
+          ['parameters', '`{"courseId":"课程ID，必填","assignmentId":"作业ID，必填","content":"正文，可选","fileList":"ve.uploadFile 返回的 fileList 数组，可选"}`'],
+          ['example', '`const uploaded = await ve.uploadFile(); return ve.submitAssignment({"courseId": "xxx", "assignmentId": "yyy", "content": "作业正文", "fileList": uploaded.fileList})`'],
+          ['returnExample', '`{"submitted":true}`']
+        ]
+      },
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
         const assignmentId = String(args?.assignmentId || '').trim();
@@ -1150,23 +1151,18 @@ name: 've.accounts',
       module: 've',
       name: 've.assignments',
       summary: '按状态与类型查询智慧课程平台所有课程的作业',
-      doc: [
-        '## ve.assignments —— 全平台作业查询',
-        '',
-        '直接筛选 ve.login 完成后 app.html 已加载的当前学期作业，不会重新请求课程或作业。平台未启用或未完成登录时，请先调用 ve.login()。status：all（全部，默认）/ pending（未交）/ submitted（已交）/ overdue（逾期）。type：all（默认）/ 作业 / 课程报告 / 实验。',
-        '',
-        '**参数**：{"status":"all|pending|submitted|overdue，默认 all","type":"all|作业|课程报告|实验，默认 all"}',
-        '',
-        '**调用示例**：`ve.assignments({status: "pending", type: "作业"})`',
-        '',
-        '**返回示例**：{"total":1,"items":[{"id":"…","courseName":"课程名","title":"作业标题","type":"作业","status":"pending","deadline":1234567890000}]}',
-        '',
-        '本接口不返回 actionUrl。需要打开作业页时，可用课程与学期信息按以下方式拼接（全部参数需 URL 编码）：',
-        '',
-        '`http://123.121.147.7:8081/back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=<10460|10461|10462>&courseId=<courseNum>&cId=<courseId>&xknId=<fzId>&xkhId=<fzId>&xqCode=<xqCode>`',
-        '',
-        'courseToPage：作业=10460，课程报告=10461，实验=10462；courseNum/fzId/xqCode 来自课程数据，courseId 为 ve.courseList 返回的 id。'
-      ].join('\n'),
+      doc: {
+        title: '全平台作业查询',
+        blocks: [
+          '直接筛选 ve.login 完成后 app.html 已加载的当前学期作业，不会重新请求课程或作业。平台未启用或未完成登录时，请先调用 ve.login()。status：all（全部，默认）/ pending（未交）/ submitted（已交）/ overdue（逾期）。type：all（默认）/ 作业 / 课程报告 / 实验。',
+          ['parameters', '`{"status":"可选，all|pending|submitted|overdue，默认 all","type":"可选，all|作业|课程报告|实验，默认 all"}`'],
+          ['example', '`ve.assignments({"status": "pending", "type": "作业"})`'],
+          ['returnExample', '`{"total":1,"items":[{"id":"…","courseName":"课程名","title":"作业标题","type":"作业","status":"pending","deadline":1234567890000}]}`'],
+          '本接口不返回 actionUrl。需要打开作业页时，可用课程与学期信息按以下方式拼接（全部参数需 URL 编码）：',
+          '`http://123.121.147.7:8081/back/coursePlatform/coursePlatform.shtml?method=toCoursePlatform&courseToPage=<10460|10461|10462>&courseId=<courseNum>&cId=<courseId>&xknId=<fzId>&xkhId=<fzId>&xqCode=<xqCode>`',
+          'courseToPage：作业=10460，课程报告=10461，实验=10462；courseNum/fzId/xqCode 来自课程数据，courseId 为 ve.courseList 返回的 id。'
+        ]
+      },
       async run(args) {
         const matches = assignmentFilter(args);
         const core = await veHomework();
@@ -1199,19 +1195,16 @@ name: 've.accounts',
       module: 've',
       name: 've.login',
       summary: '按需启用并登录智慧课程平台（可指定账号）',
-      doc: [
-        '## ve.login —— 智慧课程平台登录',
-        '',
-        '平台尚未启用时会启用并触发登录；平台已经启用时不会重复启用或登录。省略账号时使用当前账号；指定账号与当前会话账号不同时仍会切换账号。操作会等待密码/验证码/错误恢复弹窗关闭，并等待智慧课程平台的作业全部加载完毕后再返回。',
-        '',
-        '**参数**：`{"account":"可选，账号；省略时使用当前填写的账号"}`',
-        '',
-        '**调用示例**：`ve.login()` 使用当前账号；`ve.login({account: "2428xxxx"})` 切换到指定账号并登录',
-        '',
-        '指定账号时会等待密码/验证码弹窗关闭，并返回该目标账号本次是否登录成功；已有的其他账号会话不会被当作成功。',
-        '',
-        '**返回示例**：{"ok":true}'
-      ].join('\n'),
+      doc: {
+        title: '智慧课程平台登录',
+        blocks: [
+          '平台尚未启用时会启用并触发登录；平台已经启用时不会重复启用或登录。省略账号时使用当前账号；指定账号与当前会话账号不同时仍会切换账号。操作会等待密码/验证码/错误恢复弹窗关闭，并等待智慧课程平台的作业全部加载完毕后再返回。',
+          ['parameters', '`{"account":"可选，账号；省略时使用当前填写的账号"}`'],
+          ['example', '`ve.login()` 使用当前账号；`ve.login({"account": "2428xxxx"})` 切换到指定账号并登录'],
+          '指定账号时会等待密码/验证码弹窗关闭，并返回该目标账号本次是否登录成功；已有的其他账号会话不会被当作成功。',
+          ['returnExample', '`{"ok":true}`']
+        ]
+      },
       async run(args) {
         const account = String(args?.account || args?.loginName || '').trim();
         const result = await pageInvoke('ve', 'login', { account, auto: true });
@@ -1222,17 +1215,15 @@ name: 've.accounts',
       module: 've',
 name: 've.teachers_of_',
       summary: '获取智慧课程平台指定课程的老师与助教列表',
-      doc: [
-        '## ve.teachers_of_ —— 课程老师列表',
-        '',
-        '获取指定课程的老师与助教列表（含 userType：1=任课教师 2=助教）。courseId 可先调用 ve.courseList 获取。',
-        '',
-        '**参数**：{"courseId":"课程ID，必填"}',
-        '',
-        '**调用示例**：`ve.teachers_of_({courseId: "xxx"})`',
-        '',
-        '**返回示例**：[{"userName":"张三","loginName":"zhangsan","userType":"1"}]'
-      ].join('\n'),
+      doc: {
+        title: '课程老师列表',
+        blocks: [
+          '获取指定课程的老师与助教列表（含 userType：1=任课教师 2=助教）。courseId 可先调用 ve.courseList 获取。',
+          ['parameters', '`{"courseId":"课程ID，必填"}`'],
+          ['example', '`ve.teachers_of_({"courseId": "xxx"})`'],
+          ['returnExample', '`[{"userName":"张三","loginName":"zhangsan","userType":"1"}]`']
+        ]
+      },
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
         await assertCourseIdOf('ve', courseId);
@@ -1245,17 +1236,15 @@ name: 've.teachers_of_',
       module: 've',
       name: 've.students_of_',
       summary: '获取智慧课程平台指定课程的学生列表',
-      doc: [
-        '## ve.students_of_ —— 课程学生列表',
-        '',
-        '获取指定课程的学生列表。courseId 可先调用 ve.courseList 获取。需要已打开助手页面并登录智慧课程平台。',
-        '',
-        '**参数**：{"courseId":"课程ID，必填"}',
-        '',
-        '**调用示例**：`ve.students_of_({courseId: "xxx"})`',
-        '',
-        '**返回示例**：[{"groupName":"组名","stuNo":"学号","stuName":"姓名","className":"班级"}]'
-      ].join('\n'),
+      doc: {
+        title: '课程学生列表',
+        blocks: [
+          '获取指定课程的学生列表。courseId 可先调用 ve.courseList 获取。需要已打开助手页面并登录智慧课程平台。',
+          ['parameters', '`{"courseId":"课程ID，必填"}`'],
+          ['example', '`ve.students_of_({"courseId": "xxx"})`'],
+          ['returnExample', '`[{"groupName":"组名","stuNo":"学号","stuName":"姓名","className":"班级"}]`']
+        ]
+      },
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
         await assertCourseIdOf('ve', courseId);
@@ -1267,17 +1256,15 @@ name: 've.teachers_of_',
       module: 've',
       name: 've.courseware_of_',
       summary: '获取智慧课程平台指定课程的五类资源列表',
-      doc: [
-        '## ve.courseware_of_ —— 课程资源列表',
-        '',
-        '并行获取指定课程的电子课件、教案设计、实验、教材教辅、MOOC资源，每项均直接附带真实下载链接（无需再单独获取）。courseId 可先调用 ve.courseList 获取。需要已打开助手页面并登录。',
-        '',
-        '**参数**：{"courseId":"课程ID，必填"}',
-        '',
-        '**调用示例**：`ve.courseware_of_({courseId: "xxx"})`',
-        '',
-        '**返回示例**：[{"id":"原始rpId","name":"文件名.pdf","category":"电子课件","size":"2.30MB","url":"https://…"}]'
-      ].join('\n'),
+      doc: {
+        title: '课程资源列表',
+        blocks: [
+          '并行获取指定课程的电子课件、教案设计、实验、教材教辅、MOOC资源，每项均直接附带真实下载链接（无需再单独获取）。courseId 可先调用 ve.courseList 获取。需要已打开助手页面并登录。',
+          ['parameters', '`{"courseId":"课程ID，必填"}`'],
+          ['example', '`ve.courseware_of_({"courseId": "xxx"})`'],
+          ['returnExample', '`[{"id":"原始rpId","name":"文件名.pdf","category":"电子课件","size":"2.30MB","url":"https://…"}]`']
+        ]
+      },
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
         await assertCourseIdOf('ve', courseId);
@@ -1295,17 +1282,15 @@ name: 've.teachers_of_',
       module: 've',
       name: 've.replay_of_',
       summary: '获取智慧课程平台指定课程的回放列表',
-      doc: [
-        '## ve.replay_of_ —— 课程回放列表',
-        '',
-        '获取指定课程的回放列表及实际视频地址。每项按视角返回 student（学生）、teacher（老师）、courseware（课件）链接。courseId 可先调用 ve.courseList 获取。需要已打开助手页面并登录。',
-        '',
-        '**参数**：{"courseId":"课程ID，必填","views":["student","teacher","courseware"],"forceReload":false}。views 可省略，默认获取全部三种视角；也可传入其中一项或多项，并兼容中文“学生”“老师”“课件”。',
-        '',
-        '**调用示例**：`ve.replay_of_({courseId: "xxx"})`；只查看学生和课件视角：`ve.replay_of_({courseId: "xxx", views: ["student", "courseware"]})`',
-        '',
-        '**返回示例**：[{"name":"回放名","teacherName":"老师","startTime":"…","endTime":"…","links":{"student":"https://…","teacher":"https://…","courseware":"https://…"}}]。不再返回内部 videoId。'
-      ].join('\n'),
+      doc: {
+        title: '课程回放列表',
+        blocks: [
+          '获取指定课程的回放列表及实际视频地址。每项按视角返回 student（学生）、teacher（老师）、courseware（课件）链接。courseId 可先调用 ve.courseList 获取。需要已打开助手页面并登录。',
+          ['parameters', '`{"courseId":"课程ID，必填","views":["student","teacher","courseware"],"forceReload":false}`。`views` 可选，默认获取全部三种视角；也可传入其中一项或多项，并兼容中文“学生”“老师”“课件”。`forceReload` 可选，默认为 `false`。'],
+          ['example', '`ve.replay_of_({"courseId": "xxx"})`；只查看学生和课件视角：`ve.replay_of_({"courseId": "xxx", "views": ["student", "courseware"]})`'],
+          ['returnExample', '`[{"name":"回放名","teacherName":"老师","startTime":"…","endTime":"…","links":{"student":"https://…","teacher":"https://…","courseware":"https://…"}}]`。不再返回内部 videoId。']
+        ]
+      },
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
         await assertCourseIdOf('ve', courseId);
@@ -1326,17 +1311,15 @@ name: 've.teachers_of_',
       module: 've',
       name: 've.archive_of_',
       summary: '获取智慧课程平台指定课程的归档资源列表',
-      doc: [
-        '## ve.archive_of_ —— 课程归档列表',
-        '',
-        '获取指定课程的归档资源列表，每个资源均直接附带真实下载链接（无需再单独获取）。courseId 可先调用 ve.courseList 获取。需要已打开助手页面并登录。',
-        '',
-        '**参数**：{"courseId":"课程ID，必填"}',
-        '',
-        '**调用示例**：`ve.archive_of_({courseId: "xxx"})`',
-        '',
-        '**返回示例**：[{"id":"原始rpId","name":"归档名.pdf","size":"2.30MB","url":"https://…"}]'
-      ].join('\n'),
+      doc: {
+        title: '课程归档列表',
+        blocks: [
+          '获取指定课程的归档资源列表，每个资源均直接附带真实下载链接（无需再单独获取）。courseId 可先调用 ve.courseList 获取。需要已打开助手页面并登录。',
+          ['parameters', '`{"courseId":"课程ID，必填"}`'],
+          ['example', '`ve.archive_of_({"courseId": "xxx"})`'],
+          ['returnExample', '`[{"id":"原始rpId","name":"归档名.pdf","size":"2.30MB","url":"https://…"}]`']
+        ]
+      },
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
         await assertCourseIdOf('ve', courseId);
@@ -1350,15 +1333,14 @@ name: 've.teachers_of_',
       module: 'ykt',
       name: 'ykt.courseList',
       summary: '获取雨课堂的课程列表',
-      doc: [
-        '## ykt.courseList —— 雨课堂课程列表',
-        '',
-        '获取雨课堂当前账号的课程列表。需要已打开助手页面并在 yuketang.cn 登录。',
-        '',
-        '**调用示例**：`ykt.courseList()`',
-        '',
-        '**返回示例**：[{"classroomId":"…","courseName":"课程名","teacher":"老师","universityId":"…"}]'
-      ].join('\n'),
+      doc: {
+        title: '雨课堂课程列表',
+        blocks: [
+          '获取雨课堂当前账号的课程列表。需要已打开助手页面并在 yuketang.cn 登录。',
+          ['example', '`ykt.courseList()`'],
+          ['returnExample', '`[{"classroomId":"…","courseName":"课程名","teacher":"老师","universityId":"…"}]`']
+        ]
+      },
       async run() {
         const value = await pageInvoke('ykt', 'courseList', {}, 120000);
         if (value?.loggedIn === false) throw Object.assign(new Error('雨课堂未登录，请先调用 ykt.login 完成登录后再获取课程列表'), { code: 'LOGIN_REQUIRED' });
@@ -1369,17 +1351,15 @@ name: 've.teachers_of_',
       module: 'ykt',
       name: 'ykt.assignments_of_',
       summary: ' 获取雨课堂指定课程的作业列表',
-      doc: [
-        '## ykt.assignments_of_ —— 雨课堂课程作业',
-        '',
-        '根据 classroomId 获取雨课堂指定课程的作业/活动列表及详情。classroomId 可先调用 ykt.courseList 获取。需要已打开助手页面并在 yuketang.cn 登录。status、type 与 ykt.assignments 使用相同筛选规则，省略时均为 all。',
-        '',
-        '**参数**：{"classroomId":"班级ID，必填","status":"all|pending|submitted|overdue，默认 all","type":"all|课堂|线上学习|考试|公告，默认 all"}',
-        '',
-        '**调用示例**：`ykt.assignments_of_({classroomId: "xxx", status: "pending", type: "考试"})`',
-        '',
-        '**返回示例**：[{"id":"…","title":"作业名","type":"线上学习","status":"pending","startTime":1760000000000,"deadline":1767225600000,"progress":0.75,"score":90,"totalScore":100,"details":{"content":{},"problems":[]},"link":"https://…"}]。details 包含活动正文及已加载的考试、课堂题目；考试题目的 grade 为 problem_results 接口返回的实际得分，finished 为是否已作答，score/Score 仅表示题目总分；课堂题目保留 cover 图片链接及接口返回的 isAnswered、problemscore、score 等字段，包括实际返回的随堂测验题目。线上学习的 progress 为扩展根据内部任务标识获取的 0~1 进度，结果不暴露 leaf_id。'
-      ].join('\n'),
+      doc: {
+        title: '雨课堂课程作业',
+        blocks: [
+          '根据 classroomId 获取雨课堂指定课程的作业/活动列表及详情。classroomId 可先调用 ykt.courseList 获取。需要已打开助手页面并在 yuketang.cn 登录。status、type 与 ykt.assignments 使用相同筛选规则，省略时均为 all。',
+          ['parameters', '`{"classroomId":"班级ID，必填","status":"可选，all|pending|submitted|overdue，默认 all","type":"可选，all|课堂|线上学习|考试|公告，默认 all"}`'],
+          ['example', '`ykt.assignments_of_({"classroomId": "xxx", "status": "pending", "type": "考试"})`'],
+          ['returnExample', '`[{"id":"…","title":"作业名","type":"线上学习","status":"pending","startTime":1760000000000,"deadline":1767225600000,"progress":0.75,"score":90,"totalScore":100,"details":{"content":{},"problems":[]},"link":"https://…"}]`。details 包含活动正文及已加载的考试、课堂题目；考试题目的 grade 为 problem_results 接口返回的实际得分，finished 为是否已作答，score/Score 仅表示题目总分；课堂题目保留 cover 图片链接及接口返回的 isAnswered、problemscore、score 等字段，包括实际返回的随堂测验题目。线上学习的 progress 为扩展根据内部任务标识获取的 0~1 进度，结果不暴露 leaf_id。']
+        ]
+      },
       async run(args) {
         const classroomId = String(args?.classroomId || '').trim();
         await assertCourseIdOf('ykt', classroomId, 'classroomId');
@@ -1409,17 +1389,15 @@ name: 've.teachers_of_',
       module: 'ykt',
       name: 'ykt.assignments',
       summary: '按状态与类型查询雨课堂所有课程的作业',
-      doc: [
-        '## ykt.assignments —— 全平台作业查询',
-        '',
-        '直接筛选 ykt.login 完成后 app.html 已加载的雨课堂作业，不会重新请求课程或作业。平台未启用或未完成登录时，请先调用 ykt.login()。课堂（actype=14）依据 attend_status 判断是否已交，不使用进度；未交且 is_finished 为 true 时为 overdue。考试（actype=5）的已作答题数按 total - unfinished 计算，不使用原始 progress；is_finished 为 true 或超过截止时间后只依据 unfinished 判断是否已交，0 为已交。线上学习任务优先依据扩展获取的 0~1 进度判断。非课堂任务仅未完成且超过截止时间时才是 overdue。status：all（默认）/ pending（未交）/ submitted（已交）/ overdue（逾期）。type：all（默认）/ 课堂 / 线上学习 / 考试 / 公告。',
-        '',
-        '**参数**：{"status":"all|pending|submitted|overdue，默认 all","type":"all|课堂|线上学习|考试|公告，默认 all"}',
-        '',
-        '**调用示例**：`ykt.assignments({status: "pending", type: "考试"})`',
-        '',
-        '**返回示例**：{"total":1,"items":[{"key":"ykt:…:…","courseName":"课程名","title":"作业名","type":"考试","status":"pending","deadline":1234567890000,"actionUrl":"https://…"}]}'
-      ].join('\n'),
+      doc: {
+        title: '全平台作业查询',
+        blocks: [
+          '直接筛选 ykt.login 完成后 app.html 已加载的雨课堂作业，不会重新请求课程或作业。平台未启用或未完成登录时，请先调用 ykt.login()。课堂（actype=14）依据 attend_status 判断是否已交，不使用进度；未交且 is_finished 为 true 时为 overdue。考试（actype=5）的已作答题数按 total - unfinished 计算，不使用原始 progress；is_finished 为 true 或超过截止时间后只依据 unfinished 判断是否已交，0 为已交。线上学习任务优先依据扩展获取的 0~1 进度判断。非课堂任务仅未完成且超过截止时间时才是 overdue。status：all（默认）/ pending（未交）/ submitted（已交）/ overdue（逾期）。type：all（默认）/ 课堂 / 线上学习 / 考试 / 公告。',
+          ['parameters', '`{"status":"可选，all|pending|submitted|overdue，默认 all","type":"可选，all|课堂|线上学习|考试|公告，默认 all"}`'],
+          ['example', '`ykt.assignments({"status": "pending", "type": "考试"})`'],
+          ['returnExample', '`{"total":1,"items":[{"key":"ykt:…:…","courseName":"课程名","title":"作业名","type":"考试","status":"pending","deadline":1234567890000,"actionUrl":"https://…"}]}`']
+        ]
+      },
       async run(args) {
         const matches = assignmentFilter(args);
         const snapshot = await pageInvoke('ykt', 'assignmentSnapshot', {}, 120000);
@@ -1453,15 +1431,14 @@ name: 've.teachers_of_',
       module: 'ykt',
       name: 'ykt.login',
       summary: '按需启用并触发雨课堂登录流程',
-      doc: [
-        '## ykt.login —— 雨课堂登录',
-        '',
-        '雨课堂尚未启用时才启用并触发登录流程；已经启用时直接返回当前状态，不重复加载或弹出扫码/授权窗口。',
-        '',
-        '**调用示例**：`ykt.login()`',
-        '',
-        '**返回示例**：{"ok":true}'
-      ].join('\n'),
+      doc: {
+        title: '雨课堂登录',
+        blocks: [
+          '雨课堂尚未启用时才启用并触发登录流程；已经启用时直接返回当前状态，不重复加载或弹出扫码/授权窗口。',
+          ['example', '`ykt.login()`'],
+          ['returnExample', '`{"ok":true}`']
+        ]
+      },
       async run() {
         return compactLoginResult(await pageInvoke('ykt', 'login', { timeoutMs: Number.POSITIVE_INFINITY }));
       }
@@ -1470,15 +1447,14 @@ name: 've.teachers_of_',
       module: 'academic',
       name: 'academic.currentAccount',
       summary: '获取教务系统当前登录账号及监控配置',
-      doc: [
-        '## academic.currentAccount —— 教务系统当前账号',
-        '',
-        '获取教务系统当前登录的学号与各项监控开关状态；已保存账号请调用 `academic.accounts`。',
-        '',
-        '**调用示例**：`academic.currentAccount()`',
-        '',
-        '**返回示例**：{"studentId":"…","monitorEnabled":true}'
-      ].join('\n'),
+      doc: {
+        title: '教务系统当前账号',
+        blocks: [
+          '获取教务系统当前登录的学号与各项监控开关状态；已保存账号请调用 `academic.accounts`。',
+          ['example', '`academic.currentAccount()`'],
+          ['returnExample', '`{"studentId":"…","monitorEnabled":true}`']
+        ]
+      },
       async run() {
         const value = throwOperationFailure(await academicInvoke('currentAccount', {}), '教务系统账号信息获取失败');
         const { ok: _ok, accounts: _accounts, ...rest } = value && typeof value === 'object' ? value : {};
@@ -1489,15 +1465,14 @@ name: 've.teachers_of_',
       module: 'academic',
       name: 'academic.accounts',
       summary: '获取教务系统已保存的账号列表',
-      doc: [
-        '## academic.accounts —— 教务系统已保存账号',
-        '',
-        '获取教务系统已保存的账号列表，包含学号、姓名与是否保存密码。',
-        '',
-        '**调用示例**：`academic.accounts()`',
-        '',
-        '**返回示例**：{"accounts":[{"studentId":"…","userName":"张三","hasPassword":true}]}'
-      ].join('\n'),
+      doc: {
+        title: '教务系统已保存账号',
+        blocks: [
+          '获取教务系统已保存的账号列表，包含学号、姓名与是否保存密码。',
+          ['example', '`academic.accounts()`'],
+          ['returnExample', '`{"accounts":[{"studentId":"…","userName":"张三","hasPassword":true}]}`']
+        ]
+      },
       async run() {
         const value = throwOperationFailure(await academicInvoke('currentAccount', {}), '教务系统账号信息获取失败');
         const accounts = Array.isArray(value?.accounts) ? value.accounts : [];
@@ -1514,15 +1489,14 @@ name: 've.teachers_of_',
       module: 'academic',
       name: 'academic.semesters',
       summary: '获取教务系统实际提供的学期及查询参数',
-      doc: [
-        '## academic.semesters —— 教务学期列表',
-        '',
-        '读取教务系统页面实际提供的学期列表，而不是使用固定学期。currentXnxq 来自无参数的本学期课表页，可用于 academic.schedule；currentZxjxjhh 是当前可查询成绩与考试的学期，新学期尚无成绩时可能仍是上一学期。需要教务系统已登录。',
-        '',
-        '**调用示例**：`academic.semesters()`',
-        '',
-        '**返回示例**：`{"currentXnxq":"2026-2027-1-2","currentZxjxjhh":"2025-2026-2-2","semesters":[{"label":"2026-2027-1","zxjxjhh":"2026-2027-1-2"},{"label":"2025-2026-2","zxjxjhh":"2025-2026-2-2"}]}`。academic.schedule 默认使用 currentXnxq；academic.scores 和 academic.exams 默认使用 currentZxjxjhh。'
-      ].join('\n'),
+      doc: {
+        title: '教务学期列表',
+        blocks: [
+          '读取教务系统页面实际提供的学期列表，而不是使用固定学期。currentXnxq 来自无参数的本学期课表页，可用于 academic.schedule；currentZxjxjhh 是当前可查询成绩与考试的学期，新学期尚无成绩时可能仍是上一学期。需要教务系统已登录。',
+          ['example', '`academic.semesters()`'],
+          ['returnExample', '`{"currentXnxq":"2026-2027-1-2","currentZxjxjhh":"2025-2026-2-2","semesters":[{"label":"2026-2027-1","zxjxjhh":"2026-2027-1-2"},{"label":"2025-2026-2","zxjxjhh":"2025-2026-2-2"}]}`。academic.schedule 默认使用 currentXnxq；academic.scores 和 academic.exams 默认使用 currentZxjxjhh。']
+        ]
+      },
       async run() {
         const value = throwOperationFailure(await academicInvoke('semesters', {}, 120000), '教务学期列表获取失败');
         return {
@@ -1539,19 +1513,16 @@ name: 've.teachers_of_',
       module: 'academic',
       name: 'academic.GPA',
       summary: '按一个或多个学期计算平均学分绩点',
-      doc: [
-        '## academic.GPA —— 平均学分绩点',
-        '',
-        '按学分加权计算一个或多个学期的平均学分绩点。需要教务系统已登录。不传参数时计算当前学期；可传入 academic.semesters 返回的多个 zxjxjhh。百分制和五级制成绩按北京交通大学现行换算规则计算，二级制成绩不参与。',
-        '',
-        '**参数**：`{semesters:["2025-2026-2-2","2024-2025-2-2"]}`；可省略整个参数对象以使用当前学期。',
-        '',
-        '**调用示例**：`academic.GPA()`；`academic.GPA({semesters:["2024-2025-2-2","2023-2024-1-2"]})`',
-        '',
-        '**返回值**：单学期仍返回数值；传入多个学期时返回各学期结果和全部所选课程合并计算的 overallGPA。',
-        '',
-        '**多学期返回示例**：`{"semesters":[{"label":"2024-2025-2","zxjxjhh":"2024-2025-2-2","GPA":3.72}],"overallGPA":3.68}`'
-      ].join('\n'),
+      doc: {
+        title: '平均学分绩点',
+        blocks: [
+          '按学分加权计算一个或多个学期的平均学分绩点。需要教务系统已登录。不传参数时计算当前学期；可传入 academic.semesters 返回的多个 zxjxjhh。百分制和五级制成绩按北京交通大学现行换算规则计算，二级制成绩不参与。',
+          ['parameters', '`{"semesters":["2025-2026-2-2","2024-2025-2-2"]}`；`semesters` 可选，省略时使用当前学期。'],
+          ['example', '`academic.GPA()`；`academic.GPA({"semesters":["2024-2025-2-2","2023-2024-1-2"]})`'],
+          ['returns', '单学期仍返回数值；传入多个学期时返回各学期结果和全部所选课程合并计算的 overallGPA。'],
+          ['多学期返回示例', '`{"semesters":[{"label":"2024-2025-2","zxjxjhh":"2024-2025-2-2","GPA":3.72}],"overallGPA":3.68}`']
+        ]
+      },
       async run(args) {
         const result = await loadAcademicScoreStatistics(args);
         if (result.semesters.length <= 1) return result.overall.averageGpa;
@@ -1569,17 +1540,15 @@ name: 've.teachers_of_',
       module: 'academic',
       name: 'academic.scores',
       summary: '按一个或多个学期获取教务系统成绩',
-      doc: [
-        '## academic.scores —— 成绩查询',
-        '',
-        '按学期查询教务系统成绩。需要教务系统已登录。不传参数时获取当前学期成绩；传入多学期前可先调用 academic.semesters 获取页面当前实际提供的 zxjxjhh。',
-        '',
-        '**参数**：`{semesters:["2025-2026-2-2","2024-2025-2-2"]}`。semesters 也接受 academic.semesters 返回的 label，但不接受虚拟的当前学期字符串。列表中包含 currentZxjxjhh 时先获取当前学期成绩；包含其他学期时只获取一次完整历年成绩表，再按表格“学年”列筛选。某学期没有成绩时会正常返回空结果。',
-        '',
-        '**调用示例**：`academic.scores()`；`academic.scores({semesters:["2024-2025-2-2","2023-2024-1-2"]})`；`academic.semesters().then(({semesters}) => academic.scores({semesters: semesters.map(item => item.zxjxjhh)}))`',
-        '',
-        '**返回示例**：`[{"academicYear":"2024-2025-2","courseCode":"MATH1001","courseName":"高等数学","credit":"4","score":"95","bonusScore":"","teacher":"张老师","details":""}]`'
-      ].join('\n'),
+      doc: {
+        title: '成绩查询',
+        blocks: [
+          '按学期查询教务系统成绩。需要教务系统已登录。不传参数时获取当前学期成绩；传入多学期前可先调用 academic.semesters 获取页面当前实际提供的 zxjxjhh。',
+          ['parameters', '`{"semesters":["2025-2026-2-2","2024-2025-2-2"]}`。semesters 也接受 academic.semesters 返回的 label，但不接受虚拟的当前学期字符串。列表中包含 currentZxjxjhh 时先获取当前学期成绩；包含其他学期时只获取一次完整历年成绩表，再按表格“学年”列筛选。某学期没有成绩时会正常返回空结果。 `semesters` 可选，省略时查询当前学期。'],
+          ['example', '`academic.scores()`；`academic.scores({"semesters":["2024-2025-2-2","2023-2024-1-2"]})`；`academic.semesters().then(({semesters}) => academic.scores({"semesters": semesters.map(item => item.zxjxjhh)}))`'],
+          ['returnExample', '`[{"academicYear":"2024-2025-2","courseCode":"MATH1001","courseName":"高等数学","credit":"4","score":"95","bonusScore":"","teacher":"张老师","details":""}]`']
+        ]
+      },
       async run(args) {
         const value = await loadAcademicScoreRows(args);
         return (Array.isArray(value?.rows) ? value.rows : []).map(compactAcademicScore);
@@ -1589,19 +1558,16 @@ name: 've.teachers_of_',
       module: 'academic',
       name: 'academic.weightedAverageScore',
       summary: '按一个或多个学期计算加权平均成绩',
-      doc: [
-        '## academic.weightedAverageScore —— 加权平均成绩',
-        '',
-        '按学分加权计算一个或多个学期的平均成绩。需要教务系统已登录。不传参数时计算当前学期；可传入 academic.semesters 返回的多个 zxjxjhh。五级制成绩按北京交通大学现行规则换算为百分制，二级制成绩不参与。',
-        '',
-        '**参数**：`{semesters:["2025-2026-2-2","2024-2025-2-2"]}`；可省略整个参数对象以使用当前学期。',
-        '',
-        '**调用示例**：`academic.weightedAverageScore()`；`academic.weightedAverageScore({semesters:["2024-2025-2-2","2023-2024-1-2"]})`',
-        '',
-        '**返回值**：单学期仍返回数值；传入多个学期时返回各学期结果和全部所选课程合并计算的 overallWeightedAverageScore。',
-        '',
-        '**多学期返回示例**：`{"semesters":[{"label":"2024-2025-2","zxjxjhh":"2024-2025-2-2","weightedAverageScore":88.6}],"overallWeightedAverageScore":87.9}`'
-      ].join('\n'),
+      doc: {
+        title: '加权平均成绩',
+        blocks: [
+          '按学分加权计算一个或多个学期的平均成绩。需要教务系统已登录。不传参数时计算当前学期；可传入 academic.semesters 返回的多个 zxjxjhh。五级制成绩按北京交通大学现行规则换算为百分制，二级制成绩不参与。',
+          ['parameters', '`{"semesters":["2025-2026-2-2","2024-2025-2-2"]}`；`semesters` 可选，省略时使用当前学期。'],
+          ['example', '`academic.weightedAverageScore()`；`academic.weightedAverageScore({"semesters":["2024-2025-2-2","2023-2024-1-2"]})`'],
+          ['returns', '单学期仍返回数值；传入多个学期时返回各学期结果和全部所选课程合并计算的 overallWeightedAverageScore。'],
+          ['多学期返回示例', '`{"semesters":[{"label":"2024-2025-2","zxjxjhh":"2024-2025-2-2","weightedAverageScore":88.6}],"overallWeightedAverageScore":87.9}`']
+        ]
+      },
       async run(args) {
         const result = await loadAcademicScoreStatistics(args);
         if (result.semesters.length <= 1) return result.overall.weightedAverageScore;
@@ -1619,17 +1585,15 @@ name: 've.teachers_of_',
       module: 'academic',
       name: 'academic.exams',
       summary: '按一个或多个学期获取教务系统考试安排',
-      doc: [
-        '## academic.exams —— 考试查询',
-        '',
-        '按学期查询教务系统考试安排。需要教务系统已登录。不传参数时查询当前学期；可传入 academic.semesters 返回的多个 zxjxjhh。',
-        '',
-        '**参数**：`{semesters:["2025-2026-2-2","2024-2025-2-2"]}`；可省略整个参数对象以使用当前学期。',
-        '',
-        '**调用示例**：`academic.exams()`；`academic.exams({semesters:["2024-2025-2-2"]})`',
-        '',
-        '**返回示例**：[{"exam":"期末考试","course":"MATH1001 高等数学","courseCode":"MATH1001","startAt":1768006800000,"timeLocation":"2026-01-10 09:00 教室","method":"闭卷","remarks":"","registration":"已报名","status":"正常"}]'
-      ].join('\n'),
+      doc: {
+        title: '考试查询',
+        blocks: [
+          '按学期查询教务系统考试安排。需要教务系统已登录。不传参数时查询当前学期；可传入 academic.semesters 返回的多个 zxjxjhh。',
+          ['parameters', '`{"semesters":["2025-2026-2-2","2024-2025-2-2"]}`；`semesters` 可选，省略时使用当前学期。'],
+          ['example', '`academic.exams()`；`academic.exams({"semesters":["2024-2025-2-2"]})`'],
+          ['returnExample', '`[{"exam":"期末考试","course":"MATH1001 高等数学","courseCode":"MATH1001","startAt":1768006800000,"timeLocation":"2026-01-10 09:00 教室","method":"闭卷","remarks":"","registration":"已报名","status":"正常"}]`']
+        ]
+      },
       async run(args) {
         const semesters = academicScoreSemesters(args);
         const value = throwOperationFailure(await academicInvoke('exams', semesters === undefined ? {} : { zxjxjhh: semesters }, 120000), '考试安排获取失败');
@@ -1646,17 +1610,15 @@ name: 've.teachers_of_',
       module: 'academic',
       name: 'academic.schedule',
       summary: '获取教务系统课表',
-      doc: [
-        '## academic.schedule —— 课表查询',
-        '',
-        '按学期查询教务系统课表，需要教务系统已登录。不传 semesters 时查询无参数课表页声明的本学期；显式传入 academic.semesters 返回的多个 zxjxjhh 后，只返回指定学期。',
-        '',
-        '**参数**：{"semesters":["2025-2026-2-2"]}',
-        '',
-        '**调用示例**：`academic.schedule()`；`academic.schedule({semesters: ["2024-2025-2-2"]})`',
-        '',
-        '**返回示例**：`[{"semester":"2025-2026-2","xnxq":"2025-2026-2-2","rows":[],"weeks":[1,2],"currentWeek":1,"weekLabels":{},"termName":"2025-2026-2"}]`'
-      ].join('\n'),
+      doc: {
+        title: '课表查询',
+        blocks: [
+          '按学期查询教务系统课表，需要教务系统已登录。不传 semesters 时查询无参数课表页声明的本学期；显式传入 academic.semesters 返回的多个 zxjxjhh 后，只返回指定学期。',
+          ['parameters', '`{"semesters":["2025-2026-2-2"]}`。`semesters` 可选，省略时查询本学期。'],
+          ['example', '`academic.schedule()`；`academic.schedule({"semesters": ["2024-2025-2-2"]})`'],
+          ['returnExample', '`[{"semester":"2025-2026-2","xnxq":"2025-2026-2-2","rows":[],"weeks":[1,2],"currentWeek":1,"weekLabels":{},"termName":"2025-2026-2"}]`']
+        ]
+      },
       async run(args) {
         const semesters = args?.semesters;
         if (semesters !== undefined && !Array.isArray(semesters)) throw new Error('semesters 必须是学期列表');
@@ -1679,17 +1641,15 @@ name: 've.teachers_of_',
       module: 'academic',
       name: 'academic.login',
       summary: '使用当前账号或指定学号及其传入/已保存密码登录教务系统',
-      doc: [
-        '## academic.login —— 教务系统登录',
-        '',
-        '登录教务系统。studentId 可省略，此时优先使用当前账号，其次使用最近保存的账号。传入 password 时使用该密码；省略 password 时自动读取所选账号已保存的密码，如果没有可用账号或密码则报错。',
-        '',
-        '**参数**：{"studentId":"学号，可选；省略时使用当前或最近保存的账号","password":"身份证号后六位，可选；省略时使用已保存密码"}',
-        '',
-        '**调用示例**：`academic.login()`；`academic.login({studentId: "xxx"})`；`academic.login({studentId: "xxx", password: "123456"})`',
-        '',
-        '**返回示例**：{"ok":true}'
-      ].join('\n'),
+      doc: {
+        title: '教务系统登录',
+        blocks: [
+          '登录教务系统。studentId 可省略，此时优先使用当前账号，其次使用最近保存的账号。传入 password 时使用该密码；省略 password 时自动读取所选账号已保存的密码，如果没有可用账号或密码则报错。',
+          ['parameters', '`{"studentId":"学号，可选；省略时使用当前或最近保存的账号","password":"身份证号后六位，可选；省略时使用已保存密码"}`'],
+          ['example', '`academic.login()`；`academic.login({"studentId": "xxx"})`；`academic.login({"studentId": "xxx", "password": "123456"})`'],
+          ['returnExample', '`{"ok":true}`']
+        ]
+      },
       async run(args) {
         let studentId = String(args?.studentId || '').trim();
         const password = String(args?.password || '');
@@ -1709,17 +1669,15 @@ name: 've.teachers_of_',
       module: 'sso',
       name: 'sso.platform',
       summary: '查看或设置统一身份认证使用的平台（旧 CAS / 新 SSO）',
-      doc: [
-        '## sso.platform —— 统一身份认证平台选择',
-        '',
-        '查看或设置统一身份认证使用的平台。省略 platform 时只读取当前选择；传入时写入并返回新选择。默认使用新 SSO；旧 CAS 仅用于兼容旧账号。该选择影响 `sso.currentAccount`、`sso.profile`、`sso.login` 和 `sso.loginService`。',
-        '',
-        '**参数**：{"platform":"CAS（旧统一身份认证）| SSO（新统一身份认证），可选；省略时只读取"}',
-        '',
-        '**调用示例**：`sso.platform()`；`sso.platform({platform: "CAS"})`；`sso.platform({platform: "SSO"})`',
-        '',
-        '**返回示例**：{"platform":"SSO"}'
-      ].join('\n'),
+      doc: {
+        title: '统一身份认证平台选择',
+        blocks: [
+          '查看或设置统一身份认证使用的平台。省略 platform 时只读取当前选择；传入时写入并返回新选择。默认使用新 SSO；旧 CAS 仅用于兼容旧账号。该选择影响 `sso.currentAccount`、`sso.profile`、`sso.login` 和 `sso.loginService`。',
+          ['parameters', '`{"platform":"CAS（旧统一身份认证）| SSO（新统一身份认证），可选；省略时只读取"}`'],
+          ['example', '`sso.platform()`；`sso.platform({"platform": "CAS"})`；`sso.platform({"platform": "SSO"})`'],
+          ['returnExample', '`{"platform":"SSO"}`']
+        ]
+      },
       async run(args) {
         const requested = args?.platform;
         if (requested === undefined || requested === null || requested === '') {
@@ -1734,15 +1692,14 @@ name: 've.teachers_of_',
       module: 'sso',
       name: 'sso.currentAccount',
       summary: '获取统一身份认证的当前账号与平台',
-      doc: [
-        '## sso.currentAccount —— 统一身份认证当前账号',
-        '',
-        '获取统一身份认证当前偏好账号与当前平台；已保存账号请调用 `sso.accounts`。',
-        '',
-        '**调用示例**：`sso.currentAccount()`',
-        '',
-        '**返回示例**：{"loginName":"24281271","platform":"SSO"}'
-      ].join('\n'),
+      doc: {
+        title: '统一身份认证当前账号',
+        blocks: [
+          '获取统一身份认证当前偏好账号与当前平台；已保存账号请调用 `sso.accounts`。',
+          ['example', '`sso.currentAccount()`'],
+          ['returnExample', '`{"loginName":"24281271","platform":"SSO"}`']
+        ]
+      },
       async run() {
         const [platform, value] = await Promise.all([
           getIdentityPlatform(),
@@ -1757,15 +1714,14 @@ name: 've.teachers_of_',
       module: 'sso',
       name: 'sso.accounts',
       summary: '获取统一身份认证已保存的账号列表',
-      doc: [
-        '## sso.accounts —— 统一身份认证已保存账号',
-        '',
-        '获取统一身份认证已保存的账号列表，包含登录名、姓名与是否保存密码。',
-        '',
-        '**调用示例**：`sso.accounts()`',
-        '',
-        '**返回示例**：{"platform":"SSO","accounts":[{"loginName":"24281271","userName":"苏义新","hasPassword":true}]}'
-      ].join('\n'),
+      doc: {
+        title: '统一身份认证已保存账号',
+        blocks: [
+          '获取统一身份认证已保存的账号列表，包含登录名、姓名与是否保存密码。',
+          ['example', '`sso.accounts()`'],
+          ['returnExample', '`{"platform":"SSO","accounts":[{"loginName":"24281271","userName":"苏义新","hasPassword":true}]}`']
+        ]
+      },
       async run() {
         const [platform, value] = await Promise.all([
           getIdentityPlatform(),
@@ -1786,17 +1742,15 @@ name: 've.teachers_of_',
       module: 'sso',
       name: 'sso.profile',
       summary: '按所选平台获取统一身份认证个人信息',
-      doc: [
-        '## sso.profile —— 统一身份认证个人信息',
-        '',
-        '按 `sso.platform` 当前选择读取个人信息。两平台共同返回 `userName`；旧 CAS 额外返回 `email`，新 SSO 额外返回 `loginName` 且没有 `email`。需要对应平台已登录；未登录时返回 `LOGIN_REQUIRED`。',
-        '',
-        '**平台差异**：CAS 读取 `https://cas.bjtu.edu.cn/profile/`；SSO 读取 UC 用户信息接口 `https://uc.bjtu.edu.cn/api/uc/userinfo`。',
-        '',
-        '**调用示例**：`sso.profile()`',
-        '',
-        '**返回示例**：{"platform":"CAS","userName":"苏义新","email":"24281271@bjtu.edu.cn"}；{"platform":"SSO","loginName":"24281271","userName":"苏义新"}'
-      ].join('\n'),
+      doc: {
+        title: '统一身份认证个人信息',
+        blocks: [
+          '按 `sso.platform` 当前选择读取个人信息。两平台共同返回 `userName`；旧 CAS 额外返回 `email`，新 SSO 额外返回 `loginName` 且没有 `email`。需要对应平台已登录；未登录时返回 `LOGIN_REQUIRED`。',
+          ['平台差异', 'CAS 读取 `https://cas.bjtu.edu.cn/profile/`；SSO 读取 UC 用户信息接口 `https://uc.bjtu.edu.cn/api/uc/userinfo`。'],
+          ['example', '`sso.profile()`'],
+          ['returnExample', '`{"platform":"CAS","userName":"苏义新","email":"24281271@bjtu.edu.cn"}`；`{"platform":"SSO","loginName":"24281271","userName":"苏义新"}`']
+        ]
+      },
       async run() {
         const platform = await getIdentityPlatform();
         const internals = requireGlobal('BjtuSsoSystemInternals');
@@ -1818,19 +1772,16 @@ name: 've.teachers_of_',
       module: 'sso',
       name: 'sso.login',
       summary: '按所选平台使用传入或已保存的账号密码登录',
-      doc: [
-        '## sso.login —— 统一身份认证登录',
-        '',
-        '按 `sso.platform` 当前选择登录对应平台。loginName 可省略，此时优先使用当前偏好账号，其次使用最近保存的可登录账号；传入 password 时使用该密码，省略时使用该账号已保存的密码。验证码由本地模型自动识别，需要先在「本地验证码识别」中安装 MIS 资源。',
-        '',
-        '**平台差异**：CAS 登录 `cas.bjtu.edu.cn`；SSO 登录 `sso.bjtu.edu.cn`。两平台的账号列表与已保存密码共用。',
-        '',
-        '**参数**：{"loginName":"学号/账号，可选","password":"密码，可选；省略时使用已保存密码"}',
-        '',
-        '**调用示例**：`sso.login()`；`sso.login({loginName: "xxx"})`；`sso.login({loginName: "xxx", password: "xxx"})`',
-        '',
-        '**返回示例**：{"ok":true,"platform":"SSO"}'
-      ].join('\n'),
+      doc: {
+        title: '统一身份认证登录',
+        blocks: [
+          '按 `sso.platform` 当前选择登录对应平台。loginName 可省略，此时优先使用当前偏好账号，其次使用最近保存的可登录账号；传入 password 时使用该密码，省略时使用该账号已保存的密码。验证码由本地模型自动识别，需要先在「本地验证码识别」中安装 MIS 资源。',
+          ['平台差异', 'CAS 登录 `cas.bjtu.edu.cn`；SSO 登录 `sso.bjtu.edu.cn`。两平台的账号列表与已保存密码共用。'],
+          ['parameters', '`{"loginName":"学号/账号，可选","password":"密码，可选；省略时使用已保存密码"}`'],
+          ['example', '`sso.login()`；`sso.login({"loginName": "xxx"})`；`sso.login({"loginName": "xxx", "password": "xxx"})`'],
+          ['returnExample', '`{"ok":true,"platform":"SSO"}`']
+        ]
+      },
       async run(args) {
         const platform = await getIdentityPlatform();
         let loginName = String(args?.loginName || '').trim();
@@ -1858,19 +1809,16 @@ name: 've.teachers_of_',
       module: 'sso',
       name: 'sso.loginService',
       summary: '通过统一身份认证登录智慧课程平台/教务系统/邮箱',
-      doc: [
-        '## sso.loginService —— 通过统一身份认证登录服务',
-        '',
-        '通过统一身份认证登录对应服务：打开该服务的入口页，等待用户在新标签页完成登录后返回。若会话已存在则直接返回 alreadyLoggedIn=true，不会重复打开页面。返回值包含当前 `platform`。',
-        '',
-        '**平台差异**：三种服务的 ve/academic 入口本身由学校统一身份认证决定跳转平台；mail 的无头兜底严格按 `sso.platform` 选择：SSO 调用新 SSO 登录，CAS 调用旧 CAS 登录。',
-        '',
-        '**参数**：{"service":"ve（智慧课程平台）| academic（教务系统）| mail（邮箱），必填"}',
-        '',
-        '**调用示例**：`sso.loginService({service: "ve"})`；`sso.loginService({service: "academic"})`；`sso.loginService({service: "mail"})`',
-        '',
-        '**返回示例**：{"ok":true,"service":"ve","platform":"SSO","loginName":"z24281271","userName":"苏义新"}；{"ok":true,"service":"academic","platform":"SSO","studentId":"24281271"}；{"ok":true,"service":"mail","platform":"SSO","sid":"…","viaSavedPassword":true}'
-      ].join('\n'),
+      doc: {
+        title: '通过统一身份认证登录服务',
+        blocks: [
+          '通过统一身份认证登录对应服务：打开该服务的入口页，等待用户在新标签页完成登录后返回。若会话已存在则直接返回 alreadyLoggedIn=true，不会重复打开页面。返回值包含当前 `platform`。',
+          ['平台差异', '三种服务的 ve/academic 入口本身由学校统一身份认证决定跳转平台；mail 的无头兜底严格按 `sso.platform` 选择：SSO 调用新 SSO 登录，CAS 调用旧 CAS 登录。'],
+          ['parameters', '`{"service":"ve（智慧课程平台）| academic（教务系统）| mail（邮箱），必填"}`'],
+          ['example', '`sso.loginService({"service": "ve"})`；`sso.loginService({"service": "academic"})`；`sso.loginService({"service": "mail"})`'],
+          ['returnExample', '`{"ok":true,"service":"ve","platform":"SSO","loginName":"z24281271","userName":"苏义新"}`；`{"ok":true,"service":"academic","platform":"SSO","studentId":"24281271"}`；`{"ok":true,"service":"mail","platform":"SSO","sid":"…","viaSavedPassword":true}`']
+        ]
+      },
       async run(args) {
         const service = String(args?.service || '').trim().toLowerCase();
         const aliases = new Map([
@@ -1889,15 +1837,14 @@ name: 've.teachers_of_',
       module: 'mail',
       name: 'mail.status',
       summary: '获取邮件监控开关、检查间隔与最近一次检查结果',
-      doc: [
-        '## mail.status —— 邮件监控状态',
-        '',
-        '获取 BJTU 邮件系统监控的启用状态、检查间隔与最近一次检查结果（含收件箱总数与未读数）。',
-        '',
-        '**调用示例**：`mail.status()`',
-        '',
-        '**返回示例**：{"enabled":true,"intervalMinutes":10,"status":{"status":"ok","total":363,"unreadCount":7,"checkedAt":1723456789012}}'
-      ].join('\n'),
+      doc: {
+        title: '邮件监控状态',
+        blocks: [
+          '获取 BJTU 邮件系统监控的启用状态、检查间隔与最近一次检查结果（含收件箱总数与未读数）。',
+          ['example', '`mail.status()`'],
+          ['returnExample', '`{"enabled":true,"intervalMinutes":10,"status":{"status":"ok","total":363,"unreadCount":7,"checkedAt":1723456789012}}`']
+        ]
+      },
       async run() {
         const result = await mailInvoke('status');
         if (!result || typeof result !== 'object') return result;
@@ -1909,19 +1856,16 @@ name: 've.teachers_of_',
       module: 'mail',
       name: 'mail.inbox',
       summary: '立即检测收件箱并返回最近邮件列表、总数与未读数',
-      doc: [
-        '## mail.inbox —— 收件箱检测',
-        '',
-        '立即触发一次邮件检测（忽略监控开关），返回最近邮件列表、收件箱总数与未读数。未登录时会自动通过 CAS 使用已保存的账号密码登录邮箱；若没有已保存的 CAS 账号密码则报错。',
-        '',
-        '**参数**：{"limit":"可选；省略时固定返回最近 10 条；传入 0、空字符串或 null 时返回全部邮件；正整数表示返回最近指定条数"}',
-        '',
-        '**调用示例**：`mail.inbox()`；`mail.inbox({limit: 20})`；`mail.inbox({limit: 0})`',
-        '',
-        '**邮件页面链接**：每条邮件的 `readUrl` 已由扩展使用当前邮箱会话的 `sid` 拼接完成，可直接打开。其格式为 `https://mail.bjtu.edu.cn/coremail/XT/index.jsp?sid=<当前 sid>#mail.read|${JSON.stringify({fid: 1, mid: row.id, mboxa: ""})}`；其中收件箱的 `fid` 为 `1`，`mid` 使用该邮件的 `id`。由于 `sid` 可能过期，应优先使用本次调用返回的 `readUrl`。',
-        '',
-        '**返回示例**：{"rows":[{"id":"…","subject":"…","from":"\\"张三\\" <xx@bjtu.edu.cn>","to":"…","summary":"…","sentDate":"…","receivedDate":"2026-08-19 16:18:49","read":false,"attached":true,"threadMessageCount":1,"readUrl":"https://mail.bjtu.edu.cn/coremail/XT/index.jsp?sid=…#mail.read|{…}"}],"total":363,"unreadCount":7}'
-      ].join('\n'),
+      doc: {
+        title: '收件箱检测',
+        blocks: [
+          '立即触发一次邮件检测（忽略监控开关），返回最近邮件列表、收件箱总数与未读数。未登录时会自动通过 CAS 使用已保存的账号密码登录邮箱；若没有已保存的 CAS 账号密码则报错。',
+          ['parameters', '`{"limit":"可选；省略时固定返回最近 10 条；传入 0、空字符串或 null 时返回全部邮件；正整数表示返回最近指定条数"}`'],
+          ['example', '`mail.inbox()`；`mail.inbox({"limit": 20})`；`mail.inbox({"limit": 0})`'],
+          ['邮件页面链接', '每条邮件的 `readUrl` 已由扩展使用当前邮箱会话的 `sid` 拼接完成，可直接打开。其格式为 `https://mail.bjtu.edu.cn/coremail/XT/index.jsp?sid=<当前 sid>#mail.read|${JSON.stringify({fid: 1, mid: row.id, mboxa: ""})}`；其中收件箱的 `fid` 为 `1`，`mid` 使用该邮件的 `id`。由于 `sid` 可能过期，应优先使用本次调用返回的 `readUrl`。'],
+          ['returnExample', '`{"rows":[{"id":"…","subject":"…","from":"\\"张三\\" <xx@bjtu.edu.cn>","to":"…","summary":"…","sentDate":"…","receivedDate":"2026-08-19 16:18:49","read":false,"attached":true,"threadMessageCount":1,"readUrl":"https://mail.bjtu.edu.cn/coremail/XT/index.jsp?sid=…#mail.read|{…}"}],"total":363,"unreadCount":7}`']
+        ]
+      },
       async run(args) {
         const hasLimit = !!args && Object.prototype.hasOwnProperty.call(args, 'limit');
         const requestedLimit = hasLimit ? args.limit : 10;
@@ -1959,15 +1903,14 @@ name: 've.teachers_of_',
       module: 'mail',
       name: 'mail.user',
       summary: '获取邮箱地址与姓名',
-      doc: [
-        '## mail.user —— 邮箱用户信息',
-        '',
-        '通过 user:getAttrs 接口获取当前邮箱账号的邮箱地址（email）与姓名（true_name）。未登录时会自动通过 CAS 使用已保存的账号密码登录邮箱。',
-        '',
-        '**调用示例**：`mail.user()`',
-        '',
-        '**返回示例**：{"email":"24281271@bjtu.edu.cn","trueName":"苏义新","ou":"student"}'
-      ].join('\n'),
+      doc: {
+        title: '邮箱用户信息',
+        blocks: [
+          '通过 user:getAttrs 接口获取当前邮箱账号的邮箱地址（email）与姓名（true_name）。未登录时会自动通过 CAS 使用已保存的账号密码登录邮箱。',
+          ['example', '`mail.user()`'],
+          ['returnExample', '`{"email":"24281271@bjtu.edu.cn","trueName":"苏义新","ou":"student"}`']
+        ]
+      },
       async run() {
         const result = await mailInvoke('user');
         if (result?.ok === false) {
@@ -1983,15 +1926,14 @@ name: 've.teachers_of_',
       module: 'mooc',
       name: 'mooc.courseList',
       summary: '获取中国大学MOOC课程列表',
-      doc: [
-        '## mooc.courseList —— MOOC 课程列表',
-        '',
-        '直接读取 app.html 已加载的中国大学MOOC课程缓存，不会打开或请求 MOOC 页面。平台未启用或未登录时，请先调用 mooc.login()。',
-        '',
-        '**调用示例**：`mooc.courseList()`',
-        '',
-        '**返回示例**：`[{"id":"…","name":"课程名","schoolName":"学校","url":"https://…","taskCount":3,"loaded":true}]`'
-      ].join('\n'),
+      doc: {
+        title: 'MOOC 课程列表',
+        blocks: [
+          '直接读取 app.html 已加载的中国大学MOOC课程缓存，不会打开或请求 MOOC 页面。平台未启用或未登录时，请先调用 mooc.login()。',
+          ['example', '`mooc.courseList()`'],
+          ['returnExample', '`[{"id":"…","name":"课程名","schoolName":"学校","url":"https://…","taskCount":3,"loaded":true}]`']
+        ]
+      },
       async run() {
         return pageInvoke('mooc', 'courseList', {}, 120000);
       }
@@ -2000,15 +1942,14 @@ name: 've.teachers_of_',
       module: 'mooc',
       name: 'mooc.status',
       summary: '检查中国大学MOOC登录状态',
-      doc: [
-        '## mooc.status —— MOOC 登录状态',
-        '',
-        '检查当前是否已登录中国大学MOOC。',
-        '',
-        '**调用示例**：`mooc.status()`',
-        '',
-        '**返回示例**：{"loggedIn":true,"loaded":true}'
-      ].join('\n'),
+      doc: {
+        title: 'MOOC 登录状态',
+        blocks: [
+          '检查当前是否已登录中国大学MOOC。',
+          ['example', '`mooc.status()`'],
+          ['returnExample', '`{"loggedIn":true,"loaded":true}`']
+        ]
+      },
       async run() {
         return compactPlatformStatus(await pageInvoke('mooc', 'status', {}, 60000));
       }
@@ -2017,17 +1958,15 @@ name: 've.teachers_of_',
       module: 'mooc',
       name: 'mooc.assignments_of_',
       summary: '从缓存读取指定中国大学MOOC课程的作业',
-      doc: [
-        '## mooc.assignments_of_ —— MOOC 课程作业',
-        '',
-        '直接筛选 app.html 已加载的指定课程作业缓存，不会打开或请求 MOOC 页面。平台未启用或未登录时，请先调用 mooc.login()。status、type 与 mooc.assignments 使用相同筛选规则，省略时均为 all；返回结果保留详情。',
-        '',
-        '**参数**：`{"courseId":"课程ID，必填","status":"all|pending|submitted|overdue，默认 all","type":"all|单元作业|单元测试|考试|视频|文档|讨论，默认 all"}`',
-        '',
-        '**调用示例**：`mooc.assignments_of_({courseId: "xxx", status: "pending"})`',
-        '',
-        '**返回示例**：`[{"id":"…","title":"作业名","type":"单元作业","startTime":0,"deadline":1234567890000,"status":"pending","details":{"questions":[]},"actionUrl":"https://…"}]`。details 为已加载的试卷或作业题目详情。'
-      ].join('\n'),
+      doc: {
+        title: 'MOOC 课程作业',
+        blocks: [
+          '直接筛选 app.html 已加载的指定课程作业缓存，不会打开或请求 MOOC 页面。平台未启用或未登录时，请先调用 mooc.login()。status、type 与 mooc.assignments 使用相同筛选规则，省略时均为 all；返回结果保留详情。',
+          ['parameters', '`{"courseId":"课程ID，必填","status":"可选，all|pending|submitted|overdue，默认 all","type":"可选，all|单元作业|单元测试|考试|视频|文档|讨论，默认 all"}`'],
+          ['example', '`mooc.assignments_of_({"courseId": "xxx", "status": "pending"})`'],
+          ['returnExample', '`[{"id":"…","title":"作业名","type":"单元作业","startTime":0,"deadline":1234567890000,"status":"pending","details":{"questions":[]},"actionUrl":"https://…"}]`。details 为已加载的试卷或作业题目详情。']
+        ]
+      },
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
         if (!courseId) throw new Error('缺少参数 courseId，请先调用 mooc.courseList 获取课程ID');
@@ -2042,17 +1981,15 @@ name: 've.teachers_of_',
       module: 'mooc',
       name: 'mooc.teachers_of_',
       summary: '从缓存读取指定中国大学MOOC课程的教师列表',
-      doc: [
-        '## mooc.teachers_of_ —— MOOC 课程教师',
-        '',
-        '直接读取 app.html 已加载的指定课程教师缓存，不会打开或请求 MOOC 页面。courseId 可先调用 mooc.courseList 获取。',
-        '',
-        '**参数**：`{"courseId":"课程ID，必填"}`',
-        '',
-        '**调用示例**：`mooc.teachers_of_({courseId: "xxx"})`',
-        '',
-        '**返回示例**：`[{"name":"老师","url":"https://www.icourse163.org/u/…"}]`'
-      ].join('\n'),
+      doc: {
+        title: 'MOOC 课程教师',
+        blocks: [
+          '直接读取 app.html 已加载的指定课程教师缓存，不会打开或请求 MOOC 页面。courseId 可先调用 mooc.courseList 获取。',
+          ['parameters', '`{"courseId":"课程ID，必填"}`'],
+          ['example', '`mooc.teachers_of_({"courseId": "xxx"})`'],
+          ['returnExample', '`[{"name":"老师","url":"https://www.icourse163.org/u/…"}]`']
+        ]
+      },
       async run(args) {
         const courseId = String(args?.courseId || '').trim();
         if (!courseId) throw new Error('缺少参数 courseId，请先调用 mooc.courseList 获取课程ID');
@@ -2063,17 +2000,15 @@ name: 've.teachers_of_',
       module: 'mooc',
       name: 'mooc.assignments',
       summary: '按状态与类型查询中国大学MOOC所有课程的作业',
-      doc: [
-        '## mooc.assignments —— 全平台作业查询',
-        '',
-        '筛选 app.html 已加载的中国大学MOOC作业及课件，不会为查询作业自动打开或请求 MOOC 页面。平台未启用或未完成登录时，请先调用 mooc.login()。status：all（默认）/ pending（未交）/ submitted（已交）/ overdue（逾期）。type：all（默认）/ 单元作业 / 单元测试 / 考试 / 视频 / 文档 / 讨论。',
-        '',
-        '**参数**：{"status":"all|pending|submitted|overdue，默认 all","type":"all|单元作业|单元测试|考试|视频|文档|讨论，默认 all"}',
-        '',
-        '**调用示例**：`mooc.assignments({status: "pending", type: "单元作业"})`',
-        '',
-        '**返回示例**：{"total":1,"items":[{"key":"mooc:…:…","courseName":"课程名","title":"作业名","type":"单元作业","status":"pending","deadline":1234567890000,"actionUrl":"https://…"}]}'
-      ].join('\n'),
+      doc: {
+        title: '全平台作业查询',
+        blocks: [
+          '筛选 app.html 已加载的中国大学MOOC作业及课件，不会为查询作业自动打开或请求 MOOC 页面。平台未启用或未完成登录时，请先调用 mooc.login()。status：all（默认）/ pending（未交）/ submitted（已交）/ overdue（逾期）。type：all（默认）/ 单元作业 / 单元测试 / 考试 / 视频 / 文档 / 讨论。',
+          ['parameters', '`{"status":"可选，all|pending|submitted|overdue，默认 all","type":"可选，all|单元作业|单元测试|考试|视频|文档|讨论，默认 all"}`'],
+          ['example', '`mooc.assignments({"status": "pending", "type": "单元作业"})`'],
+          ['returnExample', '`{"total":1,"items":[{"key":"mooc:…:…","courseName":"课程名","title":"作业名","type":"单元作业","status":"pending","deadline":1234567890000,"actionUrl":"https://…"}]}`']
+        ]
+      },
       async run(args) {
         const value = await pageInvoke('mooc', 'assignments', { status: String(args?.status || 'all'), type: String(args?.type || 'all') }, 240000);
         return { ...value };
@@ -2083,17 +2018,15 @@ name: 've.teachers_of_',
       module: 'captcha',
       name: 'captcha.recognize',
       summary: '识别验证码图片',
-      doc: [
-        '## captcha.recognize —— 验证码识别',
-        '',
-        '识别验证码图片，返回识别结果。图片须为可访问的 URL。支持两类识别模型：Tesseract OCR 模型与 omis.onnx（CAS 验证码识别模型）。',
-        '',
-        '**参数**：{"imageUrl":"图片URL，必填","model":"可选。指定 omis/cas/omis.onnx 时使用 omis.onnx 模型识别（返回 expression/answer）；指定其他值时按 Tesseract OCR 模型版本处理（如 4.0.0_fast，返回 passcode）；省略时使用默认验证码识别（omis.onnx）"}',
-        '',
-        '**调用示例**：`captcha.recognize({imageUrl: "https://…", model: "omis.onnx"})` 或 `captcha.recognize({imageUrl: "https://…", model: "4.0.0_fast"})`',
-        '',
-        '**返回示例**：{"passcode":"1234"}'
-      ].join('\n'),
+      doc: {
+        title: '验证码识别',
+        blocks: [
+          '识别验证码图片，返回识别结果。图片须为可访问的 URL。支持两类识别模型：Tesseract OCR 模型与 omis.onnx（CAS 验证码识别模型）。',
+          ['parameters', '`{"imageUrl":"图片URL，必填","model":"可选。指定 omis/cas/omis.onnx 时使用 omis.onnx 模型识别（返回 expression/answer）；指定其他值时按 Tesseract OCR 模型版本处理（如 4.0.0_fast，返回 passcode）；省略时使用默认验证码识别（omis.onnx）"}`'],
+          ['example', '`captcha.recognize({"imageUrl": "https://…", "model": "omis.onnx"})` 或 `captcha.recognize({"imageUrl": "https://…", "model": "4.0.0_fast"})`'],
+          ['returnExample', '`{"passcode":"1234"}`']
+        ]
+      },
       async run(args) {
         const imageUrl = String(args?.imageUrl || '').trim();
         if (!imageUrl) throw new Error('缺少参数 imageUrl');
@@ -2120,15 +2053,14 @@ name: 've.teachers_of_',
       module: 'captcha',
       name: 'captcha.models',
       summary: '列出验证码识别已安装的 OCR 模型',
-      doc: [
-        '## captcha.models —— 获取已安装模型',
-        '',
-        '列出验证码识别可用模型（Tesseract OCR 与 omis.onnx）及其安装状态，并标识当前选中的 Tesseract 模型。',
-        '',
-        '**调用示例**：`captcha.models()`',
-        '',
-        '**返回示例**：[{"version":"4.0.0_fast","label":"4.0.0 Fast（原内置模型，推荐）","installed":true,"selected":true},{"version":"omis.onnx","label":"omis.onnx（CAS 验证码识别模型）","installed":true,"selected":false}]'
-      ].join('\n'),
+      doc: {
+        title: '获取已安装模型',
+        blocks: [
+          '列出验证码识别可用模型（Tesseract OCR 与 omis.onnx）及其安装状态，并标识当前选中的 Tesseract 模型。',
+          ['example', '`captcha.models()`'],
+          ['returnExample', '`[{"version":"4.0.0_fast","label":"4.0.0 Fast（原内置模型，推荐）","installed":true,"selected":true},{"version":"omis.onnx","label":"omis.onnx（CAS 验证码识别模型）","installed":true,"selected":false}]`']
+        ]
+      },
       async run() {
         const assets = requireGlobal('BjtuCaptchaAssets');
         const versions = await assets.getModelVersions();
@@ -2167,15 +2099,14 @@ name: 've.teachers_of_',
       module: 'campusnet',
       name: 'campusnet.status',
       summary: '获取校园网自动重连的启用状态与最近结果',
-      doc: [
-        '## campusnet.status —— 校园网重连状态',
-        '',
-        '获取校园网自动重连的启用状态、账号、间隔与最近一次检查结果。',
-        '',
-        '**调用示例**：`campusnet.status()`',
-        '',
-        '**返回示例**：{"enabled":true,"account":"zhangsan","intervalSeconds":60,"status":{"status":"online","message":"已经在线。","account":"zhangsan"}}'
-      ].join('\n'),
+      doc: {
+        title: '校园网重连状态',
+        blocks: [
+          '获取校园网自动重连的启用状态、账号、间隔与最近一次检查结果。',
+          ['example', '`campusnet.status()`'],
+          ['returnExample', '`{"enabled":true,"account":"zhangsan","intervalSeconds":60,"status":{"status":"online","message":"已经在线。","account":"zhangsan"}}`']
+        ]
+      },
       async run() {
         const stored = await chrome.storage.local.get([
           'campusNetworkReconnectEnabled',
@@ -2197,15 +2128,14 @@ name: 've.teachers_of_',
       module: 'campusnet',
       name: 'campusnet.reconnect',
       summary: '启用校园网自动重连并立即触发一次认证检查',
-      doc: [
-        '## campusnet.reconnect —— 触发校园网重连',
-        '',
-        '开启校园网自动重连（若未启用）并立即触发一次认证检查。需要账号与密码已在校园网设置中保存。',
-        '',
-        '**调用示例**：`campusnet.reconnect()`',
-        '',
-        '**返回示例**：{"triggered":true,"status":"success","message":"Portal协议认证成功！","checkedAt":1723456789012}'
-      ].join('\n'),
+      doc: {
+        title: '触发校园网重连',
+        blocks: [
+          '开启校园网自动重连（若未启用）并立即触发一次认证检查。需要账号与密码已在校园网设置中保存。',
+          ['example', '`campusnet.reconnect()`'],
+          ['returnExample', '`{"triggered":true,"status":"success","message":"Portal协议认证成功！","checkedAt":1723456789012}`']
+        ]
+      },
       async run() {
         await chrome.storage.local.set({ campusNetworkReconnectEnabled: true }).catch(() => {});
         const service = requireGlobal('BjtuCampusNetworkReconnect');
@@ -2225,15 +2155,14 @@ name: 've.teachers_of_',
       module: 'mrjzy',
       name: 'mrjzy.courseList',
       summary: '获取每日交作业当前账号的课程列表',
-      doc: [
-        '## mrjzy.courseList —— 每日交作业课程列表',
-        '',
-        '获取每日交作业平台当前账号的课程（班级）列表。需要已打开助手页面并在 zuoye.lulufind.com 登录。',
-        '',
-        '**调用示例**：`mrjzy.courseList()`',
-        '',
-        '**返回示例**：[{"classNum":"…","divClass":"课程名","teacherName":"老师","homeworkCount":3}]'
-      ].join('\n'),
+      doc: {
+        title: '每日交作业课程列表',
+        blocks: [
+          '获取每日交作业平台当前账号的课程（班级）列表。需要已打开助手页面并在 zuoye.lulufind.com 登录。',
+          ['example', '`mrjzy.courseList()`'],
+          ['returnExample', '`[{"classNum":"…","divClass":"课程名","teacherName":"老师","homeworkCount":3}]`']
+        ]
+      },
       async run() {
         const value = await pageInvoke('mrjzy', 'courseList', {}, 120000);
         if (String(value?.loginState || '') !== 'online') throw Object.assign(new Error('每日交作业未登录，请先调用 mrjzy.login 完成登录后再获取课程列表'), { code: 'LOGIN_REQUIRED' });
@@ -2244,17 +2173,15 @@ name: 've.teachers_of_',
       module: 'mrjzy',
       name: 'mrjzy.assignments_of_',
       summary: '根据 classNum 获取每日交作业指定班级的作业列表',
-      doc: [
-        '## mrjzy.assignments_of_ —— 每日交作业课程作业',
-        '',
-        '根据 classNum（班级号）获取每日交作业指定班级的作业列表及详情。classNum 可先调用 mrjzy.courseList 获取。需要已打开助手页面并登录。status 与 mrjzy.assignments 使用相同筛选规则，默认 all；本平台不区分作业类型，type 仅支持 all。',
-        '',
-        '**参数**：{"classNum":"班级号，必填","status":"all|pending|submitted|overdue，默认 all","type":"all，本平台仅支持 all"}',
-        '',
-        '**调用示例**：`mrjzy.assignments_of_({classNum: "xxx", status: "pending", type: "all"})`',
-        '',
-        '**返回示例**：[{"id":"…","title":"作业名","startTime":0,"deadline":1767225600000,"status":"pending","details":{},"link":"https://…"}]。details 为每日交作业详情接口返回的数据。'
-      ].join('\n'),
+      doc: {
+        title: '每日交作业课程作业',
+        blocks: [
+          '根据 classNum（班级号）获取每日交作业指定班级的作业列表及详情。classNum 可先调用 mrjzy.courseList 获取。需要已打开助手页面并登录。status 与 mrjzy.assignments 使用相同筛选规则，默认 all；本平台不区分作业类型，type 仅支持 all。',
+          ['parameters', '`{"classNum":"班级号，必填","status":"可选，all|pending|submitted|overdue，默认 all","type":"可选，all，本平台仅支持 all（默认）"}`'],
+          ['example', '`mrjzy.assignments_of_({"classNum": "xxx", "status": "pending", "type": "all"})`'],
+          ['returnExample', '`[{"id":"…","title":"作业名","startTime":0,"deadline":1767225600000,"status":"pending","details":{},"link":"https://…"}]`。details 为每日交作业详情接口返回的数据。']
+        ]
+      },
       async run(args) {
         const classNum = String(args?.classNum || '').trim();
         if (!classNum) throw new Error('缺少参数 classNum，请先调用 mrjzy.courseList 获取班级号');
@@ -2278,17 +2205,15 @@ name: 've.teachers_of_',
       module: 'mrjzy',
       name: 'mrjzy.assignments',
       summary: '按状态查询每日交作业所有班级的作业',
-      doc: [
-        '## mrjzy.assignments —— 全平台作业查询',
-        '',
-        '遍历每日交作业当前账号所有班级，按提交状态查询作业。本平台不区分作业类型，type 仅支持 all。status：all（默认）/ pending（未交）/ submitted（已交）/ overdue（逾期）。',
-        '',
-        '**参数**：{"status":"all|pending|submitted|overdue，默认 all","type":"all，本平台仅支持 all"}',
-        '',
-        '**调用示例**：`mrjzy.assignments({status: "pending"})`',
-        '',
-        '**返回示例**：{"total":1,"items":[{"key":"mrjzy:…:…","courseName":"课程名","title":"作业名","status":"pending","deadline":1234567890000,"actionUrl":"https://…"}]}'
-      ].join('\n'),
+      doc: {
+        title: '全平台作业查询',
+        blocks: [
+          '遍历每日交作业当前账号所有班级，按提交状态查询作业。本平台不区分作业类型，type 仅支持 all。status：all（默认）/ pending（未交）/ submitted（已交）/ overdue（逾期）。',
+          ['parameters', '`{"status":"可选，all|pending|submitted|overdue，默认 all","type":"可选，all，本平台仅支持 all（默认）"}`'],
+          ['example', '`mrjzy.assignments({"status": "pending"})`'],
+          ['returnExample', '`{"total":1,"items":[{"key":"mrjzy:…:…","courseName":"课程名","title":"作业名","status":"pending","deadline":1234567890000,"actionUrl":"https://…"}]}`']
+        ]
+      },
       async run(args) {
         const matches = assignmentFilter(args);
         const courseList = await pageInvoke('mrjzy', 'courseList', {}, 120000);
@@ -2328,15 +2253,14 @@ name: 've.teachers_of_',
       module: 'mrjzy',
       name: 'mrjzy.status',
       summary: '检查每日交作业登录状态',
-      doc: [
-        '## mrjzy.status —— 每日交作业登录状态',
-        '',
-        '检查当前是否已登录每日交作业平台。',
-        '',
-        '**调用示例**：`mrjzy.status()`',
-        '',
-        '**返回示例**：{"loggedIn":true,"loaded":true}'
-      ].join('\n'),
+      doc: {
+        title: '每日交作业登录状态',
+        blocks: [
+          '检查当前是否已登录每日交作业平台。',
+          ['example', '`mrjzy.status()`'],
+          ['returnExample', '`{"loggedIn":true,"loaded":true}`']
+        ]
+      },
       async run() {
         return compactPlatformStatus(await pageInvoke('mrjzy', 'status', {}, 60000));
       }
@@ -2345,17 +2269,15 @@ name: 've.teachers_of_',
       module: 'mrjzy',
       name: 'mrjzy.login',
       summary: '按需启用并触发每日交作业登录流程',
-      doc: [
-        '## mrjzy.login —— 每日交作业登录',
-        '',
-        '可传入手机号和密码直接登录；如果该手机号已保存密码，可只传 phone。一个账号存在多个身份或班级且没有保存过选择时，会显示身份选择窗口；也可传入 openId 和 classId 直接指定。无参调用时，每日交作业尚未启用才启用并触发登录流程，已经启用则直接返回当前状态。',
-        '',
-        '**参数**：{"phone":"手机号，可选","password":"密码，可选；省略时读取该手机号已保存的密码","openId":"身份 openId，可选","classId":"班级 ID，可选"}',
-        '',
-        '**调用示例**：`mrjzy.login()`；`mrjzy.login({phone: "130xxxxxxxx"})`；`mrjzy.login({phone: "130xxxxxxxx", password: "密码"})`',
-        '',
-        '**返回示例**：{"ok":true}'
-      ].join('\n'),
+      doc: {
+        title: '每日交作业登录',
+        blocks: [
+          '可传入手机号和密码直接登录；如果该手机号已保存密码，可只传 phone。一个账号存在多个身份或班级且没有保存过选择时，会显示身份选择窗口；也可传入 openId 和 classId 直接指定。无参调用时，每日交作业尚未启用才启用并触发登录流程，已经启用则直接返回当前状态。',
+          ['parameters', '`{"phone":"手机号，可选","password":"密码，可选；省略时读取该手机号已保存的密码","openId":"身份 openId，可选","classId":"班级 ID，可选"}`'],
+          ['example', '`mrjzy.login()`；`mrjzy.login({"phone": "130xxxxxxxx"})`；`mrjzy.login({"phone": "130xxxxxxxx", "password": "密码"})`'],
+          ['returnExample', '`{"ok":true}`']
+        ]
+      },
       async run(args) {
         return compactLoginResult(await pageInvoke('mrjzy', 'login', {
           phone: String(args?.phone || '').trim(),
@@ -2370,15 +2292,14 @@ name: 've.teachers_of_',
       module: 'jlgj',
       name: 'jlgj.courseList',
       summary: '获取接龙管家当前账号的课程列表',
-      doc: [
-        '## jlgj.courseList —— 接龙管家课程列表',
-        '',
-        '获取接龙管家平台当前账号的群组（课程）列表。需要已打开助手页面并在 i.jielong.com 登录。',
-        '',
-        '**调用示例**：`jlgj.courseList()`',
-        '',
-        '**返回示例**：[{"groupId":"…","name":"群组名","teacherName":"老师","homeworkCount":2}]'
-      ].join('\n'),
+      doc: {
+        title: '接龙管家课程列表',
+        blocks: [
+          '获取接龙管家平台当前账号的群组（课程）列表。需要已打开助手页面并在 i.jielong.com 登录。',
+          ['example', '`jlgj.courseList()`'],
+          ['returnExample', '`[{"groupId":"…","name":"群组名","teacherName":"老师","homeworkCount":2}]`']
+        ]
+      },
       async run() {
         const value = await pageInvoke('jlgj', 'courseList', {}, 120000);
         if (String(value?.loginState || '') !== 'online') throw Object.assign(new Error('接龙管家未登录，请先调用 jlgj.login 完成登录后再获取课程列表'), { code: 'LOGIN_REQUIRED' });
@@ -2389,17 +2310,15 @@ name: 've.teachers_of_',
       module: 'jlgj',
       name: 'jlgj.assignments_of_',
       summary: '根据 groupId 获取接龙管家指定群组的作业列表',
-      doc: [
-        '## jlgj.assignments_of_ —— 接龙管家课程作业',
-        '',
-        '根据 groupId（群组ID）获取接龙管家指定群组的作业列表。groupId 可先调用 jlgj.courseList 获取。需要已打开助手页面并登录。status 与 jlgj.assignments 使用相同筛选规则，默认 all；本平台不区分作业类型，type 仅支持 all。',
-        '',
-        '**参数**：{"groupId":"群组ID，必填","status":"all|pending|submitted|overdue，默认 all","type":"all，本平台仅支持 all"}',
-        '',
-        '**调用示例**：`jlgj.assignments_of_({groupId: "xxx", status: "overdue", type: "all"})`',
-        '',
-        '**返回示例**：[{"id":"…","title":"作业名","content":"作业说明","deadline":1767225600000,"status":"pending","link":"https://…"}]'
-      ].join('\n'),
+      doc: {
+        title: '接龙管家课程作业',
+        blocks: [
+          '根据 groupId（群组ID）获取接龙管家指定群组的作业列表。groupId 可先调用 jlgj.courseList 获取。需要已打开助手页面并登录。status 与 jlgj.assignments 使用相同筛选规则，默认 all；本平台不区分作业类型，type 仅支持 all。',
+          ['parameters', '`{"groupId":"群组ID，必填","status":"可选，all|pending|submitted|overdue，默认 all","type":"可选，all，本平台仅支持 all（默认）"}`'],
+          ['example', '`jlgj.assignments_of_({"groupId": "xxx", "status": "overdue", "type": "all"})`'],
+          ['returnExample', '`[{"id":"…","title":"作业名","content":"作业说明","deadline":1767225600000,"status":"pending","link":"https://…"}]`']
+        ]
+      },
       async run(args) {
         const groupId = String(args?.groupId || '').trim();
         if (!groupId) throw new Error('缺少参数 groupId，请先调用 jlgj.courseList 获取群组ID');
@@ -2422,17 +2341,15 @@ name: 've.teachers_of_',
       module: 'jlgj',
       name: 'jlgj.assignments',
       summary: '按状态查询接龙管家所有群组的作业',
-      doc: [
-        '## jlgj.assignments —— 全平台作业查询',
-        '',
-        '遍历接龙管家当前账号所有群组，按提交状态查询作业。本平台不区分作业类型，type 仅支持 all。status：all（默认）/ pending（未交）/ submitted（已交）/ overdue（逾期，截止时间已过且未交）。',
-        '',
-        '**参数**：{"status":"all|pending|submitted|overdue，默认 all","type":"all，本平台仅支持 all"}',
-        '',
-        '**调用示例**：`jlgj.assignments({status: "pending"})`',
-        '',
-        '**返回示例**：{"total":1,"items":[{"key":"jlgj:…:…","courseName":"群组名","title":"作业名","status":"pending","deadline":1234567890000,"actionUrl":"https://…"}]}'
-      ].join('\n'),
+      doc: {
+        title: '全平台作业查询',
+        blocks: [
+          '遍历接龙管家当前账号所有群组，按提交状态查询作业。本平台不区分作业类型，type 仅支持 all。status：all（默认）/ pending（未交）/ submitted（已交）/ overdue（逾期，截止时间已过且未交）。',
+          ['parameters', '`{"status":"可选，all|pending|submitted|overdue，默认 all","type":"可选，all，本平台仅支持 all（默认）"}`'],
+          ['example', '`jlgj.assignments({"status": "pending"})`'],
+          ['returnExample', '`{"total":1,"items":[{"key":"jlgj:…:…","courseName":"群组名","title":"作业名","status":"pending","deadline":1234567890000,"actionUrl":"https://…"}]}`']
+        ]
+      },
       async run(args) {
         const matches = assignmentFilter(args);
         const courseList = await pageInvoke('jlgj', 'courseList', {}, 120000);
@@ -2472,15 +2389,14 @@ name: 've.teachers_of_',
       module: 'jlgj',
       name: 'jlgj.status',
       summary: '检查接龙管家登录状态',
-      doc: [
-        '## jlgj.status —— 接龙管家登录状态',
-        '',
-        '检查当前是否已登录接龙管家平台。',
-        '',
-        '**调用示例**：`jlgj.status()`',
-        '',
-        '**返回示例**：{"loggedIn":true,"loaded":true}'
-      ].join('\n'),
+      doc: {
+        title: '接龙管家登录状态',
+        blocks: [
+          '检查当前是否已登录接龙管家平台。',
+          ['example', '`jlgj.status()`'],
+          ['returnExample', '`{"loggedIn":true,"loaded":true}`']
+        ]
+      },
       async run() {
         return compactPlatformStatus(await pageInvoke('jlgj', 'status', {}, 60000));
       }
@@ -2489,15 +2405,14 @@ name: 've.teachers_of_',
       module: 'mooc',
       name: 'mooc.login',
       summary: '按需启用并触发中国大学MOOC登录流程',
-      doc: [
-        '## mooc.login —— MOOC 登录',
-        '',
-        '中国大学MOOC尚未启用时才启用并触发登录流程；已经启用时直接返回当前状态，不重复加载或弹出登录窗口。',
-        '',
-        '**调用示例**：`mooc.login()`',
-        '',
-        '**返回示例**：{"ok":true}'
-      ].join('\n'),
+      doc: {
+        title: 'MOOC 登录',
+        blocks: [
+          '中国大学MOOC尚未启用时才启用并触发登录流程；已经启用时直接返回当前状态，不重复加载或弹出登录窗口。',
+          ['example', '`mooc.login()`'],
+          ['returnExample', '`{"ok":true}`']
+        ]
+      },
       async run() {
         return compactLoginResult(await pageInvoke('mooc', 'login', { timeoutMs: Number.POSITIVE_INFINITY }));
       }
@@ -2506,46 +2421,93 @@ name: 've.teachers_of_',
       module: 'jlgj',
       name: 'jlgj.login',
       summary: '按需启用并触发接龙管家登录流程',
-      doc: [
-        '## jlgj.login —— 接龙管家登录',
-        '',
-        '接龙管家尚未启用时才启用并触发登录流程；已经启用时直接返回当前状态，不重复加载或弹出扫码/授权窗口。',
-        '',
-        '**调用示例**：`jlgj.login()`',
-        '',
-        '**返回示例**：{"ok":true}'
-      ].join('\n'),
+      doc: {
+        title: '接龙管家登录',
+        blocks: [
+          '接龙管家尚未启用时才启用并触发登录流程；已经启用时直接返回当前状态，不重复加载或弹出扫码/授权窗口。',
+          ['example', '`jlgj.login()`'],
+          ['returnExample', '`{"ok":true}`']
+        ]
+      },
       async run() {
         return compactLoginResult(await pageInvoke('jlgj', 'login', { timeoutMs: Number.POSITIVE_INFINITY }));
       }
     },
     ...[
-      { name: 'status', summary: '获取 CITEL 登录状态', parameters: '{}', example: 'citel.status()',
+      { name: 'status', summary: '获取 CITEL 登录状态',
+        doc: {
+          title: 'CITEL 登录状态',
+          blocks: [
+            '读取当前登录状态以及课程与活动是否已加载，不会自动启用或登录。',
+            ['example', '`citel.status()`'],
+            ['returnExample', '`{"loginState":"online","loggedIn":true,"loaded":true}`']
+          ]
+        },
         run: (args) => pageInvoke('citel', 'status', args, 60000) },
-      { name: 'login', summary: '登录 CITEL 并加载课程活动', parameters: '{username?: 用户输入的用户名, password?: 密码，留空使用用户名@Bjtu}', example: 'citel.login()',
+      { name: 'login', summary: '登录 CITEL 并加载课程活动',
+        doc: {
+          title: 'CITEL 登录',
+          blocks: [
+            '登录并加载课程活动。已登录且加载完毕时直接返回；未传用户名时打开登录窗口。密码仅用于本次登录，不保存。',
+            ['parameters', '`{"username":"可选，CITEL 用户名","password":"可选，留空时使用用户名@Bjtu"}`'],
+            ['example', '`citel.login()`；`citel.login({"username":"学号"})`'],
+            ['returnExample', '`{"ok":true}`']
+          ]
+        },
         run: async (args) => compactLoginResult(await pageInvoke('citel', 'login', args, Number.POSITIVE_INFINITY)) },
-      { name: 'courseList', summary: '读取 CITEL 已加载课程缓存', parameters: '{}', example: 'citel.courseList()',
+      { name: 'courseList', summary: '读取 CITEL 已加载课程缓存',
+        doc: {
+          title: 'CITEL 课程列表',
+          blocks: [
+            '读取已加载的课程缓存，不自动登录。请先调用 `citel.login()`，或在 CITEL 网页登录后启用平台。',
+            ['example', '`citel.courseList()`'],
+            ['returnExample', '`[{"courseId":"123","name":"课程名","url":"https://…","taskCount":3}]`。课程活动加载失败时，该项还会包含 `loadError`。']
+          ]
+        },
         run: (args) => pageInvoke('citel', 'courseList', args, 120000) },
       ...['teachers', 'students'].map((kind) => ({
         name: `${kind}_of_`, summary: `获取 CITEL 指定课程的${kind === 'teachers' ? '教师' : '学生'}列表`,
-        parameters: '{courseId: 课程ID，必填，先调用 citel.courseList 获取}',
-        example: `citel.${kind}_of_({courseId:"123"})`,
-        description: '按需 GET /mlsv3/user/index.php?id=courseId&perpage=100；参与者总数超过100时以总数重新请求。教师含助教；按角色区分，忽略空行并按个人资料用户ID去重。教师和学生共享成功缓存及并发请求；失败不缓存，可重试；账号切换或平台 clear 时清理。仅访问当前已加载课程，不自动登录。',
-        returns: '[{"name":"张三","profileURL":"https://citel.bjtu.edu.cn/mlsv3/user/view.php?id=123&course=456","role":"教师","group":"无组","lastAccess":"1天前"}]（学生接口结构相同；无 platform 字段）',
+        doc: {
+          title: kind === 'teachers' ? 'CITEL 课程教师' : 'CITEL 课程学生',
+          blocks: [
+            '按需请求当前已加载课程的参与者页面，不自动登录。首次请求使用 `perpage=100`，参与者总数超过 100 时按总数重试。教师列表含助教；按角色区分，忽略空行并按用户 ID 去重。教师和学生共享缓存与并发请求；失败可重试，账号切换或清理平台时清除缓存。',
+            ['parameters', docJson({"courseId": CITEL_COURSE_PARAMETER})],
+            ['example', `\`citel.${kind}_of_({"courseId":"123"})\``],
+            ['returnExample', docJson([{name: '张三', profileURL: 'https://citel.bjtu.edu.cn/mlsv3/user/view.php?id=123&course=456', role: kind === 'teachers' ? '教师' : '学生', group: '无小组', lastAccess: '1 天前'}])]
+          ]
+        },
         async run(args) {
           const courseId = String(args?.courseId || '').trim();
           if (!/^\d+$/.test(courseId) || Number(courseId) <= 0) throw new Error('缺少或无效参数 courseId，请先调用 citel.courseList');
           return pageInvoke('citel', `${kind}_of_`, { courseId }, 120000);
         }
       })),
-      { name: 'assignments_of_', summary: '读取 CITEL 指定课程活动缓存', parameters: '{courseId: 必填, status?: all|pending|submitted|overdue|unknown|resource, type?: all|workshop|programming|resource|url|forum 或中文类型名}', example: 'citel.assignments_of_({courseId:"123",status:"pending"})',
+      { name: 'assignments_of_', summary: '读取 CITEL 指定课程活动缓存',
+        doc: {
+          title: 'CITEL 课程活动',
+          blocks: [
+            CITEL_ASSIGNMENT_DOC,
+            ['parameters', docJson({"courseId": CITEL_COURSE_PARAMETER, ...CITEL_ASSIGNMENT_PARAMETERS})],
+            ['example', '`citel.assignments_of_({"courseId":"123","status":"pending"})`'],
+            ['returns', '指定课程的活动数组，每项含 `courseId` 和 `courseName`；无外层包装。']
+          ]
+        },
         async run(args) {
           if (!args.courseId) throw new Error('缺少参数 courseId，请先调用 citel.courseList');
           const course = await pageInvoke('citel', 'homework_of_', { courseId: args.courseId }, 120000);
           if (course.loadError) throw new Error(course.loadError);
           return filterCitelAssignments(course.homework, args).map((task) => ({ ...task, courseId: course.courseId, courseName: course.name }));
         } },
-      { name: 'assignments', summary: '按状态与类型查询 CITEL 已加载活动缓存', parameters: '{status?: all|pending|submitted|overdue|unknown|resource, type?: all|workshop|programming|resource|url|forum 或中文类型名}', example: 'citel.assignments({status:"pending",type:"编程练习"})',
+      { name: 'assignments', summary: '按状态与类型查询 CITEL 已加载活动缓存',
+        doc: {
+          title: 'CITEL 全平台活动查询',
+          blocks: [
+            CITEL_ASSIGNMENT_DOC,
+            ['parameters', docJson(CITEL_ASSIGNMENT_PARAMETERS)],
+            ['example', '`citel.assignments({"status":"pending","type":"编程练习"})`'],
+            ['returns', '所有已加载课程中符合筛选条件的活动数组，每项含 `courseId` 和 `courseName`；无外层包装。']
+          ]
+        },
         async run(args) {
           const courses = await pageInvoke('citel', 'courseList', {}, 120000);
           const result = [];
@@ -2556,23 +2518,19 @@ name: 've.teachers_of_',
           }
           return result;
         } }
-    ].map((entry) => ({ module: 'citel', name: `citel.${entry.name}`, summary: entry.summary, run: entry.run,
-      doc: [`## citel.${entry.name} —— ${entry.summary}`, '', '仅 login 可启用平台；其他操作不会自动启用或登录；课程和活动操作只读已加载缓存，教师/学生操作按需请求参与者页面。请先通过 citel.login() 的用户输入窗口登录，或在 CITEL 网页登录后启用平台。密码不保存；无预置真实账号。', '',
-        entry.description || '互评、编程练习默认显示；文件、网页地址、讨论区默认隐藏，按选项设置加载。互评须本人提交区有明确证据，编程按页面结果导航链接判断；失败时为 unknown，不冒充未交。status=resource 表示无提交状态的资源。时间戳单位为毫秒，startTime 为开始时间，deadline 为截止时间（编程采用关闭时间），assessmentEnd 为评分结束时间，discountTime 为折扣时间；未提供的时间为 0。返回课程/活动数组，无额外外层包装。', '',
-        `参数：${entry.parameters}`, '', `调用示例：\`${entry.example}\``, ...(entry.returns ? ['', `返回示例：${entry.returns}`] : [])].join('\n') })),
+    ].map((entry) => ({ ...entry, module: 'citel', name: `citel.${entry.name}` })),
     {
       module: 'xuetangx',
       name: 'xuetangx.courseList',
       summary: '获取学堂在线当前账号的课程列表',
-      doc: [
-        '## xuetangx.courseList —— 学堂在线课程列表',
-        '',
-        '获取学堂在线当前账号的课程列表。需要已打开助手页面并在 www.xuetangx.com 登录。',
-        '',
-        '**调用示例**：`xuetangx.courseList()`',
-        '',
-        '**返回示例**：[{"classroomId":"…","name":"课程名","sign":"…","status":1,"totalSchedule":10,"score":90,"taskCount":5}]'
-      ].join('\n'),
+      doc: {
+        title: '学堂在线课程列表',
+        blocks: [
+          '获取学堂在线当前账号的课程列表。需要已打开助手页面并在 www.xuetangx.com 登录。',
+          ['example', '`xuetangx.courseList()`'],
+          ['returnExample', '`[{"classroomId":"…","name":"课程名","sign":"…","status":1,"totalSchedule":10,"score":90,"taskCount":5}]`']
+        ]
+      },
       async run() {
         const value = await pageInvoke('xuetangx', 'courseList', {}, 120000);
         if (String(value?.loginState || '') !== 'online') throw Object.assign(new Error('学堂在线未登录，请先调用 xuetangx.login 完成登录后再获取课程列表'), { code: 'LOGIN_REQUIRED' });
@@ -2592,17 +2550,15 @@ name: 've.teachers_of_',
       module: 'xuetangx',
       name: 'xuetangx.assignments_of_',
       summary: '根据 classroomId 获取学堂在线指定课程的任务列表',
-      doc: [
-        '## xuetangx.assignments_of_ —— 学堂在线课程任务',
-        '',
-        '根据 classroomId 获取学堂在线指定课程的任务/作业列表及详情。classroomId 可先调用 xuetangx.courseList 获取。需要已打开助手页面并登录。status、type 与 xuetangx.assignments 使用相同筛选规则，省略时均为 all。',
-        '',
-        '**参数**：{"classroomId":"教室ID，必填","status":"all|pending|submitted|overdue，默认 all","type":"all|视频|图文|直播|讨论|作业|考试，默认 all"}',
-        '',
-        '**调用示例**：`xuetangx.assignments_of_({classroomId: "xxx", status: "pending", type: "作业"})`',
-        '',
-        '**返回示例**：[{"id":"…","title":"任务名","type":"作业","startTime":1760000000000,"deadline":1767225600000,"progress":0.5,"status":"pending","userScore":0,"totalScore":100,"locked":false,"details":{"problems":[]},"action":"https://…"}]。details 包含已加载的作业题目；无详情的任务该字段为 null。'
-      ].join('\n'),
+      doc: {
+        title: '学堂在线课程任务',
+        blocks: [
+          '根据 classroomId 获取学堂在线指定课程的任务/作业列表及详情。classroomId 可先调用 xuetangx.courseList 获取。需要已打开助手页面并登录。status、type 与 xuetangx.assignments 使用相同筛选规则，省略时均为 all。',
+          ['parameters', '`{"classroomId":"教室ID，必填","status":"可选，all|pending|submitted|overdue，默认 all","type":"可选，all|视频|图文|直播|讨论|作业|考试，默认 all"}`'],
+          ['example', '`xuetangx.assignments_of_({"classroomId": "xxx", "status": "pending", "type": "作业"})`'],
+          ['returnExample', '`[{"id":"…","title":"任务名","type":"作业","startTime":1760000000000,"deadline":1767225600000,"progress":0.5,"status":"pending","userScore":0,"totalScore":100,"locked":false,"details":{"problems":[]},"action":"https://…"}]`。details 包含已加载的作业题目；无详情的任务该字段为 null。']
+        ]
+      },
       async run(args) {
         const classroomId = String(args?.classroomId || '').trim();
         if (!classroomId) throw new Error('缺少参数 classroomId，请先调用 xuetangx.courseList 获取教室ID');
@@ -2627,17 +2583,15 @@ name: 've.teachers_of_',
       module: 'xuetangx',
       name: 'xuetangx.assignments',
       summary: '按状态与类型查询学堂在线所有课程的任务',
-      doc: [
-        '## xuetangx.assignments —— 全平台作业查询',
-        '',
-        '遍历学堂在线当前账号所有课程，按提交状态与类型查询任务。status：all（默认）/ pending（未交）/ submitted（已交）/ overdue（逾期）。type：all（默认）/ 视频 / 图文 / 直播 / 讨论 / 作业 / 考试。',
-        '',
-        '**参数**：{"status":"all|pending|submitted|overdue，默认 all","type":"all|视频|图文|直播|讨论|作业|考试，默认 all"}',
-        '',
-        '**调用示例**：`xuetangx.assignments({status: "pending", type: "作业"})`',
-        '',
-        '**返回示例**：{"total":1,"items":[{"key":"xuetangx:…:…","courseName":"课程名","title":"任务名","type":"作业","status":"pending","deadline":1234567890000,"actionUrl":"https://…"}]}'
-      ].join('\n'),
+      doc: {
+        title: '全平台作业查询',
+        blocks: [
+          '遍历学堂在线当前账号所有课程，按提交状态与类型查询任务。status：all（默认）/ pending（未交）/ submitted（已交）/ overdue（逾期）。type：all（默认）/ 视频 / 图文 / 直播 / 讨论 / 作业 / 考试。',
+          ['parameters', '`{"status":"可选，all|pending|submitted|overdue，默认 all","type":"可选，all|视频|图文|直播|讨论|作业|考试，默认 all"}`'],
+          ['example', '`xuetangx.assignments({"status": "pending", "type": "作业"})`'],
+          ['returnExample', '`{"total":1,"items":[{"key":"xuetangx:…:…","courseName":"课程名","title":"任务名","type":"作业","status":"pending","deadline":1234567890000,"actionUrl":"https://…"}]}`']
+        ]
+      },
       async run(args) {
         const matches = assignmentFilter(args);
         const courseList = await pageInvoke('xuetangx', 'courseList', {}, 120000);
@@ -2683,17 +2637,15 @@ name: 've.teachers_of_',
       module: 'xuetangx',
       name: 'xuetangx.teachers_of_',
       summary: '从缓存读取指定学堂在线课程的教师列表',
-      doc: [
-        '## xuetangx.teachers_of_ —— 学堂在线课程教师',
-        '',
-        '直接读取 app.html 已加载的指定课程教师缓存。classroomId 可先调用 xuetangx.courseList 获取。',
-        '',
-        '**参数**：`{"classroomId":"教室ID，必填"}`',
-        '',
-        '**调用示例**：`xuetangx.teachers_of_({classroomId: "xxx"})`',
-        '',
-        '**返回示例**：`["老师"]`'
-      ].join('\n'),
+      doc: {
+        title: '学堂在线课程教师',
+        blocks: [
+          '直接读取 app.html 已加载的指定课程教师缓存。classroomId 可先调用 xuetangx.courseList 获取。',
+          ['parameters', '`{"classroomId":"教室ID，必填"}`'],
+          ['example', '`xuetangx.teachers_of_({"classroomId": "xxx"})`'],
+          ['returnExample', '`["老师"]`']
+        ]
+      },
       async run(args) {
         const classroomId = String(args?.classroomId || '').trim();
         if (!classroomId) throw new Error('缺少参数 classroomId，请先调用 xuetangx.courseList 获取教室ID');
@@ -2713,15 +2665,14 @@ name: 've.teachers_of_',
       module: 'xuetangx',
       name: 'xuetangx.status',
       summary: '检查学堂在线登录状态',
-      doc: [
-        '## xuetangx.status —— 学堂在线登录状态',
-        '',
-        '检查当前是否已登录学堂在线平台。',
-        '',
-        '**调用示例**：`xuetangx.status()`',
-        '',
-        '**返回示例**：{"loggedIn":true,"loaded":true}'
-      ].join('\n'),
+      doc: {
+        title: '学堂在线登录状态',
+        blocks: [
+          '检查当前是否已登录学堂在线平台。',
+          ['example', '`xuetangx.status()`'],
+          ['returnExample', '`{"loggedIn":true,"loaded":true}`']
+        ]
+      },
       async run() {
         return compactPlatformStatus(await pageInvoke('xuetangx', 'status', {}, 60000));
       }
@@ -2730,15 +2681,14 @@ name: 've.teachers_of_',
       module: 'xuetangx',
       name: 'xuetangx.login',
       summary: '按需启用并触发学堂在线登录流程',
-      doc: [
-        '## xuetangx.login —— 学堂在线登录',
-        '',
-        '学堂在线尚未启用时才启用并触发登录流程；已经启用时直接返回当前状态，不重复加载或弹出扫码/授权窗口。',
-        '',
-        '**调用示例**：`xuetangx.login()`',
-        '',
-        '**返回示例**：{"ok":true}'
-      ].join('\n'),
+      doc: {
+        title: '学堂在线登录',
+        blocks: [
+          '学堂在线尚未启用时才启用并触发登录流程；已经启用时直接返回当前状态，不重复加载或弹出扫码/授权窗口。',
+          ['example', '`xuetangx.login()`'],
+          ['returnExample', '`{"ok":true}`']
+        ]
+      },
       async run() {
         return compactLoginResult(await pageInvoke('xuetangx', 'login', { timeoutMs: Number.POSITIVE_INFINITY }));
       }
@@ -2747,15 +2697,14 @@ name: 've.teachers_of_',
       module: 'api',
       name: 'api.operationList',
       summary: '列出可按模块分组的所有可用操作名',
-      doc: [
-        '## api.operationList —— 列出全部操作',
-        '',
-        '列出所有可用操作，按模块分组为字典。外层键为模块（如 ve/academic/mooc/ykt/captcha/api），内层为操作名→ 简要中文描述。针对某课程的操作用“_of_”结尾。',
-        '',
-        '**调用示例**：`api.operationList()`',
-        '',
-        '**返回示例**：{"ve":{"courseList":"获取智慧课程平台的课程列表","assignments":"按状态与类型查询全部作业"},"ykt":{"courseList":"获取雨课堂课程列表","assignments":"按状态与类型查询全部作业"}}'
-      ].join('\n'),
+      doc: {
+        title: '列出全部操作',
+        blocks: [
+          '列出所有可用操作，按模块分组为字典。外层键为模块（如 ve/academic/mooc/ykt/captcha/api），内层为操作名→ 简要中文描述。针对某课程的操作用“_of_”结尾。',
+          ['example', '`api.operationList()`'],
+          ['returnExample', '`{"ve":{"courseList":"获取智慧课程平台的课程列表","assignments":"按状态与类型查询全部作业"},"ykt":{"courseList":"获取雨课堂课程列表","assignments":"按状态与类型查询全部作业"}}`']
+        ]
+      },
       async run() {
         const enabledSet = await getEnabledOperationSet();
         const availability = await getModuleAvailability();
@@ -2776,17 +2725,15 @@ name: 've.teachers_of_',
       module: 'api',
       name: 'api.getDocs',
       summary: '按模块名和操作名批量查询操作说明（Markdown）',
-      doc: [
-        '## api.getDocs —— 查询操作说明',
-        '',
-        '按模块名和操作名查询详细使用说明（Markdown）。module 和 name 均可传单个字符串、字符串列表或省略；多份说明使用分隔线连接。在执行任何操作前，应先调用本操作查询其说明。',
-        '',
-        '**参数**：`{"module":"模块名或模块名列表","name":"不含模块前缀的操作名或操作名列表"}`。两个参数都不传时返回本操作自己的说明；只传 module 时返回这些模块的所有操作；只传 name 时返回所有模块中与这些名称匹配的操作；两者都传时按 module × name 两两匹配并跳过不存在的操作。',
-        '',
-        '**调用示例**：`api.getDocs()`；`api.getDocs({module: "ve"})`；`api.getDocs({name: "login"})`；`api.getDocs({module: ["ve","ykt","academic"], name: ["login","assignments"]})`',
-        '',
-        '**返回**：Markdown 文本。多份说明之间用 `---` 分隔；CLI 直接打印原文，不做 JSON 引号转义。'
-      ].join('\n'),
+      doc: {
+        title: '查询操作说明',
+        blocks: [
+          '按模块名和操作名查询详细使用说明（Markdown）。module 和 name 均可传单个字符串、字符串列表或省略；多份说明使用分隔线连接。在执行任何操作前，应先调用本操作查询其说明。',
+          ['parameters', '`{"module":"可选，模块名或模块名列表","name":"可选，不含模块前缀的操作名或操作名列表"}`。两个参数都不传时返回本操作自己的说明；只传 module 时返回这些模块的所有操作；只传 name 时返回所有模块中与这些名称匹配的操作；两者都传时按 module × name 两两匹配并跳过不存在的操作。'],
+          ['example', '`api.getDocs()`；`api.getDocs({"module": "ve"})`；`api.getDocs({"name": "login"})`；`api.getDocs({"module": ["ve","ykt","academic"], "name": ["login","assignments"]})`'],
+          ['returns', 'Markdown 文本。多份说明之间用 `---` 分隔；CLI 直接打印原文，不做 JSON 引号转义。']
+        ]
+      },
       async run(args) {
         const normalizeSelectors = (value, label) => {
           if (value === undefined || value === null || value === '') return [];
@@ -2837,15 +2784,14 @@ name: 've.teachers_of_',
       module: 'api',
       name: 'api.operationPanel',
       summary: '打开扩展接口操作面板窗口',
-      doc: [
-        '## api.operationPanel —— 打开操作面板',
-        '',
-        '在独立扩展窗口中打开「允许调用以下操作」面板。需要让用户启用某些操作，或希望用户授权始终允许某些操作时，应调用此操作；面板中的权限由用户自行勾选，本操作不会替用户修改权限。窗口已打开时会聚焦现有窗口。',
-        '',
-        '**调用示例**：`api.operationPanel()`',
-        '',
-        '**返回示例**：{"windowId":123}'
-      ].join('\n'),
+      doc: {
+        title: '打开操作面板',
+        blocks: [
+          '在独立扩展窗口中打开「允许调用以下操作」面板。需要让用户启用某些操作，或希望用户授权始终允许某些操作时，应调用此操作；面板中的权限由用户自行勾选，本操作不会替用户修改权限。窗口已打开时会聚焦现有窗口。',
+          ['example', '`api.operationPanel()`'],
+          ['returnExample', '`{"windowId":123}`']
+        ]
+      },
       async run() {
         const windows = chrome.windows;
         if (!windows?.create) throw new Error('当前环境不支持打开扩展窗口。');
@@ -2864,15 +2810,14 @@ name: 've.teachers_of_',
       module: 'theme',
       name: 'theme.get',
       summary: '获取扩展当前外观颜色模式（light/dark/system）',
-      doc: [
-        '## theme.get —— 获取外观颜色模式',
-        '',
-        '获取扩展当前的外观颜色模式。未设置时为 system（跟随系统）。',
-        '',
-        '**调用示例**：`theme.get()`',
-        '',
-        '**返回示例**：{"mode":"system"}'
-      ].join('\n'),
+      doc: {
+        title: '获取外观颜色模式',
+        blocks: [
+          '获取扩展当前的外观颜色模式。未设置时为 system（跟随系统）。',
+          ['example', '`theme.get()`'],
+          ['returnExample', '`{"mode":"system"}`']
+        ]
+      },
       async run() {
         const stored = await chrome.storage.local.get(['themeMode']).catch(() => ({}));
         const mode = ['light', 'dark'].includes(String(stored?.themeMode))
@@ -2885,17 +2830,15 @@ name: 've.teachers_of_',
       module: 'theme',
       name: 'theme.set',
       summary: '设置扩展外观颜色模式，所有扩展页面立即应用',
-      doc: [
-        '## theme.set —— 设置外观颜色模式',
-        '',
-        '设置扩展的外观颜色模式，所有扩展页面会立即应用。',
-        '',
-        '**参数**：{"mode":"必填，light（亮色）/ dark（暗色）/ system（跟随系统）"}',
-        '',
-        '**调用示例**：`theme.set({mode: "dark"})`；`theme.set({mode: "system"})`',
-        '',
-        '**返回示例**：{"mode":"dark"}'
-      ].join('\n'),
+      doc: {
+        title: '设置外观颜色模式',
+        blocks: [
+          '设置扩展的外观颜色模式，所有扩展页面会立即应用。',
+          ['parameters', '`{"mode":"必填，light（亮色）/ dark（暗色）/ system（跟随系统）"}`'],
+          ['example', '`theme.set({"mode": "dark"})`；`theme.set({"mode": "system"})`'],
+          ['returnExample', '`{"mode":"dark"}`']
+        ]
+      },
       async run(args) {
         const key = String(args?.mode ?? '').trim();
         const aliases = {
@@ -2913,23 +2856,18 @@ name: 've.teachers_of_',
       module: 'reminder',
       name: 'reminder.send',
       summary: '使用浏览器系统通知 API 发送 basic、image、list 或 progress 通知',
-      doc: [
-        '## reminder.send —— 发送系统通知',
-        '',
-        '发送一条浏览器系统通知。除 notificationId 和 replaceExisting 外，其余参数会作为 Chrome NotificationOptions 直接传入；未指定 iconUrl 时使用扩展图标。',
-        '',
-        '**必填参数**：`title`（标题）、`message`（正文）。',
-        '',
-        '**通用可选参数**：`notificationId`、`replaceExisting`、`type`（basic/image/list/progress，默认 basic）、`iconUrl`、`contextMessage`、`priority`（-2~2）、`eventTime`、`buttons`（最多两个）、`requireInteraction`、`silent`。',
-        '',
-        '**类型专用参数**：image 可传 `imageUrl`；list 可传 `items: [{title, message}]`；progress 可传 `progress`（0~100）。浏览器还会接收其支持的其他 NotificationOptions 字段。',
-        '',
-        '**调用示例**：`reminder.send({title: "课程提醒", message: "高等数学将在 30 分钟后开始", requireInteraction: true})`',
-        '',
-        '**进度通知示例**：`reminder.send({notificationId: "download-1", replaceExisting: true, type: "progress", title: "正在下载", message: "模型资源", progress: 45})`',
-        '',
-        '**返回示例**：`{"notificationId":"bjtu-api-notification:…"}`'
-      ].join('\n'),
+      doc: {
+        title: '发送系统通知',
+        blocks: [
+          '发送一条浏览器系统通知。除 notificationId 和 replaceExisting 外，其余参数会作为 Chrome NotificationOptions 直接传入；未指定 iconUrl 时使用扩展图标。',
+          ['必填参数', '`title`（标题）、`message`（正文）。'],
+          ['通用可选参数', '`notificationId`、`replaceExisting`、`type`（basic/image/list/progress，默认 basic）、`iconUrl`、`contextMessage`、`priority`（-2~2）、`eventTime`、`buttons`（最多两个）、`requireInteraction`、`silent`。'],
+          ['类型专用参数', 'image 可传 `imageUrl`；list 可传 `"items"`（如 `[{"title":"标题","message":"正文"}]`）；progress 可传 `progress`（0~100）。浏览器还会接收其支持的其他 NotificationOptions 字段。'],
+          ['example', '`reminder.send({"title": "课程提醒", "message": "高等数学将在 30 分钟后开始", "requireInteraction": true})`'],
+          ['进度通知示例', '`reminder.send({"notificationId": "download-1", "replaceExisting": true, "type": "progress", "title": "正在下载", "message": "模型资源", "progress": 45})`'],
+          ['returnExample', '`{"notificationId":"bjtu-api-notification:…"}`']
+        ]
+      },
       async run(args) {
         if (!args || typeof args !== 'object' || Array.isArray(args)) {
           throw new Error('参数必须是通知选项对象');
@@ -2961,15 +2899,14 @@ name: 've.teachers_of_',
       module: 'reminder',
       name: 'reminder.get',
       summary: '获取作业截止提醒的全部提前时间点（分钟）',
-      doc: [
-        '## reminder.get —— 获取提醒时间点',
-        '',
-        '获取作业截止提醒的全部提前时间点（分钟），按分钟数降序排列。',
-        '',
-        '**调用示例**：`reminder.get()`',
-        '',
-        '**返回示例**：{"points":[1440,120,30]}'
-      ].join('\n'),
+      doc: {
+        title: '获取提醒时间点',
+        blocks: [
+          '获取作业截止提醒的全部提前时间点（分钟），按分钟数降序排列。',
+          ['example', '`reminder.get()`'],
+          ['returnExample', '`{"points":[1440,120,30]}`']
+        ]
+      },
       async run() {
         return { points: await loadReminderPoints() };
       }
@@ -2978,17 +2915,15 @@ name: 've.teachers_of_',
       module: 'reminder',
       name: 'reminder.set',
       summary: '整体替换作业截止提醒的提前时间点列表',
-      doc: [
-        '## reminder.set —— 设置提醒时间点',
-        '',
-        '整体替换作业截止提醒的提前时间点。minutes 为提前分钟数组，取值 1~525600，保存时自动去重、取整并按降序排列。',
-        '',
-        '**参数**：{"minutes":"提前分钟数组，必填，如 [1440, 120, 30]"}',
-        '',
-        '**调用示例**：`reminder.set({minutes: [1440, 30]})`',
-        '',
-        '**返回示例**：{"points":[1440,30]}'
-      ].join('\n'),
+      doc: {
+        title: '设置提醒时间点',
+        blocks: [
+          '整体替换作业截止提醒的提前时间点。minutes 为提前分钟数组，取值 1~525600，保存时自动去重、取整并按降序排列。',
+          ['parameters', '`{"minutes":"提前分钟数组，必填，如 [1440, 120, 30]"}`'],
+          ['example', '`reminder.set({"minutes": [1440, 30]})`'],
+          ['returnExample', '`{"points":[1440,30]}`']
+        ]
+      },
       async run(args) {
         const raw = args?.minutes;
         if (!Array.isArray(raw)) throw new Error('缺少参数 minutes（提前分钟数组）');
@@ -3003,17 +2938,15 @@ name: 've.teachers_of_',
       module: 'reminder',
       name: 'reminder.add',
       summary: '新增一个或多个作业截止提醒的提前时间点',
-      doc: [
-        '## reminder.add —— 添加提醒时间点',
-        '',
-        '新增一个或多个提前提醒时间点（分钟），自动去重；已存在的时间点列入 unchanged。',
-        '',
-        '**参数**：可直接传提前分钟数组，也可传 `{"minutes": 数字或数组}`；每项为 1~525600。',
-        '',
-        '**调用示例**：`reminder.add({minutes: 30})`；`reminder.add([1440, 30])`',
-        '',
-        '**返回示例**：{"points":[1440,120,30],"added":[1440,30],"unchanged":[]}'
-      ].join('\n'),
+      doc: {
+        title: '添加提醒时间点',
+        blocks: [
+          '新增一个或多个提前提醒时间点（分钟），自动去重；已存在的时间点列入 unchanged。',
+          ['parameters', '可直接传提前分钟数组，也可传带 `"minutes"` 键的对象（值为数字或数组）；每项为 1~525600。'],
+          ['example', '`reminder.add({"minutes": 30})`；`reminder.add([1440, 30])`'],
+          ['returnExample', '`{"points":[1440,120,30],"added":[1440,30],"unchanged":[]}`']
+        ]
+      },
       async run(args) {
         const minutes = requireReminderMinutes(args);
         const points = await loadReminderPoints();
@@ -3029,17 +2962,15 @@ name: 've.teachers_of_',
       module: 'reminder',
       name: 'reminder.del',
       summary: '删除一个或多个作业截止提醒的提前时间点',
-      doc: [
-        '## reminder.del —— 删除提醒时间点',
-        '',
-        '删除一个或多个提前提醒时间点（分钟），自动去重；不存在的时间点列入 missing。',
-        '',
-        '**参数**：可直接传提前分钟数组，也可传 `{"minutes": 数字或数组}`。',
-        '',
-        '**调用示例**：`reminder.del({minutes: 120})`；`reminder.del([120, 30])`',
-        '',
-        '**返回示例**：{"points":[1440],"removed":[120,30],"missing":[]}'
-      ].join('\n'),
+      doc: {
+        title: '删除提醒时间点',
+        blocks: [
+          '删除一个或多个提前提醒时间点（分钟），自动去重；不存在的时间点列入 missing。',
+          ['parameters', '可直接传提前分钟数组，也可传带 `"minutes"` 键的对象（值为数字或数组）。'],
+          ['example', '`reminder.del({"minutes": 120})`；`reminder.del([120, 30])`'],
+          ['returnExample', '`{"points":[1440],"removed":[120,30],"missing":[]}`']
+        ]
+      },
       async run(args) {
         const minutes = requireReminderMinutes(args);
         const points = await loadReminderPoints();
@@ -3055,17 +2986,15 @@ name: 've.teachers_of_',
       module: 'reminder',
       name: 'reminder.enabled',
       summary: '读取或切换「后台监控未交作业并发送系统通知」开关',
-      doc: [
-        '## reminder.enabled —— 后台作业监控开关',
-        '',
-        '无参调用返回「后台监控未交作业并发送系统通知」当前开关状态；传入 true/false 直接切换。',
-        '',
-        '**参数**：{"enabled":"可选，true 开启 / false 关闭；省略时仅读取"}',
-        '',
-        '**调用示例**：`reminder.enabled()`；`reminder.enabled({enabled: false})`；`reminder.enabled(false)` 也接受直接传布尔值',
-        '',
-        '**返回示例**：{"enabled":false}'
-      ].join('\n'),
+      doc: {
+        title: '后台作业监控开关',
+        blocks: [
+          '无参调用返回「后台监控未交作业并发送系统通知」当前开关状态；传入 true/false 直接切换。',
+          ['parameters', '`{"enabled":"可选，true 开启 / false 关闭；省略时仅读取"}`'],
+          ['example', '`reminder.enabled()`；`reminder.enabled({"enabled": false})`；`reminder.enabled(false)` 也接受直接传布尔值'],
+          ['returnExample', '`{"enabled":false}`']
+        ]
+      },
       async run(args) {
         let raw = typeof args === 'boolean'
           ? args
@@ -3084,7 +3013,7 @@ name: 've.teachers_of_',
         return { enabled: raw };
       }
     }
-  ];
+  ].map(({ doc, ...operation }) => ({ ...operation, doc: renderOperationDoc(operation.name, doc) }));
 
   const OPERATION_GROUPS = [
     { id: 've', label: '智慧课程平台', operations: OPERATIONS.filter((op) => op.module === 've') },
