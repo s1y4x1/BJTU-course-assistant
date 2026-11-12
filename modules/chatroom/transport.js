@@ -259,10 +259,16 @@
   }
   function publicPresenceEvent(p, joined) {
     const name = p.remark || p.nickname || p.ip || p.id;
-    return {type: 'public-presence', message: {
+    return {type: 'public-presence', joined, message: {
       id: crypto.randomUUID(), senderId: p.id, conversationId: 'public', system: true,
       text: `${name} ${joined ? '进入了公共群聊' : '离开了公共群聊'}`, createdAt: Date.now()
     }};
+  }
+  function publishPublicPresence(event) {
+    if (!event) return;
+    void G.chrome?.runtime?.sendMessage?.({
+      type:'BJTU_CHATROOM_PUBLIC_PRESENCE', peerId:event.message.senderId, joined:event.joined
+    })?.catch(() => {});
   }
   function removeStoredPresenceMessages() {
     const isPresence = m => m.conversationId === 'public' && m.system &&
@@ -353,6 +359,7 @@
     for (const target of new Set(ids)) if (target !== publicIdentity.id && allowed(target, false) && peer(target).online) enqueue(effects, target, type, payload);
   }
   function history(message) {
+    if (message.system) message.text = message.text.replace(/[。.]$/u,'');
     const view = conversationView(message.conversationId);
     view.hidden = false; view.lastText = message.text; view.lastMessageId = message.id;
     view.lastAt = Date.now(); view.lastSenderId = message.senderId;
@@ -414,9 +421,21 @@
   function groupEvent(r, actor, requestId, target, targetName, actorName) {
     const eventId = `${actor}:invite:${requestId}`;
     if (data.messages.some(message => message.id === eventId)) return;
-    const name = who => who === publicIdentity.id ? (publicIdentity.nickname || localIP || '我') : peer(who)?.remark || peer(who)?.nickname || peer(who)?.ip || who;
+    const name = (who, supplied) => {
+      if (who === publicIdentity.id) return publicIdentity.nickname || localIP || '我';
+      const p = peer(who);
+      return p?.remark || p?.nickname || (supplied && supplied !== who ? supplied : '') || p?.ip || '成员';
+    };
     history({id:eventId, senderId:actor, conversationId:r.id, system:true, code:'GROUP_INVITE',
-      text:`「${actorName || name(actor)}」邀请「${targetName || name(target)}」加入群聊。`, createdAt:Date.now()});
+      text:`「${name(actor,actorName)}」邀请「${name(target,targetName)}」加入群聊`, createdAt:Date.now()});
+  }
+  function groupLeaveMessage(r, member, leaveId) {
+    const eventId = `${member}:leave:${leaveId}`;
+    if (data.messages.some(message => message.id === eventId)) return;
+    const p = peer(member);
+    const name = member === publicIdentity.id ? publicIdentity.nickname || localIP || '我' : p?.remark || p?.nickname || p?.ip || '成员';
+    history({id:eventId,senderId:member,conversationId:r.id,system:true,code:'GROUP_LEAVE',
+      text:`${name}退出了群聊`,createdAt:Date.now()});
   }
   function groupBroadcast(effects, r, oldMembers = []) { fanout(effects, [...oldMembers, ...r.members], 'group-state', { room: r }); }
   function announceJoin(effects, r, inviter, requestId, target) {
@@ -424,14 +443,13 @@
     // list first so every recipient knows the new member before the event arrives.
     groupBroadcast(effects, r);
     const inviterPeer = peer(inviter);
-    const targetPeer = peer(target);
     const event = {
       roomId: r.id,
       requestId,
       actor: inviter,
       target,
-      targetName: targetPeer?.remark || targetPeer?.nickname || targetPeer?.ip || target,
-      actorName: inviterPeer?.nickname || inviterPeer?.ip || inviter
+      targetName: publicIdentity.nickname || localIP || '成员',
+      actorName: inviterPeer?.nickname || inviterPeer?.ip || '成员'
     };
     groupEvent(r, inviter, requestId, target, event.targetName, event.actorName);
     fanout(effects, r.members, 'group-event', event);
@@ -584,7 +602,7 @@
       p.reconnectable = value.reconnectable === true;
       for (const r of data.rooms) if (r.members.includes(p.id)) groupBroadcast(effects, r);
       for (const departed of data.departedRooms) if (departed.pending.includes(p.id)) {
-        enqueue(effects, p.id, 'group-leave', {roomId:departed.roomId});
+        enqueue(effects, p.id, 'group-leave', {roomId:departed.roomId, leaveId:departed.leaveId});
         departed.pending = departed.pending.filter(member => member !== p.id);
       }
       data.departedRooms = data.departedRooms.filter(item => item.pending.length);
@@ -593,7 +611,10 @@
         enqueue(effects, p.id, 'friend-delete', {friendRequired:data.settings.requireFriend}); p.pendingFriendDelete = false;
       }
       return {peerId: p.id, event};
-    }).then(async ({ result: {peerId}, effects }) => { await deliver(effects); await flushOutbox(peerId); return {ok:true, peerId}; });
+    }).then(async ({ result: {peerId,event}, effects }) => {
+      publishPublicPresence(event);
+      await deliver(effects); await flushOutbox(peerId); return {ok:true, peerId};
+    });
   }
   async function peerOffline(peerId) {
     return commit(effects => {
@@ -603,7 +624,7 @@
       const event = wasOnline ? publicPresenceEvent(p, false) : undefined;
       if (p && !p.reconnectable) for (const r of data.rooms) removeMember(effects, r, peerId);
       return {event};
-    }).then(async ({effects}) => {await deliver(effects); return {ok:true};});
+    }).then(async ({result:{event},effects}) => {publishPublicPresence(event); await deliver(effects); return {ok:true};});
   }
   async function action(name, args = {}) {
     await ready;
@@ -810,9 +831,10 @@
       }
       case 'group-leave': {
         const r = room(args.roomId);
-        fanout(effects, r.members, 'group-leave', {roomId:r.id});
+        const leaveId = crypto.randomUUID();
+        fanout(effects, r.members, 'group-leave', {roomId:r.id,leaveId});
         const pending = r.members.filter(member => member !== publicIdentity.id && !peer(member)?.online);
-        if (pending.length) data.departedRooms = [...data.departedRooms.filter(item => item.roomId !== r.id), {roomId:r.id, pending}].slice(-MAX.rooms);
+        if (pending.length) data.departedRooms = [...data.departedRooms.filter(item => item.roomId !== r.id), {roomId:r.id,leaveId,pending}].slice(-MAX.rooms);
         data.rooms = data.rooms.filter((v) => v.id !== r.id);
         data.outgoing = data.outgoing.filter((v) => v.roomId !== r.id);
         data.requests = data.requests.filter((v) => v.room?.id !== r.id);
@@ -1011,7 +1033,18 @@
       }
       case 'group-leave': {
         const r = data.rooms.find(room => room.id === payload.roomId);
-        if (r) removeMember(effects, r, from); break;
+        if (r && Object.hasOwn(r.memberStates,from)) {
+          const leaveId = token(payload.leaveId ?? packet.id);
+          // Another member's group-state may have applied the departure first.
+          removeMember(effects,r,from);
+          const state = r.memberStates[from];
+          const notice = `leave-notice:${r.id}:${from}:${state.version}:${state.actor}`;
+          if (!data.seen.includes(notice)) {
+            data.seen.push(notice);
+            groupLeaveMessage(r,from,leaveId);
+          }
+        }
+        break;
       }
     }
     return null;

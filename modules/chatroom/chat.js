@@ -507,7 +507,7 @@
       const content = node('div', undefined, 'message-text bjtu-markdown');
       if (message.system) {
         el.classList.remove('mine'); el.classList.add('system');
-        content.textContent = message.text; el.append(content);
+        content.textContent = message.text.replace(/[。.]$/u,''); el.append(content);
       } else {
         if (message.file) content.append(document.createTextNode(message.file.name + ' · '), styledBytes(message.file.size));
         else content.innerHTML = markdown.parse(String(message.text || '').slice(0, 16384));
@@ -550,7 +550,7 @@
       }
       return el;
     });
-    if (!items.length) { const empty = node('article', undefined, 'message system'); empty.dataset.emptyMessage = ''; empty.append(node('div', '还没有消息，打个招呼吧。', 'message-text bjtu-markdown')); container.append(empty); }
+    if (!items.length) { const empty = node('article', undefined, 'message system'); empty.dataset.emptyMessage = ''; empty.append(node('div', '还没有消息，打个招呼吧', 'message-text bjtu-markdown')); container.append(empty); }
     if (changed) container.scrollTop = scrollPositions.get(selected) ?? container.scrollHeight;
     else if (nearBottom) container.scrollTop = container.scrollHeight;
     else if (anchor?.el.isConnected) container.scrollTop = oldTop + anchor.el.getBoundingClientRect().top - anchorOffset;
