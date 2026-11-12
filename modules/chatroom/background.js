@@ -118,7 +118,7 @@
       void notifyRequest(request.id).catch(report);
     }
     for (const message of value.messages || []) {
-      if (known.has(message.id)) continue;
+      if (known.has(message.id) || message.suppressNotification) continue;
       const view = value.conversations?.[message.conversationId];
       if (!view?.unread || view.muted || view.lastOwn) continue;
       clearTimeout(pending.get(message.conversationId));

@@ -51,6 +51,12 @@ const resourceTotalSizeInfo = document.getElementById('resource-download-total-s
 const resourceTotalPercent = document.getElementById('resource-download-total-percent');
 const resourceTotalSpeed = document.getElementById('resource-download-total-speed');
 const resourceTotalEta = document.getElementById('resource-download-total-eta');
+const updateUploadEta = BjtuTransferEta.create(text => {
+  if (totalEtaDiv) totalEtaDiv.textContent = text ? `总剩余：${text}` : '';
+}, formatEta);
+const updateResourceEta = BjtuTransferEta.create(text => {
+  if (resourceTotalEta) resourceTotalEta.textContent = text ? `总剩余：${text}` : '';
+}, formatEta);
 const courseListDiv = document.getElementById('course-list');
 const courseLoadingStatus = document.getElementById('course-loading-status');
 const layoutContainer = document.querySelector('.layout-container');
@@ -3514,7 +3520,7 @@ function updateTotalProgress() {
     totalServerBar.textContent = '';
     if (totalPercentDiv) totalPercentDiv.textContent = '0%';
     if (totalPercentDiv) totalPercentDiv.style.display = 'none';
-    if (totalEtaDiv) totalEtaDiv.textContent = '';
+    updateUploadEta(false,0,0,0);
     totalRecentSpeedBps = 0;
     totalProgressSamples.length = 0;
     updateTotalSpeed();
@@ -3529,17 +3535,10 @@ function updateTotalProgress() {
   totalServerBar.textContent = '';
   if (totalPercentDiv) totalPercentDiv.textContent = `${percent}%`;
 
-  const remaining = Math.max(0, totalSize - totalUploaded);
-  if (totalEtaDiv) {
-    if (remaining <= 0) {
-      totalEtaDiv.textContent = '';
-      totalRecentSpeedBps = 0;
-      totalProgressSamples.length = 0;
-    } else if (totalRecentSpeedBps > 0) {
-      totalEtaDiv.textContent = `总剩余: ${formatEta(remaining / totalRecentSpeedBps)}`;
-    } else {
-      totalEtaDiv.textContent = '总剩余: --';
-    }
+  updateUploadEta(totalUploaded < totalSize,totalUploaded,totalSize,totalRecentSpeedBps);
+  if (totalUploaded >= totalSize) {
+    totalRecentSpeedBps = 0;
+    totalProgressSamples.length = 0;
   }
   updateTotalSpeed();
 }

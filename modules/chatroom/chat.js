@@ -596,7 +596,8 @@
       const {chatroomPendingInvitations:stored = []} = await chrome.storage.local.get('chatroomPendingInvitations');
       const pending = new Map(stored.filter(item => Date.now()-item.createdAt < 120000).map(item => [item.peerId+':'+item.sid,item]));
       for (const s of tasks) if (!s.ended && !s.accepted && !s.accepting) pending.set(s.peerId+':'+s.id,{
-        peerId:s.peerId,sid:s.id,messageId:s.messageId,name:s.name,size:s.size,conversationId:s.conversationId,createdAt:s.createdAt
+        peerId:s.peerId,sid:s.id,messageId:s.messageId,name:s.name,size:s.size,conversationId:s.conversationId,createdAt:s.createdAt,
+        suppressNotification:s.waitingDecision || s.suppressNotification
       });
       await chrome.storage.local.set({chatroomPendingInvitations:[...pending.values()].slice(-LIMIT.sessions)});
     });
@@ -614,7 +615,8 @@
           !Number.isFinite(item.createdAt) || Date.now()-item.createdAt > 120000 || !permitted(item.peerId)) continue;
       const conversationId = item.conversationId === 'public' || state.rooms.some(room => room.id === item.conversationId && room.members.includes(item.peerId))
         ? item.conversationId : `peer:${item.peerId}`;
-      const s = makeSession(item.sid,item.peerId,'file',false,{messageId:item.messageId,name:safeName(item.name),size:item.size,conversationId,createdAt:item.createdAt});
+      const s = makeSession(item.sid,item.peerId,'file',false,{messageId:item.messageId,name:safeName(item.name),size:item.size,conversationId,createdAt:item.createdAt,
+        suppressNotification:item.suppressNotification === true});
       touch(s,Math.max(1,120000-(Date.now()-item.createdAt))); showInvitation(s);
     }
   }
@@ -639,8 +641,11 @@
       message.card = node('article', undefined, `message media-message${s.outgoing ? ' mine' : ''}`);
       message.card.append(messageHeader(s.senderId, s.createdAt));
       mediaMessages.set(id, message);
-      message.mediaReady = mutate('media-message', {conversationId:s.conversationId,senderId:s.senderId,messageId:s.messageId,
-        text:s.type === 'file' ? `[文件] ${s.name}` : '[屏幕共享]'}).catch(report);
+      message.mediaReady = mutate('media-message', {
+        conversationId:s.conversationId,senderId:s.senderId,messageId:s.messageId,
+        text:s.type === 'file' ? `[文件] ${s.name}` : '[屏幕共享]',
+        suppressNotification:s.waitingDecision === true || s.suppressNotification === true
+      }).catch(report);
       if (s.outgoing && s.type === 'file' && s.handle) {
         message.savedPromise = message.mediaReady.then(async () => {
           const ref = await globalThis.BjtuChatroomSettings.saveSentHandle(id, s.handle);
@@ -667,7 +672,7 @@
     message.cancel.hidden = settled;
     if (message.conversationId.startsWith('peer:')) return;
     const parts = [document.createTextNode(`${settled ? (completed === items.length ? '传输完成' : '传输已结束') : '传输中'} · ${items.length} 个接收任务 · `),
-      styledBytes(done), document.createTextNode(' / '), styledBytes(total), document.createTextNode(` · ${total ? Math.floor(done / total * 100) : completed === items.length ? 100 : 0}%`)];
+      styledBytes(done), node('span',' / ','file-size-separator'), styledBytes(total), document.createTextNode(` · ${total ? Math.floor(done / total * 100) : completed === items.length ? 100 : 0}%`)];
     if (!settled) {
       const active = items.filter(s => !s.completed && !s.ended), rate = active.reduce((n, s) => n + (s.rate || 0), 0);
       const remaining = active.reduce((n, s) => n + s.size - s.done, 0), seconds = rate > 0 ? Math.ceil(remaining / rate) : null;
@@ -721,9 +726,9 @@
   }
   function updateTransfer(s, text) {
     if (!s.progress) return;
-    if (s.type === 'file' && !s.ended) {
+    if (s.type === 'file' && !s.outgoing && s.startedAt && !s.ended) {
       s.downloadProgress ||= globalThis.BjtuDownloadProgress.begin({
-        name:s.name, source:s.outgoing ? '聊天室发送' : '聊天室接收',
+        name:s.name, source:'聊天室接收',
         total:s.size, path:s.savedPath || '', cancel:() => endSession(s,'已取消传输',true)
       });
       s.downloadProgress.update(s.done,s.size,{status:text || s.status});
@@ -735,7 +740,7 @@
       s.rate = Math.max(0, (s.done - (s.rateBytes || 0)) * 1000 / (now - (s.rateAt || s.startedAt)));
       s.rateAt = now; s.rateBytes = s.done;
     }
-    const parts = [document.createTextNode(`${text || (s.status === 'invited' ? '等待对方确认' : s.status)} · `), styledBytes(s.done), document.createTextNode(' / '), styledBytes(s.size)];
+    const parts = [document.createTextNode(`${text || (s.status === 'invited' ? '等待对方确认' : s.status)} · `), styledBytes(s.done), node('span',' / ','file-size-separator'), styledBytes(s.size)];
     if (s.size) parts.push(document.createTextNode(` · ${Math.floor(s.done / s.size * 100)}%`));
     if (s.startedAt && !s.completed && !s.ended && s.done < s.size) {
       parts.push(document.createTextNode(' · '), styledBytes(s.rate || 0, '/s'));
@@ -976,15 +981,30 @@
         endSession(s, '接收到超出约定的文件数据', true); return;
       }
       s.queued = (s.queued || 0) + data.byteLength;
+      (s.receiveChunks ||= []).push(data);
+      touch(s);
+      if (s.done + s.queued !== s.windowEnd) return;
+      // Acknowledge each bounded credit window after one disk write, not one
+      // write per packet. Rendering runs separately from disk and credit flow.
+      const chunks = s.receiveChunks;
+      const length = s.queued;
+      s.receiveChunks = [];
       s.chain = s.chain.then(async () => {
         if (s.ended) return;
-        await s.writer.write(data);
+        const buffer = new Uint8Array(length);
+        let offset = 0;
+        for (const chunk of chunks) { buffer.set(new Uint8Array(chunk),offset); offset += chunk.byteLength; }
+        await s.writer.write(buffer);
         if (s.ended) return;
-        s.done += data.byteLength; s.queued -= data.byteLength; touch(s); updateTransfer(s);
+        s.done += length; s.queued -= length;
         if (s.done === s.windowEnd && s.done < s.size) {
           s.windowEnd = Math.min(s.size, s.done + 256 * 1024);
           channel.send(JSON.stringify({ type: 'credit', end: s.windowEnd }));
         }
+        s.transferRenderTimer ??= setTimeout(() => {
+          s.transferRenderTimer = null;
+          if (!s.ended) updateTransfer(s);
+        },250);
       }).catch((error) => { report(error); endSession(s, '接收或写入失败', true); });
     };
     channel.onerror = () => endSession(s, s.completed ? (s.completionText || '对方已完整接收') : '文件通道错误', !s.completed);
@@ -1193,6 +1213,8 @@
     if (!s || s.ended) return;
     if (notify && online) signal(s, 'cancel').catch(() => {});
     s.ended = true; s.status = reason; clearTimeout(s.timer);
+    clearTimeout(s.transferRenderTimer);
+    s.receiveChunks = null;
     if (s.waitingDecision) backgroundMode?.closeInvitation(s.peerId,s.id);
     closedSessions.set(s.id, Date.now());
     while (closedSessions.size > 128) closedSessions.delete(closedSessions.keys().next().value);
@@ -1203,6 +1225,7 @@
     if (s.channel) { s.channel.onopen = s.channel.onmessage = s.channel.onclose = s.channel.onerror = null; s.channel.close(); }
     if (s.pc) { s.pc.onicecandidate = s.pc.onconnectionstatechange = s.pc.ontrack = s.pc.ondatachannel = null; s.pc.close(); }
     s.channel = s.pc = s.remoteStream = null;
+    s.downloadProgress?.update(s.done,s.size);
     void discardPartialDownload(s).finally(() => s.downloadProgress?.finish());
     if (!s.completed) releaseResources(s);
     sessions.delete(s.id); updateTransfer(s, reason);

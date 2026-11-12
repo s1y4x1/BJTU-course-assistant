@@ -428,7 +428,7 @@ function updateResourceDownloadTotals() {
     resourceTotalPercent.textContent = '0%';
     resourceTotalPercent.style.display = 'none';
     setSpeedDisplay(resourceTotalSpeed, 0);
-    resourceTotalEta.textContent = '';
+    updateResourceEta(false,0,0,0);
     refreshResourceQueueStatusText();
     return;
   }
@@ -479,7 +479,7 @@ function updateResourceDownloadTotals() {
   if (indeterminate) {
     resourceTotalSizeInfo.textContent = '';
     resourceTotalSpeed.textContent = '';
-    resourceTotalEta.textContent = '';
+    updateResourceEta(hasActiveOrQueued,totalLoaded,0,totalSpeed);
     refreshResourceQueueStatusText();
     return;
   }
@@ -490,15 +490,7 @@ function updateResourceDownloadTotals() {
   resourceTotalPercent.textContent = hasKnownTotal && totalSize > 0 ? `${percent}%` : '--';
   setSpeedDisplay(resourceTotalSpeed, totalSpeed);
 
-  if (hasKnownTotal && totalSize > totalLoaded && totalSpeed > 0) {
-    resourceTotalEta.textContent = `总剩余: ${formatEta((totalSize - totalLoaded) / totalSpeed)}`;
-  } else if (hasKnownTotal && totalSize > totalLoaded) {
-    resourceTotalEta.textContent = '总剩余: 计算中…';
-  } else if (tasks.length || batchActive || queuedEntries.length) {
-    resourceTotalEta.textContent = hasKnownTotal ? '' : '总剩余: 计算中…';
-  } else {
-    resourceTotalEta.textContent = '';
-  }
+  updateResourceEta(hasActiveOrQueued,totalLoaded,hasKnownTotal ? totalSize : 0,totalSpeed);
 
   refreshResourceQueueStatusText();
 }

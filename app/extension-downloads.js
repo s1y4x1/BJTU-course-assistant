@@ -56,13 +56,17 @@
   const footer = section.querySelector('.resource-space-footer');
   const totals = footer.querySelector('.resource-total-meta');
   const totalBar = footer.querySelector('.progress-bar-container');
+  const totalEta = span('resource-dl-eta');
+  const updateTotalEta = BjtuTransferEta.create(text => {
+    totalEta.textContent = text ? `总剩余：${text}` : '';
+  }, formatEta);
   const invert = document.getElementById('extension-download-invert');
   const dedup = document.getElementById('extension-download-dedup');
   const dedupDialog = document.getElementById('extension-download-dedup-dialog');
   const uploadSelected = document.getElementById('extension-download-upload-selected');
   const deleteSelected = document.getElementById('extension-download-delete-selected');
   const report = error => showToast(error?.message || String(error), 'error');
-  const transfers = new Map(), transferRows = new Map();
+  const transfers = new Map(), transferRows = new Map(), renderedTransfers = new Map();
   const selected = new Set();
   let saved = [], revision = 0, working = false, completedBytes = 0;
   async function* files(directory, prefix = '') {
@@ -150,7 +154,7 @@
   }
   function remaining(loaded,total,speed) {
     if (total > 0 && loaded >= total) return '0 秒';
-    if (!total || !speed) return '估算中…';
+    if (!total || !speed) return '—';
     const seconds = Math.ceil((total - loaded) / speed);
     const hours = Math.floor(seconds / 3600), minutes = Math.floor(seconds / 60) % 60;
     return `${hours ? hours + ' 小时 ' : ''}${minutes ? minutes + ' 分 ' : ''}${seconds % 60} 秒`;
@@ -165,16 +169,22 @@
     BjtuFileSizeEmphasis.applyBytes(rate,speed);
     meta.replaceChildren(...(label ? [span('resource-dl-status',label)] : []),size,
       ...(percent === null ? [] : [span('',`${Math.floor(percent)}%`)]),rate,
-      ...(idle ? [] : [span('resource-dl-eta',`${aggregate ? '总剩余' : '剩余时间'}：${remaining(loaded,total,speed)}`)]));
+      ...(aggregate ? [totalEta] : [span('resource-dl-eta',`剩余时间：${remaining(loaded,total,speed)}`)]));
   }
   function syncSavedRows() {
     const paths = new Set([...transfers.values()].map(task => task.path).filter(Boolean));
     for (const row of list.children) row.hidden = paths.has(row.dataset.path);
     syncSelection();
   }
+  let transferRenderTimer, selectionDirty = true;
+  function scheduleTransferRender(structureChanged) {
+    selectionDirty ||= structureChanged;
+    transferRenderTimer ??= setTimeout(renderTransfers,250);
+  }
   function renderTransfers() {
+    transferRenderTimer = null;
     for (const [id,row] of transferRows) if (!transfers.has(id)) {
-      row.remove(); transferRows.delete(id);
+      row.remove(); transferRows.delete(id); renderedTransfers.delete(id);
     }
     const total = {loaded:completedBytes,total:completedBytes,speed:0};
     let indeterminate = false;
@@ -191,14 +201,19 @@
         progress.innerHTML = '<div class="progress-bar-container"><div class="progress-bar"></div></div><div class="resource-download-meta"></div>';
         row.append(progress); active.append(row); transferRows.set(id,row);
       }
-      row.querySelector('.resource-name').textContent = task.name;
-      updateProgress(row.querySelector('.progress-bar-container'),row.querySelector('.resource-download-meta'),task,task.source + (task.status ? ` · ${task.status}` : ''));
+      if (renderedTransfers.get(id) !== task) {
+        row.querySelector('.resource-name').textContent = task.name;
+        const status = task.status && task.status !== 'invited' ? ` · ${task.status}` : '';
+        updateProgress(row.querySelector('.progress-bar-container'),row.querySelector('.resource-download-meta'),task,task.source + status);
+        renderedTransfers.set(id,task);
+      }
       total.loaded += task.loaded; total.total += task.total; total.speed += task.speed;
       indeterminate ||= !task.total;
     }
     totalBar.hidden = !transfers.size && !completedBytes;
     updateProgress(totalBar,totals,{...total,total:indeterminate ? 0 : total.total},'',{aggregate:true,idle:!transfers.size});
-    syncSavedRows();
+    updateTotalEta(transfers.size > 0,total.loaded,indeterminate ? 0 : total.total,total.speed);
+    if (selectionDirty) { selectionDirty = false; syncSavedRows(); }
   }
   async function relinkFiles(from, to) {
     const db = await new Promise((resolve,reject) => {
@@ -236,7 +251,7 @@
     try {
       await navigator.locks.request('bjtu-extension-download-name',async () => {
         for (const entry of entries) {
-          if (!availableFiles().includes(entry)) continue;
+          if ([...transfers.values()].some(task => task.path === `downloads/${entry.path}`) || !await isUnchanged(entry)) continue;
           await entry.directory.removeEntry(entry.name);
           await relinkFiles(entry,null);
           selected.delete(entry.path);
@@ -403,14 +418,19 @@
   channel.onmessage = ({data}) => {
     if (data === 'changed') update();
     else if (data?.type === 'progress') {
-      if (!transfers.size) completedBytes = 0;
-      transfers.set(data.task.id,data.task); renderTransfers();
+      if (data.task.source === '聊天室发送') return;
+      const structureChanged = transfers.get(data.task.id)?.path !== data.task.path;
+      if (!transfers.size) {
+        completedBytes = 0;
+        updateTotalEta(false,0,0,0);
+      }
+      transfers.set(data.task.id,data.task); scheduleTransferRender(structureChanged);
     } else if (data?.type === 'progress-ended') {
       const task = transfers.get(data.id);
       if (task) {
         completedBytes += Math.max(0,Number(data.loaded ?? task.loaded) || 0);
         transfers.delete(data.id);
-        renderTransfers(); update();
+        scheduleTransferRender(true); update();
       }
     } else if (data?.type === 'cancel-progress-error' && transfers.has(data.id)) {
       const cancel = transferRows.get(data.id)?.querySelector('button');

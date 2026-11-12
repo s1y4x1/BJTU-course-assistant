@@ -701,7 +701,8 @@
         if (senderId !== publicIdentity.id && !peer(senderId)) fail('未知媒体消息发送者。');
         const messageId = senderId + ':' + token(args.messageId);
         if (!data.messages.some(message => message.id === messageId)) history({
-          id: messageId, senderId, conversationId, text: str(args.text, 240), createdAt: Date.now(), media: true
+          id: messageId, senderId, conversationId, text: str(args.text, 240), createdAt: Date.now(), media: true,
+          ...(args.suppressNotification === true ? {suppressNotification:true} : {})
         });
         return {};
       }
