@@ -3391,7 +3391,7 @@ globalThis.BjtuVePageApi = Object.freeze({
   // - 指定非当前账号：切换到该账号，随后等待作业加载完毕。
   login: async (args) => {
     const platform = 've';
-    const requestedAccount = String(args?.account || args?.loginName || '').trim();
+    const requestedAccount = String(args?.username || '').trim();
     const enabled = typeof globalThis.isPlatformEnabled === 'function' && globalThis.isPlatformEnabled(platform);
     let currentAccount = String(window.currentAccountLoginName || '').trim();
     if (enabled && requestedAccount) {

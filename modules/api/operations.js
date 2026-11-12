@@ -1199,15 +1199,15 @@ name: 've.accounts',
         title: '智慧课程平台登录',
         blocks: [
           '平台尚未启用时会启用并触发登录；平台已经启用时不会重复启用或登录。省略账号时使用当前账号；指定账号与当前会话账号不同时仍会切换账号。操作会等待密码/验证码/错误恢复弹窗关闭，并等待智慧课程平台的作业全部加载完毕后再返回。',
-          ['parameters', '`{"account":"可选，账号；省略时使用当前填写的账号"}`'],
-          ['example', '`ve.login()` 使用当前账号；`ve.login({"account": "2428xxxx"})` 切换到指定账号并登录'],
+          ['parameters', '`{"username":"可选，账号；省略时使用当前填写的账号"}`'],
+          ['example', '`ve.login()` 使用当前账号；`ve.login({"username": "2428xxxx"})` 切换到指定账号并登录'],
           '指定账号时会等待密码/验证码弹窗关闭，并返回该目标账号本次是否登录成功；已有的其他账号会话不会被当作成功。',
           ['returnExample', '`{"ok":true}`']
         ]
       },
       async run(args) {
-        const account = String(args?.account || args?.loginName || '').trim();
-        const result = await pageInvoke('ve', 'login', { account, auto: true });
+        const username = String(args?.username || '').trim();
+        const result = await pageInvoke('ve', 'login', { username, auto: true });
         return compactLoginResult(result);
       }
     },

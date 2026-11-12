@@ -311,7 +311,7 @@ async function openBjtuPortalLogin() {
     setStatus('正在登录…');
     if (isExtensionPage) {
       try {
-        const response = await globalThis.BjtuVePageApi.login({ account: loginName });
+        const response = await globalThis.BjtuVePageApi.login({ username: loginName });
         if (response?.ok) close();
         else setStatus(response?.message || '登录失败', 'error');
       } catch (error) {
