@@ -50,7 +50,7 @@
 
   const section = document.getElementById('extension-downloads-section');
   if (!section) return;
-  const list = section.querySelector('.resource-space-list:last-child');
+  const list = section.querySelector('.extension-download-saved');
   const active = section.querySelector('.extension-download-active');
   const status = section.querySelector('.resource-space-status');
   const footer = section.querySelector('.resource-space-footer');
@@ -58,12 +58,13 @@
   const totalBar = footer.querySelector('.progress-bar-container');
   const invert = document.getElementById('extension-download-invert');
   const dedup = document.getElementById('extension-download-dedup');
+  const dedupDialog = document.getElementById('extension-download-dedup-dialog');
   const uploadSelected = document.getElementById('extension-download-upload-selected');
   const deleteSelected = document.getElementById('extension-download-delete-selected');
   const report = error => showToast(error?.message || String(error), 'error');
   const transfers = new Map(), transferRows = new Map();
   const selected = new Set();
-  let saved = [], revision = 0, working = false;
+  let saved = [], revision = 0, working = false, completedBytes = 0;
   async function* files(directory, prefix = '') {
     for await (const [name, handle] of directory.entries()) {
       if (handle.kind === 'directory') yield* files(handle, prefix + name + '/');
@@ -155,15 +156,15 @@
     return `${hours ? hours + ' 小时 ' : ''}${minutes ? minutes + ' 分 ' : ''}${seconds % 60} 秒`;
   }
   function updateProgress(bar,meta,{loaded,total,speed},label,{aggregate = false,idle = false} = {}) {
-    const percent = idle ? 0 : total > 0 ? Math.min(100,loaded / total * 100) : null;
-    bar.classList.toggle('is-indeterminate',percent === null);
+    const percent = total > 0 ? Math.min(100,loaded / total * 100) : null;
+    bar.classList.toggle('is-indeterminate',!idle && percent === null);
     bar.firstElementChild.style.width = percent === null ? '' : `${percent}%`;
     const size = span(aggregate ? 'resource-total-size' : 'resource-dl-size');
     size.innerHTML = renderFileSizePair(loaded,total);
     const rate = span('resource-dl-speed file-size-emphasis',`${BjtuFileSizeEmphasis.formatBytes(speed)}/s`);
     BjtuFileSizeEmphasis.applyBytes(rate,speed);
     meta.replaceChildren(...(label ? [span('resource-dl-status',label)] : []),size,
-      ...(idle || percent === null ? [] : [span('',`${Math.floor(percent)}%`)]),rate,
+      ...(percent === null ? [] : [span('',`${Math.floor(percent)}%`)]),rate,
       ...(idle ? [] : [span('resource-dl-eta',`${aggregate ? '总剩余' : '剩余时间'}：${remaining(loaded,total,speed)}`)]));
   }
   function syncSavedRows() {
@@ -175,7 +176,7 @@
     for (const [id,row] of transferRows) if (!transfers.has(id)) {
       row.remove(); transferRows.delete(id);
     }
-    const total = {loaded:0,total:0,speed:0};
+    const total = {loaded:completedBytes,total:completedBytes,speed:0};
     let indeterminate = false;
     for (const [id,task] of transfers) {
       let row = transferRows.get(id);
@@ -195,6 +196,7 @@
       total.loaded += task.loaded; total.total += task.total; total.speed += task.speed;
       indeterminate ||= !task.total;
     }
+    totalBar.hidden = !transfers.size && !completedBytes;
     updateProgress(totalBar,totals,{...total,total:indeterminate ? 0 : total.total},'',{aggregate:true,idle:!transfers.size});
     syncSavedRows();
   }
@@ -251,44 +253,105 @@
     }
     return parts.join('');
   }
+  async function findDuplicates() {
+    const sizes = new Map(), groups = new Map();
+    for (const entry of availableFiles()) {
+      const group = sizes.get(entry.size) || [];
+      group.push(entry); sizes.set(entry.size,group);
+    }
+    for (const [size, entries] of sizes) {
+      if (entries.length < 2) continue;
+      for (const entry of entries) {
+        const file = await entry.handle.getFile();
+        if (file.size !== size || file.lastModified !== entry.savedAt) continue;
+        const signature = size + ':' + await fileSignature(file);
+        const group = groups.get(signature) || [];
+        group.push(entry); groups.set(signature,group);
+      }
+    }
+    return [...groups.values()].filter(group => group.length > 1)
+      .map(group => group.sort((a,b) => a.savedAt - b.savedAt || a.path.localeCompare(b.path)));
+  }
+  function chooseDuplicateFiles(groups) {
+    const container = dedupDialog.querySelector('.extension-download-dedup-groups');
+    const confirmButton = dedupDialog.querySelector('[value="delete"]');
+    const choices = new Map();
+    container.replaceChildren(...groups.map((group,index) => {
+      const field = document.createElement('fieldset');
+      const legend = document.createElement('legend');
+      legend.textContent = `第 ${index + 1} 组 · ${group.length} 个文件 · `;
+      const size = span('file-size-emphasis',BjtuFileSizeEmphasis.formatBytes(group[0].size));
+      BjtuFileSizeEmphasis.applyBytes(size,group[0].size);
+      legend.append(size);
+      field.append(legend);
+      for (const [i,entry] of group.entries()) {
+        const label = document.createElement('label'), input = document.createElement('input');
+        input.type = 'checkbox';
+        input.checked = i === 0;
+        const detail = span(''), date = span('');
+        detail.append(entry.path,' · ',BjtuDateTime.set(date,entry.savedAt));
+        label.append(input,detail); field.append(label); choices.set(entry,input);
+      }
+      return field;
+    }));
+    function sync() {
+      const count = [...choices.values()].filter(input => !input.checked).length;
+      confirmButton.textContent = `删除 ${count} 个未勾选的文件`;
+      confirmButton.disabled = count === 0;
+    }
+    container.onchange = sync;
+    sync();
+    dedupDialog.returnValue = '';
+    return new Promise(resolve => {
+      dedupDialog.addEventListener('close',() => {
+        const keep = dedupDialog.returnValue === 'delete'
+          ? new Set([...choices].filter(([,input]) => input.checked).map(([entry]) => entry))
+          : null;
+        container.onchange = null;
+        container.replaceChildren();
+        resolve(keep);
+      },{once:true});
+      dedupDialog.showModal();
+    });
+  }
+  async function isUnchanged(entry) {
+    try {
+      const file = await entry.handle.getFile();
+      return file.size === entry.size && file.lastModified === entry.savedAt;
+    } catch (error) {
+      if (error.name === 'NotFoundError') return false;
+      throw error;
+    }
+  }
   async function deduplicate() {
     if (working || transfers.size || saved.length < 2) return;
     working = true; syncSelection();
     try {
+      const duplicates = await findDuplicates();
+      if (!duplicates.length) { showToast('没有发现重复文件','success'); return; }
+      if (transfers.size) throw new Error('有文件正在传输，请在传输结束后重新去重');
+      const kept = await chooseDuplicateFiles(duplicates);
+      if (!kept) return;
       await navigator.locks.request('bjtu-extension-download-name',async () => {
-        const sizes = new Map(), groups = new Map();
-        for (const entry of availableFiles()) {
-          const group = sizes.get(entry.size) || [];
-          group.push(entry); sizes.set(entry.size,group);
-        }
-        for (const [size, entries] of sizes) {
-          if (entries.length < 2) continue;
-          for (const entry of entries) {
-            const file = await entry.handle.getFile();
-            if (file.size !== size || file.lastModified !== entry.savedAt) continue;
-            const signature = size + ':' + await fileSignature(file);
-            const group = groups.get(signature) || [];
-            group.push(entry); groups.set(signature,group);
-          }
-        }
-        const duplicates = [...groups.values()].filter(group => group.length > 1);
-        const count = duplicates.reduce((sum,group) => sum + group.length - 1,0);
-        if (!count) { showToast('没有发现重复文件','success'); return; }
-        if (transfers.size || !confirm(`发现 ${count} 个重复文件。每组保留最早保存的一份，删除其他副本并更新本地引用。继续吗？`)) return;
-        let removed = 0;
+        let removed = 0, skipped = 0;
         for (const group of duplicates) {
-          const [keep,...copies] = group.sort((a,b) => a.savedAt - b.savedAt || a.path.localeCompare(b.path));
+          const survivors = group.filter(entry => kept.has(entry));
+          const copies = group.filter(entry => !kept.has(entry));
+          if (!copies.length) continue;
+          let keep = null;
+          for (const entry of survivors) {
+            if (await isUnchanged(entry)) { keep = entry; break; }
+          }
+          if (survivors.length && !keep) { skipped += copies.length; continue; }
           for (const copy of copies) {
             if (transfers.size) throw new Error('有文件开始传输，已停止继续去重');
-            const [original,duplicate] = await Promise.all([keep.handle.getFile(),copy.handle.getFile()]);
-            if (original.lastModified !== keep.savedAt || original.size !== keep.size ||
-                duplicate.lastModified !== copy.savedAt || duplicate.size !== copy.size) continue;
+            if (!await isUnchanged(copy)) { skipped++; continue; }
             await relinkFiles(copy,keep);
             await copy.directory.removeEntry(copy.name);
             selected.delete(copy.path); removed++;
           }
         }
-        showToast(`已去除 ${removed} 个重复文件`,'success');
+        showToast(`已删除 ${removed} 个重复文件${skipped ? `，跳过 ${skipped} 个已变动的文件` : ''}`,skipped ? 'warning' : 'success');
       });
     } finally { working = false; changed(); await refresh(); }
   }
@@ -340,9 +403,15 @@
   channel.onmessage = ({data}) => {
     if (data === 'changed') update();
     else if (data?.type === 'progress') {
+      if (!transfers.size) completedBytes = 0;
       transfers.set(data.task.id,data.task); renderTransfers();
-    } else if (data?.type === 'progress-ended' && transfers.delete(data.id)) {
-      renderTransfers(); update();
+    } else if (data?.type === 'progress-ended') {
+      const task = transfers.get(data.id);
+      if (task) {
+        completedBytes += Math.max(0,Number(data.loaded ?? task.loaded) || 0);
+        transfers.delete(data.id);
+        renderTransfers(); update();
+      }
     } else if (data?.type === 'cancel-progress-error' && transfers.has(data.id)) {
       const cancel = transferRows.get(data.id)?.querySelector('button');
       if (cancel) cancel.disabled = false;

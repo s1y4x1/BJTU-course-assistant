@@ -146,7 +146,7 @@
                 <div class="resource-space-footer">
                     <div class="resource-total-progress-wrap">
                         <div class="resource-total-meta"></div>
-                        <div class="progress-bar-container"><div class="progress-bar"></div></div>
+                        <div class="progress-bar-container" hidden><div class="progress-bar"></div></div>
                     </div>
                     <div class="resource-space-actions selected-file-actions">
                         <button type="button" id="extension-download-upload-selected" class="btn" disabled>上传</button>
@@ -155,7 +155,18 @@
                 </div>
                 <div class="resource-space-status" role="status">正在读取下载文件…</div>
                 <div class="resource-space-list extension-download-active"></div>
-                <div class="resource-space-list"></div>
+                <div class="resource-space-list extension-download-saved"></div>
+                <dialog id="extension-download-dedup-dialog" aria-labelledby="extension-download-dedup-title">
+                    <form method="dialog">
+                        <h2 id="extension-download-dedup-title">选择要保留的重复文件</h2>
+                        <p>每组默认保留最早保存的文件。可以保留任意数量，未勾选的文件将被删除，无法撤销。</p>
+                        <div class="extension-download-dedup-groups"></div>
+                        <div class="extension-download-dedup-actions">
+                            <button type="submit" class="btn" value="cancel" autofocus>取消</button>
+                            <button type="submit" class="btn" value="delete">删除未勾选的文件</button>
+                        </div>
+                    </form>
+                </dialog>
             </section>
         </div>
 

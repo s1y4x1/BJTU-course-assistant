@@ -39,14 +39,14 @@
       finish() {
         clearTimeout(pending);
         cancels.delete(id);
-        if (tasks.delete(id)) channel.postMessage({type:'progress-ended',id});
+        if (tasks.delete(id)) channel.postMessage({type:'progress-ended',id,loaded:task.loaded});
       }
     };
   }
   globalThis.BjtuDownloadProgress = {begin};
   addEventListener('pagehide', event => {
     if (event.persisted) return;
-    for (const id of tasks.keys()) channel.postMessage({type:'progress-ended',id});
+    for (const {id,loaded} of tasks.values()) channel.postMessage({type:'progress-ended',id,loaded});
     tasks.clear();
     cancels.clear();
     channel.close();
