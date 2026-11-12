@@ -104,6 +104,24 @@
       <label>日期分隔符 <select id="dateSeparator" class="bjtu-content-sized-select"><option value="/">/</option><option value="-">-</option><option value=".">.</option><option value="custom">自定义</option></select><input id="dateSeparatorCustom" type="text" maxlength="8" class="bjtu-content-sized-input" aria-label="自定义日期分隔符" hidden></label>
       <label>日期顺序 <select id="dateOrder" class="bjtu-content-sized-select"><option value="ymd">年 月 日</option><option value="ydm">年 日 月</option><option value="myd">月 年 日</option><option value="mdy">月 日 年</option><option value="dym">日 年 月</option><option value="dmy">日 月 年</option></select></label>
       <div class="option-divider" role="separator"></div>
+      <section id="markdownVendorEditor" aria-labelledby="markdownVendorHeading">
+        <div class="markdown-vendor-heading"><span id="markdownVendorHeading">Markdown 渲染组件</span><span class="tip">按需从项目在 npm 发布的官方包下载；未安装时仍可查看公式源码和普通代码块。仅支持可写的本地扩展目录，重新打开相关页面后生效。</span></div>
+        <div class="markdown-vendor-row" data-markdown-vendor="katex">
+          <label><span>KaTeX 公式</span><select class="bjtu-content-sized-select" aria-label="KaTeX 版本" disabled></select></label>
+          <span class="markdown-vendor-size" data-size></span>
+          <span class="markdown-vendor-status" data-state role="status">正在检查…</span>
+          <div class="markdown-vendor-actions"><button type="button" data-download disabled>下载</button><button type="button" data-delete disabled>删除</button></div>
+          <progress class="markdown-vendor-progress" aria-label="KaTeX 下载进度" max="1" hidden></progress>
+        </div>
+        <div class="markdown-vendor-row" data-markdown-vendor="highlight">
+          <label><span>Highlight.js 高亮</span><select class="bjtu-content-sized-select" aria-label="Highlight.js 版本" disabled></select></label>
+          <span class="markdown-vendor-size" data-size></span>
+          <span class="markdown-vendor-status" data-state role="status">正在检查…</span>
+          <div class="markdown-vendor-actions"><button type="button" data-download disabled>下载</button><button type="button" data-delete disabled>删除</button></div>
+          <progress class="markdown-vendor-progress" aria-label="Highlight.js 下载进度" max="1" hidden></progress>
+        </div>
+      </section>
+      <div class="option-divider" role="separator"></div>
       <details class="ui-order-editor font-size-editor" id="fontSizeEditor">
         <summary><span class="ui-order-summary-label">字号</span><span class="tip">相同默认字号的文字由同一分类统一控制。</span></summary>
         <div class="font-size-grid">
@@ -122,20 +140,6 @@
         <label class="component-color-gradient-toggle"><input type="checkbox" id="homeworkDeadlineGradientEnabled" checked> 使用渐变的未交作业卡片颜色</label>
         <div class="tip">未交作业从未交作业颜色渐变至逾期作业颜色；距离截止越近，渐变进度、闪烁、呼吸与边框跑马灯越明显，每隔一天临期强度减半。无截止时间的作业不渐变。</div>
         <label class="component-color-gradient-toggle"><input type="checkbox" id="homeworkMarqueeEnabled" checked> 未交作业卡片跑马灯效果<span class="tip">同时控制跑马灯与呼吸，仅用于有截止时间的未交作业。周期为 log₂(1 + 剩余小时数) + 0.5 秒，光亮强度等仍按指数变化；关闭后保留卡片颜色，动画总开关也会控制这些效果。已交、逾期及教师作业不使用跑马灯。</span></label>
-      </details>
-      <div class="option-divider" role="separator"></div>
-      <details class="ui-order-editor" id="markdownVendorEditor">
-        <summary><span class="ui-order-summary-label">Markdown 渲染组件</span><span class="tip">按需从项目在 npm 发布的官方包下载；未安装时仍可查看公式源码和普通代码块。仅支持可写的本地扩展目录，重新打开相关页面后生效。</span></summary>
-        <div class="markdown-vendor-row" data-markdown-vendor="katex">
-          <label>KaTeX 公式 <select aria-label="KaTeX 版本" disabled></select></label>
-          <button type="button" data-download disabled>下载</button><button type="button" data-disable hidden>停用</button>
-          <span class="markdown-vendor-status" data-state role="status">未安装</span>
-        </div>
-        <div class="markdown-vendor-row" data-markdown-vendor="highlight">
-          <label>Highlight.js 高亮 <select aria-label="Highlight.js 版本" disabled></select></label>
-          <button type="button" data-download disabled>下载</button><button type="button" data-disable hidden>停用</button>
-          <span class="markdown-vendor-status" data-state role="status">未安装</span>
-        </div>
       </details>
       <div class="option-divider" role="separator"></div>
       <details class="ui-order-editor" id="uiOrderEditor">

@@ -8,23 +8,26 @@
   const vendorEntries = [['katex','katex','katex.min.js'], ['hljs','highlight','highlight.min.js']];
   function loadVendor(name, directory, file, versions) {
     if (global[name]) { vendorStatus.set(name, true); return Promise.resolve(); }
-    const version = versions?.[directory];
+    const selection = versions?.[directory];
+    const legacy = typeof selection === 'string';
+    const version = legacy ? selection : selection?.version;
     if (typeof version !== 'string' || !/^\d+\.\d+\.\d+$/.test(version)) {
       vendorStatus.set(name,false); return Promise.resolve();
     }
-    const base = `UI/vendor/${directory}/${version}/`, path = base + file;
-    const load = global.BjtuModuleRegistry?.loadScript ? global.BjtuModuleRegistry.loadScript(path) : new Promise((resolve, reject) => {
+    const load = path => global.BjtuModuleRegistry?.loadScript ? global.BjtuModuleRegistry.loadScript(path) : new Promise((resolve, reject) => {
       const script = document.createElement('script'); script.src = chrome.runtime.getURL(path);
       script.onload = resolve; script.onerror = () => reject(new Error(`Markdown 组件加载失败：${name}`));
       document.head.append(script);
     });
-    const css = name !== 'katex' ? Promise.resolve() : new Promise((resolve,reject) => {
+    const css = base => name !== 'katex' ? Promise.resolve() : new Promise((resolve,reject) => {
       const link = document.createElement('link'); link.rel = 'stylesheet';
       link.href = chrome.runtime.getURL(base + 'katex.min.css');
       link.onload = resolve; link.onerror = reject;
       document.head.append(link);
     });
-    return Promise.all([load,css]).then(() => { vendorStatus.set(name,!!global[name]); })
+    // String selections point to existing versioned installs; new installs use a fixed path.
+    const base = `UI/vendor/${directory}/` + (legacy ? version + '/' : '');
+    return Promise.all([load(base + file),css(base)]).then(() => { vendorStatus.set(name,!!global[name]); })
       .catch(() => { vendorStatus.set(name,false); });
   }
   const ready = typeof document === 'undefined' ? Promise.resolve()

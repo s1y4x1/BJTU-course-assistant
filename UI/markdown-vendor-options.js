@@ -73,8 +73,8 @@
     }
     const response = await request(tarball.href);
     const total = Number(response.headers.get('content-length')) || 0;
-    const bytes = await readBytes(response.body,32 * 1024 * 1024,loaded =>
-      report(total ? `下载中… ${Math.min(100,Math.floor(loaded / total * 100))}%` : `下载中… ${Math.round(loaded / 1024)} KB`));
+    report(0,total);
+    const bytes = await readBytes(response.body,32 * 1024 * 1024,loaded => report(loaded,total));
     const hash = new Uint8Array(await crypto.subtle.digest('SHA-512',bytes));
     if ('sha512-' + btoa(String.fromCharCode(...hash)) !== integrity) throw new Error('安装包完整性校验失败');
     const unpacked = await readBytes(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip')),64 * 1024 * 1024);
@@ -94,44 +94,94 @@
     await navigator.locks.request('bjtu-markdown-vendor-options',async () => {
       const stored = await chrome.storage.local.get(settingsKey);
       const versions = {...stored[settingsKey]};
-      if (version) versions[id] = version; else delete versions[id];
+      if (version) versions[id] = {version}; else delete versions[id];
       await chrome.storage.local.set({[settingsKey]:versions});
     });
+  }
+  async function clearComponent(root,id) {
+    try {
+      const ui = await root.getDirectoryHandle('UI');
+      const vendor = await ui.getDirectoryHandle('vendor');
+      await globalThis.BjtuUpdateFileSystem.removeEntry(vendor,id,{recursive:true});
+    } catch (error) {
+      if (error.name !== 'NotFoundError') throw error;
+    }
   }
   function bind(row) {
     const id = row.dataset.markdownVendor, component = components[id];
     const versions = row.querySelector('select'), state = row.querySelector('[data-state]');
-    const download = row.querySelector('[data-download]'), disable = row.querySelector('[data-disable]');
-    let busy = false, loaded = false, installed = '', revision = 0;
+    const download = row.querySelector('[data-download]'), remove = row.querySelector('[data-delete]');
+    const size = row.querySelector('[data-size]'), progress = row.querySelector('progress');
+    const fileSizes = globalThis.BjtuFileSizeEmphasis;
+    let busy = false, loaded = false, configured = '', installed = '', installedBytes = 0, revision = 0;
     const status = (text,tone = '') => { state.textContent = text; state.dataset.tone = tone; };
+    function styledBytes(bytes) {
+      const span = document.createElement('span');
+      span.className = 'file-size-emphasis';
+      span.dataset.fileSizeBytes = String(bytes);
+      span.textContent = fileSizes.formatBytes(bytes);
+      fileSizes.applyBytes(span,bytes);
+      return span;
+    }
+    function showProgress(loadedBytes,total) {
+      progress.hidden = false;
+      if (total > 0) {
+        progress.value = Math.min(1,loadedBytes / total);
+        const separator = document.createElement('span');
+        separator.className = 'file-size-separator'; separator.textContent = ' / ';
+        size.replaceChildren(styledBytes(loadedBytes),separator,styledBytes(total),` ${Math.floor(progress.value * 100)}%`);
+      } else {
+        progress.removeAttribute('value');
+        size.replaceChildren(styledBytes(loadedBytes));
+      }
+      size.title = '官方安装包下载进度';
+    }
+    function showInstalledSize() {
+      progress.hidden = true;
+      size.replaceChildren(...(installedBytes ? [styledBytes(installedBytes)] : []));
+      size.title = installedBytes ? '已安装的主脚本大小' : '';
+    }
     function render() {
       versions.disabled = busy || !loaded;
-      download.disabled = busy || !loaded || !versions.value || versions.value === installed;
-      disable.disabled = busy; disable.hidden = !installed;
+      download.disabled = busy || (loaded && !versions.value);
+      download.textContent = versions.value && versions.value === installed ? '修复' : loaded ? '下载' : '重试';
+      remove.disabled = busy || !configured;
     }
-    function installedStatus() { status(installed ? `已安装 ${installed}（重新打开相关页面后生效）` : '未安装'); }
+    function installedStatus() {
+      if (configured && !installed) status('本地文件已缺失，可重新下载','error');
+      else status(installed ? `已安装 ${installed}` : '未安装');
+    }
     async function refresh(value) {
       const current = ++revision;
-      const version = value?.[id] || '';
-      let present = false;
+      const selection = value?.[id];
+      const legacy = typeof selection === 'string';
+      const version = (legacy ? selection : selection?.version) || '';
+      let bytes = 0;
       if (supported(component,version)) {
         const file = component.script.replace(/^dist\//,'');
-        const url = chrome.runtime.getURL(`UI/vendor/${id}/${version}/${file}`);
-        present = await fetch(url,{cache:'no-store'}).then(response => response.ok,() => false);
+        const base = `UI/vendor/${id}/` + (legacy ? version + '/' : '');
+        try {
+          const response = await fetch(chrome.runtime.getURL(base + file),{cache:'no-store'});
+          if (response.ok) bytes = (await response.blob()).size;
+        } catch {}
       }
       if (current !== revision) return;
-      installed = present ? version : '';
-      if (!busy) {
-        if (version && !present) status(`${version} 的本地文件已缺失，可重新下载`,'error');
-        else installedStatus();
+      const wasConfigured = configured;
+      configured = version;
+      installed = bytes ? version : '';
+      installedBytes = bytes;
+      if (version && (!versions.value || versions.value === wasConfigured) &&
+          [...versions.options].some(option => option.value === version)) {
+        versions.value = version;
       }
+      if (!busy) { installedStatus(); showInstalledSize(); }
       render();
     }
     chrome.storage.onChanged.addListener((changes,area) => {
       if (area === 'local' && changes[settingsKey]) void refresh(changes[settingsKey].newValue);
     });
     async function loadVersions() {
-      if (!panel.open || loaded || busy) return;
+      if (loaded || busy) return;
       busy = true; status('正在读取官方版本…'); render();
       try {
         const metadata = await (await request(packageUrl(component),{headers:{Accept:'application/vnd.npm.install-v1+json'}})).json();
@@ -141,42 +191,52 @@
         });
         if (!releases.length) throw new Error('未找到可用的正式版本');
         versions.replaceChildren(...releases.map(version => new Option(version,version)));
-        versions.value = releases.includes(installed) ? installed : releases[0];
+        versions.value = releases.includes(configured) ? configured : releases[0];
         loaded = true; installedStatus();
-      } catch (error) { status(`${error.message}，请重新展开后重试`,'error'); }
-      finally { busy = false; render(); }
-    }
-    versions.onchange = render;
-    panel.addEventListener('toggle',loadVersions);
-    void chrome.storage.local.get(settingsKey).then(async stored => {
-      await refresh(stored[settingsKey]); return loadVersions();
-    });
-    disable.onclick = async () => {
-      try { await saveSelection(id,''); } catch (error) { status(error.message,'error'); }
-    };
-    download.onclick = async () => {
-      if (busy || !versions.value) return;
-      const version = versions.value;
-      busy = true; status('正在检查扩展目录权限…'); render();
-      try {
-        await globalThis.__bjtuUpdaterReady;
-        if (!globalThis.BjtuDirectoryPermission) throw new Error('更新组件未就绪，无法写入本地扩展目录');
-        const root = await globalThis.BjtuDirectoryPermission.request();
-        if (!root) { installedStatus(); return; }
-        status('正在连接 npm 官方源…');
-        const files = await getPackage(id,version,status);
-        status('正在写入本地扩展目录…');
-        await globalThis.BjtuUpdateFileSystem.withInstallLock(async () => {
-          for (const [path,bytes] of files) {
-            const relative = id === 'katex' ? path.replace(/^dist\//,'') : path;
-            await globalThis.BjtuUpdateFileSystem.writeFile(root,`UI/vendor/${id}/${version}/${relative}`,bytes);
-          }
-          await saveSelection(id,version);
-        });
-        installed = version; installedStatus();
       } catch (error) { status(error.message,'error'); }
       finally { busy = false; render(); }
-    };
+    }
+    async function modify(version) {
+      if (busy) return;
+      busy = true; status('正在检查扩展目录权限…'); render();
+      try {
+        await navigator.locks.request(`bjtu-markdown-vendor-${id}`,{ifAvailable:true},async lock => {
+          if (!lock) throw new Error('此组件正在另一页面处理');
+          await globalThis.__bjtuUpdaterReady;
+          if (!globalThis.BjtuDirectoryPermission) throw new Error('更新组件未就绪，无法写入本地扩展目录');
+          const root = await globalThis.BjtuDirectoryPermission.request();
+          if (!root) return;
+          let files;
+          if (version) {
+            status('正在连接 npm 官方源…');
+            files = await getPackage(id,version,(done,total) => {
+              status('下载中…'); showProgress(done,total);
+            });
+          }
+          status(version ? '正在写入本地扩展目录…' : '正在删除…');
+          await globalThis.BjtuUpdateFileSystem.withInstallLock(async () => {
+            await saveSelection(id,'');
+            await clearComponent(root,id);
+            if (!files) return;
+            for (const [path,bytes] of files) {
+              const relative = path.replace(/^dist\//,'');
+              await globalThis.BjtuUpdateFileSystem.writeFile(root,`UI/vendor/${id}/${relative}`,bytes);
+            }
+            await saveSelection(id,version);
+          });
+        });
+        await refresh((await chrome.storage.local.get(settingsKey))[settingsKey]);
+        installedStatus();
+      } catch (error) { status(error.message,'error'); }
+      finally { busy = false; showInstalledSize(); render(); }
+    }
+    versions.onchange = render;
+    remove.onclick = () => modify('');
+    download.onclick = () => loaded ? modify(versions.value) : loadVersions();
+    void chrome.storage.local.get(settingsKey).then(async stored => {
+      await refresh(stored[settingsKey]);
+      await loadVersions();
+    });
   }
   panel.querySelectorAll('[data-markdown-vendor]').forEach(bind);
 })();

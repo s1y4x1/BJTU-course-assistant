@@ -584,8 +584,29 @@ html[data-color-scheme="dark"] .extension-image-preview {
   background:#111827;
   box-shadow:0 8px 24px rgba(0,0,0,.5);
 }
-.markdown-vendor-row { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; }
-.markdown-vendor-row label { display:flex; align-items:center; gap:6px; }
-.markdown-vendor-row [hidden] { display:none !important; }
-.markdown-vendor-status { font-size:var(--bjtu-font-size-auxiliary,11px); }
-.markdown-vendor-status[data-tone="error"] { color:#dc2626; }
+.markdown-vendor-heading {
+  display:flex; align-items:center; gap:6px; margin-bottom:6px;
+  font-size:var(--bjtu-font-size-secondaryTitle,16px); font-weight:700;
+}
+.markdown-vendor-row {
+  display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; min-width:0;
+  padding:7px 8px; border:1px solid #e2e8f0; border-radius:8px; background:#f8fafc;
+}
+.markdown-vendor-row + .markdown-vendor-row { margin-top:6px; }
+.markdown-vendor-row label { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:0; }
+.markdown-vendor-size, .markdown-vendor-actions { white-space:nowrap; }
+.markdown-vendor-size:empty { display:none; }
+.markdown-vendor-status { margin-inline-start:auto; color:#475569; }
+.markdown-vendor-actions { display:flex; gap:6px; }
+.markdown-vendor-actions button { padding:5px 9px; }
+.markdown-vendor-actions [data-delete]:not(:disabled) { background:#dc2626; }
+.markdown-vendor-status[data-tone="error"] { color:#b91c1c; }
+.markdown-vendor-progress { flex:0 0 100%; width:100%; height:4px; accent-color:#2563eb; }
+.markdown-vendor-progress:not(:indeterminate) { appearance:none; overflow:hidden; border:0; border-radius:2px; }
+.markdown-vendor-progress::-webkit-progress-bar { background:#dbeafe; }
+.markdown-vendor-progress::-webkit-progress-value { background:#2563eb; transition:width .15s ease; }
+html[data-color-scheme="dark"] .markdown-vendor-row { border-color:#334155; background:#111827; }
+html[data-color-scheme="dark"] .markdown-vendor-status { color:#cbd5e1; }
+html[data-color-scheme="dark"] .markdown-vendor-status[data-tone="error"] { color:#fca5a5; }
+html[data-color-scheme="dark"] .markdown-vendor-progress::-webkit-progress-bar { background:#1e3a5f; }
+html[data-color-scheme="dark"] .markdown-vendor-progress::-webkit-progress-value { background:#60a5fa; }
