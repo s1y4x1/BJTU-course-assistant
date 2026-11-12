@@ -53,23 +53,24 @@
     return countdownStyle === 'normal' ? renderNormalTime(text) : renderSevenSegmentTime(text);
   }
 
-  function countdownContent(deadline) {
+  function countdownText(deadline, now = Date.now()) {
     if (countdownStyle === 'none' || !deadline) return '';
     const timestamp = typeof global.parseDeadlineToTs === 'function'
       ? global.parseDeadlineToTs(deadline)
       : Number(deadline || 0);
-    const difference = timestamp - Date.now();
+    const difference = timestamp - now;
     if (!Number.isFinite(difference) || difference <= 0) return '';
     const days = Math.floor(difference / 86400000);
     const hours = Math.floor(difference / 3600000) % 24;
     const minutes = Math.floor(difference / 60000) % 60;
     const seconds = Math.floor(difference / 1000) % 60;
     const pad = (value) => String(value).padStart(2, '0');
-    return renderCountdownTime(`${pad(days)}:${pad(hours)}:${pad(minutes)}:${pad(seconds)}`);
+    return `${pad(days)}:${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
   }
 
   function renderCountdownHtml(deadline) {
-    const content = countdownContent(deadline);
+    const text = countdownText(deadline);
+    const content = text ? renderCountdownTime(text) : '';
     const prefix = content ? '<span class="deadline-countdown-prefix">剩</span>' : '';
     const normalClass = countdownStyle === 'normal' ? ' deadline-countdown--normal' : '';
     return `${prefix}<span class="deadline-countdown${normalClass}" data-deadline="${escapeAttribute(deadline)}"${content ? '' : ' style="display:none"'}>${content}</span>`;
@@ -89,23 +90,51 @@
     span.before(prefix);
   }
 
+  function updateDisplay(span, text, normal) {
+    const display = span.firstElementChild;
+    const previous = display?.getAttribute('aria-label') || '';
+    const expectedClass = normal ? 'deadline-countdown-normal' : 'seven-seg-display';
+    if (!display?.classList.contains(expectedClass) || (!normal && display.children.length !== text.length)) {
+      span.innerHTML = renderCountdownTime(text);
+      return;
+    }
+    if (previous === text) return;
+    display.setAttribute('aria-label',text);
+    if (normal) {
+      if (display.firstChild?.nodeType === 3) display.firstChild.data = text;
+      else display.textContent = text;
+      return;
+    }
+    for (let i = 0; i < text.length; i++) {
+      if (text[i] === previous[i] || text[i] === ':') continue;
+      const active = segmentMap[text[i]], old = segmentMap[previous[i]] || '';
+      const segments = display.children[i].children;
+      for (let j = 0; j < segments.length; j++) {
+        const part = String.fromCharCode(97 + j);
+        const on = active.includes(part);
+        if (on !== old.includes(part)) segments[j].classList.toggle('on',on);
+      }
+    }
+  }
+
   function updateAllCountdowns(root = document) {
+    const now = Date.now();
     root.querySelectorAll('.deadline-countdown').forEach((span) => {
       const normalStyle = countdownStyle === 'normal';
       if (span.classList.contains('deadline-countdown--normal') !== normalStyle) {
         span.classList.toggle('deadline-countdown--normal', normalStyle);
       }
-      const nextHtml = countdownContent(span.dataset.deadline);
-      if (!nextHtml) {
+      const text = countdownText(span.dataset.deadline,now);
+      if (!text) {
         syncCountdownPrefix(span, false);
-        if (span.innerHTML !== '') span.innerHTML = '';
-        span.style.display = 'none';
+        if (span.firstChild) span.replaceChildren();
+        if (span.style.display !== 'none') span.style.display = 'none';
         return;
       }
 
-      span.style.display = '';
+      if (span.style.display) span.style.display = '';
       syncCountdownPrefix(span, true);
-      if (span.innerHTML !== nextHtml) span.innerHTML = nextHtml;
+      updateDisplay(span,text,normalStyle);
     });
   }
 
@@ -130,6 +159,7 @@
   global.renderDeadlineCountdownHtml = renderCountdownHtml;
   global.updateAllCountdowns = updateAllCountdowns;
   if (global.__deadlineCountdownTimer) clearInterval(global.__deadlineCountdownTimer);
-  global.__deadlineCountdownTimer = setInterval(updateAllCountdowns, 1000);
+  global.__deadlineCountdownTimer = setInterval(() => { if (!document.hidden) updateAllCountdowns(); },1000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) updateAllCountdowns(); });
   void loadStyle();
 })(globalThis);

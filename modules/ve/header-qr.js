@@ -151,16 +151,22 @@
     } else {
       const source = document.querySelector(section === 'courses' ? '#course-list' : '#resource-space-list');
       if (!source?.querySelector('.file-item,.homework-card')) throw new Error('暂无可分享的内容，请先加载。');
-      const clone = source.cloneNode(true);
+      const clone = out.importNode(source,true);
       const originalCards = source.querySelectorAll('.course-card,.homework-card,.file-item');
       clone.querySelectorAll('.course-card,.homework-card,.file-item').forEach((node,index) => {
         const style = getComputedStyle(originalCards[index]); node.style.backgroundColor = style.backgroundColor; node.style.color = style.color;
       });
       for (const row of clone.querySelectorAll('.homework-toggle-row')) {
-        const group = row.nextElementSibling, toggle = row.querySelector('.homework-toggle-btn');
-        if (!group?.classList.contains('homework-group') || !toggle) continue;
-        const details = document.createElement('details'), summary = document.createElement('summary');
-        const label = toggle.querySelector('.homework-toggle-text') || toggle;
+        const toggle = row.querySelector('.homework-toggle-btn');
+        if (!toggle) continue;
+        const kind = toggle.dataset.homeworkToggleKind;
+        if (['done','overdue'].includes(kind) && row.nextElementSibling?.dataset.homeworkGroup !== kind) {
+          globalThis.renderHomeworkList?.(toggle.dataset.courseId,{groupOnly:kind,exportArea:row.parentElement});
+        }
+        const group = row.nextElementSibling;
+        if (!group?.classList.contains('homework-group')) continue;
+        const details = out.createElement('details'), summary = out.createElement('summary');
+        const label = toggle.querySelector('.homework-toggle-label, .homework-toggle-text') || toggle;
         summary.textContent = label.textContent.trim().replace(/^(查看|收起)\s*/, '');
         details.open = !group.classList.contains('is-hidden');
         group.classList.remove('is-hidden','homework-group-animating');
@@ -169,7 +175,7 @@
       for (const box of clone.querySelectorAll('.expandable-box:not(.no-toggle)')) {
         const body = box.querySelector(':scope > .expandable-body');
         if (!body) continue;
-        const details = document.createElement('details'), summary = document.createElement('summary');
+        const details = out.createElement('details'), summary = out.createElement('summary');
         details.className = 'share-detail'; summary.textContent = '详情'; details.open = box.dataset.expanded === '1';
         box.replaceWith(details); details.append(summary,body);
       }
@@ -183,7 +189,7 @@
         if (node.hasAttribute('href')) {
           const url = new URL(node.getAttribute('href') || '',location.href);
           if (['http:','https:','mailto:'].includes(url.protocol)) {
-            let href = url.href;
+            let href = section === 'courses' ? globalThis.BjtuVeAddress?.replace(url.href) || url.href : url.href;
             if (node.matches('a.resource-url') && url.protocol !== 'mailto:') node.dataset.shareUrl = href;
             if (section === 'resources' && node instanceof HTMLAnchorElement) {
               const name = node.closest('.file-item')?.querySelector('.resource-name')?.textContent || node.textContent;
@@ -196,7 +202,7 @@
         node.removeAttribute('xlink:href');
         if (node instanceof HTMLImageElement) node.src = new URL(node.getAttribute('src') || '',location.href).href;
       });
-      list.append(out.importNode(clone,true));
+      list.append(clone);
     }
     return '<!doctype html>\n'+out.documentElement.outerHTML;
   }

@@ -9,7 +9,7 @@
     : value;
   const ready = chrome.storage.local.get(key).then((data) => {
     enabled = data[key] === true;
-    refreshDocument();
+    syncDocumentObserver();
   });
   global.BjtuVeAddress = { replace, ready, get enabled() { return enabled; } };
 
@@ -54,7 +54,7 @@
     };
   }
 
-  function refreshDocument(root = global.document?.documentElement, descendants = true) {
+  function refreshDocument(root = global.document?.documentElement, descendants = true, attributeName = '') {
     if (!root) return;
     const documentValue = (node, name, current) => {
       let values = documentValues.get(node);
@@ -64,7 +64,7 @@
       if (next !== original) {
         if (!values) documentValues.set(node, values = new Map());
         values.set(name, { original, rewritten: next });
-      } else values?.delete(name);
+      } else if (values?.delete(name) && !values.size) documentValues.delete(node);
       return next;
     };
     const rewriteNode = (node) => {
@@ -76,7 +76,8 @@
         const next = documentValue(node, '', node.nodeValue);
         if (next !== node.nodeValue) node.nodeValue = next;
       } else if (node.nodeType === 1) {
-        for (const attribute of Array.from(node.attributes)) {
+        const attributes = attributeName ? [node.getAttributeNode(attributeName)].filter(Boolean) : node.attributes;
+        for (const attribute of attributes) {
           const next = documentValue(node, attribute.name, attribute.value);
           if (next !== attribute.value) node.setAttribute(attribute.name, next);
         }
@@ -87,17 +88,29 @@
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
     while (walker.nextNode()) rewriteNode(walker.currentNode);
   }
-  if (global.document) {
-    new MutationObserver((records) => {
-      for (const record of records) {
-        if (record.type === 'childList') record.addedNodes.forEach((node) => refreshDocument(node));
-        else refreshDocument(record.target, false);
+  const observer = global.document ? new MutationObserver((records) => {
+    for (const record of records) {
+      if (record.type === 'childList') {
+        record.addedNodes.forEach((node) => { if (node.isConnected) refreshDocument(node); });
+      } else if (record.target.isConnected) {
+        const value = record.type === 'attributes' ? record.target.getAttribute(record.attributeName) : record.target.nodeValue;
+        if (value?.includes('123.121.147.7') || documentValues.get(record.target)?.has(record.attributeName || '')) {
+          refreshDocument(record.target,false,record.attributeName || '');
+        }
       }
-    }).observe(document.documentElement, { subtree: true, childList: true, characterData: true, attributes: true });
+    }
+  }) : null;
+  let observing = false;
+  function syncDocumentObserver() {
+    if (!observer || (!enabled && !observing)) return;
+    observer.disconnect();
+    refreshDocument();
+    if (enabled) observer.observe(document.documentElement, { subtree:true, childList:true, characterData:true, attributes:true });
+    observing = enabled;
   }
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local' || !changes[key]) return;
     enabled = changes[key].newValue === true;
-    refreshDocument();
+    syncDocumentObserver();
   });
 })(globalThis);

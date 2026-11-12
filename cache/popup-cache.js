@@ -574,18 +574,22 @@ function scheduleFullscreenCourseCacheSave(delayMs = 900) {
 function setupFullscreenCourseCacheObserver() {
   if (popupMode || !courseListDiv) return;
   try {
+    const visualOnly = '.deadline-countdown, .deadline-countdown-prefix, .homework-toggle-label, .homework-group--done, .homework-group--overdue';
+    const ignored = (node) => (node instanceof Element ? node : node?.parentElement)?.closest(visualOnly);
     const mo = new MutationObserver((mutations) => {
       const relevant = mutations.some((mutation) => {
-        const target = mutation.target instanceof Element ? mutation.target : mutation.target?.parentElement;
-        // Breathing/gradient colors and list-height animations change inline style
-        // continuously. Those visual frames are not part of the structured cache.
-        if (mutation.type === 'attributes' && mutation.attributeName === 'style') return false;
-        return !(target instanceof Element && target.closest('.deadline-countdown'));
+        if (ignored(mutation.target)) return false;
+        if (mutation.type !== 'childList') return true;
+        return [...mutation.addedNodes, ...mutation.removedNodes].some((node) => !ignored(node));
       });
       if (relevant) scheduleFullscreenCourseCacheSave();
     });
-    mo.observe(courseListDiv, { childList: true, subtree: true, attributes: true, characterData: true });
-    if (resourceSpaceList) mo.observe(resourceSpaceList, { childList: true, subtree: true, attributes: true, characterData: true });
+    // The cache is structured and restores groups collapsed. Animation classes,
+    // scrolling and opening/closing these groups do not change cached data.
+    const options = { childList:true, subtree:true, characterData:true,
+      attributeFilter:['href','data-homework-done','data-homework-deadline','data-homework-overdue','data-homework-title'] };
+    mo.observe(courseListDiv,options);
+    if (resourceSpaceList) mo.observe(resourceSpaceList,options);
   } catch {
     // ignore
   }

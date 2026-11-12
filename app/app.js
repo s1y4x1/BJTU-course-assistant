@@ -2851,8 +2851,9 @@ function setupRightColumnResizer() {
   if (typeof MutationObserver !== 'undefined') {
     const mo = new MutationObserver((mutations) => {
       const courseListChanged = mutations.some((mutation) => (
-        mutation.target === courseListDiv || courseListDiv?.contains(mutation.target)
+        mutation.target === courseListDiv || mutation.target.matches?.('.platform-course-column-body')
       ));
+      if (!courseListChanged && mutations.every(mutation => mutation.type === 'childList')) return;
       if (courseListChanged && shouldSuspendCourseHelperLayoutWork()) {
         courseHelperLayoutWorkPending = true;
         return;
@@ -3317,7 +3318,11 @@ function registerHomeworkAttachmentItem(courseId, item) {
   if (!Array.isArray(window.homeworkAttachmentItemsByCourseId[cid])) {
     window.homeworkAttachmentItemsByCourseId[cid] = [];
   }
-  window.homeworkAttachmentItemsByCourseId[cid].push(item);
+  const entries = window.homeworkAttachmentItemsByCourseId[cid];
+  const previous = window.homeworkAttachmentItemsById[id];
+  const index = previous ? entries.indexOf(previous) : -1;
+  if (index < 0) entries.push(item);
+  else entries[index] = item;
   window.homeworkAttachmentItemsById[id] = item;
 }
 
@@ -5680,6 +5685,10 @@ function setHomeworkVisibility(courseId, key, value) {
   }
 
   if (!toggleHomeworkGroupDom(cid, key, nextValue)) {
+    if (nextValue) {
+      renderHomeworkList(cid, { groupOnly: key === 'showOverdue' ? 'overdue' : 'done' });
+      if (toggleHomeworkGroupDom(cid, key, true)) return;
+    }
     renderHomeworkList(cid);
   }
 }
@@ -5707,7 +5716,9 @@ function toggleHomeworkGroupDom(courseId, key, expanded) {
 
   group.dataset.expanded = expanded ? '1' : '0';
   group.setAttribute('aria-hidden', expanded ? 'false' : 'true');
-  animateHomeworkGroupVisibility(group, expanded);
+  void animateHomeworkGroupVisibility(group, expanded).then((completed) => {
+    if (completed && !expanded && group.dataset.expanded === '0') group.remove();
+  });
   return true;
 }
 
@@ -5778,12 +5789,14 @@ function animateHomeworkGroupVisibility(group, expanded) {
     previousScrollMotion.reset();
     delete group.__scrollListMotion;
   }
+  const wasHidden = group.classList.contains('is-hidden');
   const from = group.getBoundingClientRect().height;
   if (globalThis.BjtuMotion?.isEnabled?.() === false) {
     delete group.__listTransition;
     previousScrollMotion?.reset();
     delete group.__scrollListMotion;
     group.classList.toggle('is-hidden', !expanded);
+    if (expanded && wasHidden) applyExpandableAutoToggle(group);
     group.style.maxHeight = '';
     group.style.height = '';
     group.style.boxSizing = '';
@@ -5794,6 +5807,7 @@ function animateHomeworkGroupVisibility(group, expanded) {
     return Promise.resolve(true);
   }
   group.classList.remove('is-hidden');
+  if (expanded && wasHidden) applyExpandableAutoToggle(group);
   group.style.transition = 'none';
   group.style.boxSizing = 'border-box';
   group.style.maxHeight = 'none';
@@ -5917,19 +5931,23 @@ function collectCourseNameMatchMap(courses) {
   return m;
 }
 
-function renderHomeworkList(courseId) {
-  const area = document.getElementById(`homework-area-${courseId}`);
+function renderHomeworkList(courseId, { groupOnly, exportArea } = {}) {
+  const area = exportArea || document.getElementById(`homework-area-${courseId}`);
   if (!area) return;
   const fallbackShowOverdue = !!window.courseShowOverdueById[courseId];
   const fallbackShowDone = !!window.courseShowDoneById[courseId];
   const data = window.courseHomeworkData[courseId] || { list: [], showOverdue: fallbackShowOverdue, showDone: fallbackShowDone };
-  if (window.courseHomeworkData[courseId]) {
+  if (!exportArea && window.courseHomeworkData[courseId]) {
     window.courseHomeworkData[courseId].showOverdue = fallbackShowOverdue;
     window.courseHomeworkData[courseId].showDone = fallbackShowDone;
   }
   const list = data.list || [];
-  updateAssessmentButtonVisibility(courseId);
-  syncHomeworkAttachmentItemsIndex(courseId, []);
+  if (!groupOnly) {
+    updateAssessmentButtonVisibility(courseId);
+    syncHomeworkAttachmentItemsIndex(courseId, []);
+  }
+  const mountOverdue = groupOnly ? groupOnly === 'overdue' : data.showOverdue;
+  const mountDone = groupOnly ? groupOnly === 'done' : data.showDone;
 
   const classify = (items, isDoneFn, isOverdueFn) => {
     const pending = [], overdue = [], done = [];
@@ -5952,17 +5970,17 @@ function renderHomeworkList(courseId) {
   const sortNativeGroup = (items) => sortHomeworkItemsByDeadline(items, (hw) => hw?.end_time ?? hw?.endTime ?? '');
   const sortExternalGroup = (items) => sortHomeworkItemsByDeadline(items, (hw) => hw?.end ?? hw?.endTime ?? '');
   const nativePendingItems = sortNativeGroup(nativeCls.pending);
-  const nativeOverdueItems = sortNativeGroup(nativeCls.overdue);
-  const nativeDoneItems = sortNativeGroup(nativeCls.done);
+  const nativeOverdueItems = mountOverdue ? sortNativeGroup(nativeCls.overdue) : [];
+  const nativeDoneItems = mountDone ? sortNativeGroup(nativeCls.done) : [];
   const yktPendingItems = sortExternalGroup(yktCls.pending);
-  const yktOverdueItems = sortExternalGroup(yktCls.overdue);
-  const yktDoneItems = sortExternalGroup(yktCls.done);
+  const yktOverdueItems = mountOverdue ? sortExternalGroup(yktCls.overdue) : [];
+  const yktDoneItems = mountDone ? sortExternalGroup(yktCls.done) : [];
   const mrjzyPendingItems = sortExternalGroup(mrjzyCls.pending);
-  const mrjzyOverdueItems = sortExternalGroup(mrjzyCls.overdue);
-  const mrjzyDoneItems = sortExternalGroup(mrjzyCls.done);
+  const mrjzyOverdueItems = mountOverdue ? sortExternalGroup(mrjzyCls.overdue) : [];
+  const mrjzyDoneItems = mountDone ? sortExternalGroup(mrjzyCls.done) : [];
   const jlgjPendingItems = sortExternalGroup(jlgjCls.pending);
-  const jlgjOverdueItems = sortExternalGroup(jlgjCls.overdue);
-  const jlgjDoneItems = sortExternalGroup(jlgjCls.done);
+  const jlgjOverdueItems = mountOverdue ? sortExternalGroup(jlgjCls.overdue) : [];
+  const jlgjDoneItems = mountDone ? sortExternalGroup(jlgjCls.done) : [];
 
   const isYktStandalone = String(courseId).startsWith('ykt-');
   const isMrjzyStandalone = String(courseId).startsWith('mrjzy-');
@@ -5996,7 +6014,7 @@ function renderHomeworkList(courseId) {
     data.justExpanded = false;
     data.justCollapsed = false;
   };
-  recomputeCourseHomeworkState(courseId);
+  if (!groupOnly) recomputeCourseHomeworkState(courseId);
 
   // 教师账号：VE 作业不计入 overdue/done 分类
   const isTeacherMode = !!window.isTeacherAccount;
@@ -6018,7 +6036,7 @@ function renderHomeworkList(courseId) {
   // 教师账号：doneToggleRow 始终使用原文案
   const isTeacherMode2 = !!window.isTeacherAccount;
   const doneToggleRowHtml = totalDoneCount > 0 ? `<div class="homework-toggle-row homework-toggle-row--done">${renderHomeworkToggle('done', 'toggle-done', data.showDone, totalDoneCount, '查看已交作业', '收起已交作业', 'down', 'up')}</div>` : '';
-  const forcePublishScoreButtonHtml = (!isTeacherMode2 && totalDoneCount > 0) ? renderForcePublishScoreButton(courseId) : '';
+  const forcePublishScoreButtonHtml = (!exportArea && mountDone && !isTeacherMode2 && totalDoneCount > 0) ? renderForcePublishScoreButton(courseId) : '';
 
   const nativeCourse = (window.currentVeCourseList || []).find((course) => String(
     course?.id || course?.cId || course?.courseId || course?.course_id || ''
@@ -6084,11 +6102,10 @@ function renderHomeworkList(courseId) {
 
     const rawContent = hw.content || hw.content_clean || hw.workContent || '';
     const contentHtml = normalizeHomeworkContent(rawContent);
-    hw.__courseId = String(courseId || '').trim();
     const nativeKeySeed = String(upId || snId || hw.id || hw.upId || hw.noteId || hw.courseNoteId || '').trim();
     const expandKey = `native:${nativeKeySeed || `idx-${idx}`}`;
     const expanded = isHomeworkDetailExpanded(courseId, expandKey);
-    const attachmentHtml = renderHomeworkAttachments(hw, borderColor, bgColor);
+    const attachmentHtml = renderHomeworkAttachments(hw, borderColor, bgColor, { courseId, register: !exportArea });
     const expandableBaseBg = isTeacherMode ? (overdue ? 'rgba(237,233,254,0.78)' : 'rgba(219,234,254,0.78)') : (isDone ? 'rgba(232,245,233,0.75)' : 'rgba(255,243,224,0.78)');
     const expandable = renderExpandableHtml(contentHtml, {
       emptyHtml: '<span style="color:#999;">无内容</span>',
@@ -6186,17 +6203,27 @@ function renderHomeworkList(courseId) {
   // 教师账号：VE 作业按过时/非过时分为两组
   const teacherNonOverdueItems = window.isTeacherAccount ? list.filter((hw) => !isNativeHomeworkOverdue(hw)) : [];
   const teacherOverdueItems = window.isTeacherAccount ? list.filter((hw) => isNativeHomeworkOverdue(hw)) : [];
-  const teacherNonOverdueHtml = window.isTeacherAccount ? renderNativeHomeworkItems(teacherNonOverdueItems) : '';
-  const teacherOverdueHtmlRaw = window.isTeacherAccount ? renderNativeHomeworkItems(teacherOverdueItems) : '';
+  const teacherNonOverdueHtml = !groupOnly && window.isTeacherAccount ? renderNativeHomeworkItems(teacherNonOverdueItems) : '';
+  const teacherOverdueHtmlRaw = mountOverdue && window.isTeacherAccount ? renderNativeHomeworkItems(teacherOverdueItems) : '';
 
-  const overdueHtml = renderHomeworkGroup('overdue');
-  const pendingHtml = renderHomeworkGroup('pending');
-  const doneHtml = renderHomeworkGroup('done');
+  const overdueHtml = mountOverdue ? renderHomeworkGroup('overdue') : '';
+  const pendingHtml = groupOnly ? '' : renderHomeworkGroup('pending');
+  const doneHtml = mountDone ? renderHomeworkGroup('done') : '';
 
   // 教师模式：将 VE 过时作业合并到 overdue 组中，使用统一折叠切换
   const mergedOverdueHtml = window.isTeacherAccount
     ? `${teacherOverdueHtmlRaw}${overdueHtml}`
     : overdueHtml;
+  const groupHtml = (kind,html,expanded) => html
+    ? `<div class="homework-group homework-group--${kind}${expanded ? '' : ' is-hidden'}" data-homework-group="${kind}" data-expanded="${expanded ? '1' : '0'}" aria-hidden="${expanded ? 'false' : 'true'}">${html}</div>`
+    : '';
+  const overdueGroup = groupHtml('overdue',mergedOverdueHtml,!groupOnly && data.showOverdue);
+  const doneGroup = groupHtml('done',forcePublishScoreButtonHtml + doneHtml,!groupOnly && data.showDone);
+  if (groupOnly) {
+    const row = area.querySelector(`.homework-toggle-row--${groupOnly}`);
+    row?.insertAdjacentHTML('afterend',groupOnly === 'overdue' ? overdueGroup : doneGroup);
+    return;
+  }
 
   const overdueCollapsedText = isTeacherMode2 ? '查看过时作业' : '查看逾期作业';
   const overdueExpandedText = isTeacherMode2 ? '收起过时作业' : '收起逾期作业';
@@ -6231,7 +6258,7 @@ function renderHomeworkList(courseId) {
     ? `<div class="homework-group homework-group--pending" data-homework-group="teacher-active">${teacherNonOverdueHtml}</div>`
     : '';
 
-  area.innerHTML = `${typeLoadingHtml}${loadingHtml}${emptyExternalTip}${noDataTip}${mergedOverdueToggleRowHtml}${mergedOverdueHtml ? `<div class="homework-group homework-group--overdue ${data.showOverdue ? '' : 'is-hidden'}" data-homework-group="overdue" data-expanded="${data.showOverdue ? '1' : '0'}" aria-hidden="${data.showOverdue ? 'false' : 'true'}">${mergedOverdueHtml}</div>` : ''}${teacherNonOverdueSectionHtml}${pendingHtml ? `<div class="homework-group homework-group--pending" data-homework-group="pending">${pendingHtml}</div>` : ''}${noPendingTip || noRelatedTip}${doneToggleRowHtml}${doneHtml ? `<div class="homework-group homework-group--done ${data.showDone ? '' : 'is-hidden'}" data-homework-group="done" data-expanded="${data.showDone ? '1' : '0'}" aria-hidden="${data.showDone ? 'false' : 'true'}">${forcePublishScoreButtonHtml}${doneHtml}</div>` : ''}`;
+  area.innerHTML = `${typeLoadingHtml}${loadingHtml}${emptyExternalTip}${noDataTip}${mergedOverdueToggleRowHtml}${overdueGroup}${teacherNonOverdueSectionHtml}${pendingHtml ? `<div class="homework-group homework-group--pending" data-homework-group="pending">${pendingHtml}</div>` : ''}${noPendingTip || noRelatedTip}${doneToggleRowHtml}${doneGroup}`;
   applyExpandableAutoToggle(area);
   BjtuColors.restoreAnimations(area, homeworkAnimationSnapshot);
   applyDoneEnterAnimation();

@@ -2003,7 +2003,7 @@ body.course-helper-focus .course-helper-even-widths:not([hidden]) { display: inl
     90% { filter:brightness(calc(1 - var(--homework-urgency,0) * .035)); }
 }
 @property --homework-border-angle { syntax:'<angle>'; initial-value:0deg; inherits:false; }
-@property --homework-card-fill { syntax:'<color>'; initial-value:transparent; inherits:true; }
+@property --homework-card-fill { syntax:'<color>'; initial-value:transparent; inherits:false; }
 .hw-card-item { position:relative; --homework-card-fill:var(--homework-card-background,var(--homework-base-background)); background:var(--homework-card-fill) !important; }
 html[data-color-scheme="dark"] .hw-card-item.homework-pending { --homework-marquee-white:85%; }
 .hw-card-item.homework-pending.homework-marquee::before {
@@ -2037,7 +2037,7 @@ html[data-color-scheme="dark"] .hw-card-item.homework-pending.homework-marquee::
 }
 @keyframes homeworkBorderMarquee { to { --homework-border-angle:360deg; } }
 #course-list .hw-card-item .file-item {
-    background:var(--homework-card-fill,var(--homework-card-background,var(--homework-base-background))) !important;
+    background:var(--homework-card-background,var(--homework-base-background)) !important;
     border:1px solid var(--homework-card-border,var(--homework-base-border)) !important;
     color:var(--homework-card-foreground,#111827) !important;
 }

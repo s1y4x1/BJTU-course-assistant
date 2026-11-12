@@ -2473,8 +2473,8 @@ async function ensureHomeworkTeacherId(courseId) {
   return String(homework?.teacher_id || homework?.teacherId || '').trim();
 }
 
-function renderHomeworkAttachments(hw, borderColor = '#ff9800', backgroundColor = '') {
-  const courseId = String(hw?.__courseId || '').trim();
+function renderHomeworkAttachments(hw, borderColor = '#ff9800', backgroundColor = '', { courseId, register = true } = {}) {
+  courseId = String(courseId || '').trim();
   const key = String(hw?.__attachmentKey || '').trim();
   const courseLoading = !!window.homeworkAttachmentPendingByCourse?.[courseId];
   if (!key && !courseLoading) return '';
@@ -2516,7 +2516,7 @@ function renderHomeworkAttachments(hw, borderColor = '#ff9800', backgroundColor 
       sizeMbRaw: sizeBytes / (1024 * 1024),
       sizeMb: sizeText
     };
-    registerHomeworkAttachmentItem(courseId, item);
+    if (register) registerHomeworkAttachmentItem(courseId, item);
     return `
       <div class="file-item homework-attachment-file" data-resource-id="${escapeHtml(resourceId)}" style="padding:6px 8px; border:1px solid ${borderColor}; border-radius:6px; background:${softBg};">
         <div class="resource-row-title" style="margin-bottom:4px; cursor:pointer;">

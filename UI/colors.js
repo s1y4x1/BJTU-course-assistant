@@ -24,6 +24,19 @@
   let gradientEnabled = true;
   let marqueeEnabled = true;
   const reportedExpiredCourses = new WeakMap();
+  const animatedCards = new Set();
+  const visibleCards = new WeakSet();
+  const appearanceByCard = new WeakMap();
+  const pendingAnimationStates = new WeakMap();
+  const effectsObserver = typeof IntersectionObserver === 'function' ? new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      const card = entry.target;
+      if (!animatedCards.has(card) || !card.isConnected) continue;
+      if (entry.isIntersecting) visibleCards.add(card);
+      else visibleCards.delete(card);
+      syncCardAnimation(card);
+    }
+  }, {rootMargin:'32px'}) : null;
   const homeworkAnimationPeriods = {
     homeworkUrgencyBreathe: '--homework-breathe-period',
     homeworkUrgencyBlink: '--homework-blink-period',
@@ -32,6 +45,31 @@
 
   function nextHomeworkPeriod(card) {
     return Math.log2(1 + Math.max(0, deadlineTime(card.dataset.homeworkDeadline) - Date.now()) / 3600000) + 0.5;
+  }
+
+  function syncCardAnimation(card) {
+    const active = animatedCards.has(card) && (!effectsObserver || visibleCards.has(card))
+      && !document.hidden && document.documentElement.dataset.animationEnabled !== 'false';
+    if (card.classList.contains('homework-marquee') === active) return;
+    if (active) {
+      const period = `${nextHomeworkPeriod(card)}s`;
+      for (const property of Object.values(homeworkAnimationPeriods)) setProperty(card,property,period);
+    }
+    card.classList.toggle('homework-marquee',active);
+    const saved = pendingAnimationStates.get(card);
+    if (active && saved) restoreCardAnimations(card,saved.animations,saved.time);
+  }
+
+  function observeCardAnimation(card, eligible) {
+    if (eligible && !animatedCards.has(card)) {
+      animatedCards.add(card);
+      effectsObserver?.observe(card);
+    } else if (!eligible && animatedCards.delete(card)) {
+      effectsObserver?.unobserve(card);
+      visibleCards.delete(card);
+      pendingAnimationStates.delete(card);
+    }
+    syncCardAnimation(card);
   }
 
   function homeworkAnimations(card) {
@@ -64,6 +102,7 @@
   function captureAnimations(root, selector = '.hw-card-item') {
     const states = new Map();
     root.querySelectorAll(selector).forEach((card) => {
+      if (!card.classList.contains('homework-marquee')) return;
       const animations = homeworkAnimations(card).filter((animation) => animation.currentTime !== null).map((animation) => ({
         name: animation.animationName,
         pseudoElement: animation.effect.pseudoElement || '',
@@ -79,21 +118,27 @@
   function restoreAnimations(root, snapshot, selector = '.hw-card-item') {
     const cards = [...root.querySelectorAll(selector)];
     refreshCards(cards);
-    const elapsed = document.timeline.currentTime - snapshot.time;
+    if (!snapshot.states.size) return;
     cards.forEach((card) => {
       const saved = snapshot.states.get(homeworkAnimationKey(card));
       if (!saved) return;
-      homeworkAnimations(card).forEach((animation) => {
-        const state = saved.find((item) => item.name === animation.animationName
-          && item.pseudoElement === (animation.effect.pseudoElement || ''));
-        if (!state) return;
-        animation.effect.updateTiming({ duration: state.duration });
-        animation.playbackRate = state.playbackRate;
-        animation.currentTime = state.currentTime + elapsed * state.playbackRate;
-      });
+      if (card.classList.contains('homework-marquee')) restoreCardAnimations(card,saved,snapshot.time);
+      else if (animatedCards.has(card)) pendingAnimationStates.set(card,{animations:saved,time:snapshot.time});
     });
   }
 
+  function restoreCardAnimations(card, saved, time) {
+    pendingAnimationStates.delete(card);
+    const elapsed = document.timeline.currentTime - time;
+    homeworkAnimations(card).forEach((animation) => {
+      const state = saved.find((item) => item.name === animation.animationName
+        && item.pseudoElement === (animation.effect.pseudoElement || ''));
+      if (!state) return;
+      animation.effect.updateTiming({ duration: state.duration });
+      animation.playbackRate = state.playbackRate;
+      animation.currentTime = state.currentTime + elapsed * state.playbackRate;
+    });
+  }
   function normalize(value) {
     return Object.fromEntries(Object.keys(defaults)
       .filter((key) => /^#[0-9a-f]{6}$/i.test(String(value?.[key] || '')))
@@ -206,31 +251,30 @@
         && !done && !overdue && Number.isFinite(time) && time > now;
       const key = teacher ? (overdue ? 'teacherOverdueCard' : 'teacherPendingCard')
         : done ? 'doneCard' : overdue ? 'overdueCard' : 'pendingCard';
-      const c = !teacher && !done && !overdue ? urgency(card.dataset.homeworkDeadline, now) : 0;
+      const c = !teacher && !done && !overdue && Number.isFinite(time)
+        ? Math.pow(2, -Math.max(0, time - now) / 86400000) : 0;
       const effects = marqueeEnabled && !teacher && !done && !overdue && Number.isFinite(time) && time > now;
-      const period = effects ? Math.log2(1 + (time - now) / 3600000) + 0.5 : 0;
       const background = active
         ? interpolate(settings.pendingCard || defaults.pendingCard, settings.overdueCard || defaults.overdueCard, c)
         : settings[key] || defaults[key];
-      const action = vividVersion(background);
-      setProperty(card, '--homework-card-background', background);
-      setProperty(card, '--homework-card-action', action);
-      setProperty(card, '--homework-card-title', foreground(background) === '#111827' ? action : '#f8fafc');
-      setProperty(card, '--homework-card-foreground', foreground(background));
-      setProperty(card, '--homework-card-border', action);
-      setProperty(card, '--homework-card-glow', toneVersion(background, () => 0.62));
-      setProperty(card, '--homework-card-breathe-background', interpolate(background, action, 0.025 + 0.055 * c));
-      setProperty(card, '--homework-urgency', c.toFixed(4));
-      setProperty(card, '--homework-marquee-opacity', (0.28 + 0.72 * c).toFixed(4));
-      if (effects && !card.classList.contains('homework-marquee')) {
-        setProperty(card, '--homework-breathe-period', `${period}s`);
-        setProperty(card, '--homework-blink-period', `${period}s`);
-        setProperty(card, '--homework-marquee-period', `${period}s`);
+      const intensity = c.toFixed(4), appearance = appearanceByCard.get(card);
+      if (!appearance || appearance.background !== background || appearance.intensity !== intensity) {
+        const action = vividVersion(background), text = foreground(background);
+        setProperty(card, '--homework-card-background', background);
+        setProperty(card, '--homework-card-action', action);
+        setProperty(card, '--homework-card-title', text === '#111827' ? action : '#f8fafc');
+        setProperty(card, '--homework-card-foreground', text);
+        setProperty(card, '--homework-card-border', action);
+        setProperty(card, '--homework-card-glow', toneVersion(background, () => 0.62));
+        setProperty(card, '--homework-card-breathe-background', interpolate(background, action, 0.025 + 0.055 * c));
+        setProperty(card, '--homework-urgency', intensity);
+        setProperty(card, '--homework-marquee-opacity', (0.28 + 0.72 * c).toFixed(4));
+        appearanceByCard.set(card,{background,intensity});
       }
+      observeCardAnimation(card,effects);
       for (const [name, enabled] of [
         ['homework-deadline-gradient', active],
-        ['homework-pending', !teacher && !done && !overdue],
-        ['homework-marquee', effects]
+        ['homework-pending', !teacher && !done && !overdue]
       ]) {
         if (card.classList.contains(name) !== enabled) card.classList.toggle(name, enabled);
       }
@@ -325,6 +369,15 @@
           if (node.matches('.hw-card-item')) pendingCards.add(node);
           node.querySelectorAll('.hw-card-item').forEach((card) => pendingCards.add(card));
         });
+        for (const node of record.removedNodes) {
+          if (node.nodeType !== 1 || node.isConnected) continue;
+          if (animatedCards.has(node)) observeCardAnimation(node,false);
+          for (const card of node.querySelectorAll('.hw-card-item')) {
+            if (animatedCards.has(card)) observeCardAnimation(card,false);
+            pendingCards.delete(card);
+          }
+          pendingCards.delete(node);
+        }
       });
       if (!pendingCards.size || scheduled) return;
       scheduled = true;
@@ -337,10 +390,12 @@
       childList: true, subtree: true, attributes: true,
       attributeFilter: ['data-homework-done', 'data-homework-overdue', 'data-homework-deadline', 'data-homework-teacher', 'data-homework-gradient']
     });
-    setInterval(refreshCards, 1000);
+    setInterval(() => { if (!document.hidden) refreshCards(); },1000);
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) refreshCards();
+      else animatedCards.forEach(syncCardAnimation);
     });
+    global.addEventListener('bjtu-animation-change', () => animatedCards.forEach(syncCardAnimation));
   }
 
   global.BjtuColors = Object.freeze({ storageKey, gradientKey, marqueeKey, defaults, normalize, interpolate, deadlineTime, urgency, apply, captureAnimations, restoreAnimations });
