@@ -79,7 +79,7 @@
     }
     function appendAccounts(container, info) {
       if (!info?.ve && !info?.mis) return false;
-      if (info.ve) container.append(node('p', `智慧课程平台：${info.ve}`, 'editor-info'));
+      if (info.ve) container.append(node('p', `智慧课程平台${info.veRecent ? '（最近登录）' : ''}：${info.ve}`, 'editor-info'));
       if (info.mis) container.append(node('p', `MIS：${info.mis}`, 'editor-info'));
       return true;
     }
@@ -106,7 +106,7 @@
       if (container.dataset.accounts === signature) return;
       container.dataset.accounts = signature;
       container.replaceChildren();
-      container.hidden = !appendAccounts(container, info);
+      if (!appendAccounts(container, info)) container.textContent = '对方未共享账号信息';
     }
     async function action(name, args = {}) {
       if (!online) throw new Error('当前页连接引擎尚未就绪，请重试。');

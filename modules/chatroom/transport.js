@@ -73,7 +73,8 @@
     const device = { os: clean(source.os, 40), browser: clean(source.browser, 40), platform: clean(source.platform, 40) };
     return device.os || device.browser || device.platform ? device : null;
   }
-  const accountKeys = ['popupFullscreenCourseCache', 'username', 'casLoginName', 'academicSystemStudentId'];
+  const accountKeys = ['popupFullscreenCourseCache', 'username', 'casLoginName', 'academicSystemStudentId',
+    'loginAccountHistory'];
   async function readLocalAccounts() {
     const store = G.browser?.storage?.local || G.chrome?.storage?.local;
     if (!store) return null;
@@ -85,6 +86,12 @@
         ve: clean(stored.username, 80) || clean(cache.currentAccountLoginName, 80),
         mis: clean(stored.casLoginName, 80) || clean(stored.academicSystemStudentId, 80)
       };
+      if (!accounts.ve && Array.isArray(stored.loginAccountHistory)) {
+        const latest = stored.loginAccountHistory.reduce((best, entry) =>
+          Number(entry?.lastLoginAt) > Number(best?.lastLoginAt || 0) ? entry : best, null);
+        accounts.ve = clean(latest?.loginName, 80) || clean(latest?.userId, 80);
+        if (accounts.ve) accounts.veRecent = true;
+      }
       return accounts.ve || accounts.mis ? accounts : null;
     } catch { return null; }
   }
@@ -93,6 +100,7 @@
     if (!source || typeof source !== 'object') return null;
     const clean = (text, max) => typeof text === 'string' ? text.slice(0, max) : '';
     const accounts = { ve: clean(source.ve, 80), mis: clean(source.mis, 80) };
+    if (accounts.ve && source.veRecent === true) accounts.veRecent = true;
     return accounts.ve || accounts.mis ? accounts : null;
   }
   const fail = (message) => { throw new Error(message); };
@@ -541,6 +549,7 @@
     if (area !== 'local') return;
     const cacheChange = changes.popupFullscreenCourseCache;
     if (changes.username || changes.casLoginName || changes.academicSystemStudentId ||
+        changes.loginAccountHistory ||
         cacheChange?.oldValue?.currentAccountLoginName !== cacheChange?.newValue?.currentAccountLoginName) {
       void serial(async () => {
         const next = await readLocalAccounts();
