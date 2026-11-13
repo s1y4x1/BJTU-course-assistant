@@ -77,32 +77,23 @@
       if (!device) return '';
       return [device.os, device.browser].filter(Boolean).join(' · ');
     }
-    let localAccountPromise = null;
-    function localAccounts() {
-      if (!localAccountPromise) {
-        localAccountPromise = globalThis.chrome?.storage?.local?.get([
-          'popupFullscreenCourseCache', 'academicSystemStudentId', 'username'
-        ]).then(stored => {
-          const cache = stored?.popupFullscreenCourseCache || {};
-          const ve = String(cache.currentAccountLoginName || '').trim();
-          const studentId = String(stored?.academicSystemStudentId || stored?.username || '').trim();
-          const mis = studentId;
-          return { ve, mis };
-        }).catch(() => ({ ve: '', mis: '' }));
-      }
-      return localAccountPromise;
-    }
     function appendAccounts(container, info) {
       if (!info?.ve && !info?.mis) return false;
       if (info.ve) container.append(node('p', `智慧课程平台：${info.ve}`, 'editor-info'));
       if (info.mis) container.append(node('p', `MIS：${info.mis}`, 'editor-info'));
       return true;
     }
-    function appendLocalAccounts(container) {
-      localAccounts().then(info => {
-        if (!container.isConnected) return;
-        if (!appendAccounts(container, info)) container.textContent = '本机账号：未登录';
-      });
+    function updateEditorAccounts(container) {
+      const id = container.dataset.peerId;
+      const self = id === state.self.id;
+      const info = self ? state.self.accounts : state.peers.find(peer => peer.id === id)?.accounts;
+      const signature = JSON.stringify(info || null);
+      if (container.dataset.accounts === signature) return;
+      container.dataset.accounts = signature;
+      container.replaceChildren();
+      const hasAccounts = appendAccounts(container, info);
+      container.hidden = !self && !hasAccounts;
+      if (self && !hasAccounts) container.textContent = '本机账号：未登录';
     }
     async function action(name, args = {}) {
       if (!online) throw new Error('当前页连接引擎尚未就绪，请重试。');
@@ -209,6 +200,8 @@
     if (destroyed) return;
     state = getState ? getState() : state;
     if (getSelected) selected = getSelected();
+    const editorAccounts = $('editor-fields').querySelector('.editor-accounts');
+    if ($('editor').open && editorAccounts) updateEditorAccounts(editorAccounts);
     const {visibleConversations, unreadCount} = global.BjtuChatroomConversations;
     const entries = visibleConversations(state).map(entry => {
       const isPublic = entry.id === 'public';
@@ -287,13 +280,13 @@
     }, {autoSave:true});
   }
   function editSelf() {
-    localAccountPromise = null;
     openEditor('个人信息', fields => {
       if (state.self.ip) fields.append(node('p', state.self.ip, 'editor-ip'));
       const device = deviceText(state.self.device);
       if (device) fields.append(node('p', `设备：${device}`, 'editor-info'));
       const accounts = node('div', undefined, 'editor-accounts');
-      fields.append(accounts); appendLocalAccounts(accounts);
+      accounts.dataset.peerId = state.self.id;
+      updateEditorAccounts(accounts); fields.append(accounts);
       const label = node('label', '昵称（留空恢复默认 IP）'), input = node('input');
       input.value = state.settings.nickname || ''; input.maxLength = 40;
       input.placeholder = state.self.ip || state.self.nickname || '默认使用本机 IP';
@@ -315,7 +308,8 @@
       if (device) meta.append(node('p', `设备：${device}`, 'editor-info'));
       if (meta.childElementCount) fields.append(meta);
       const accounts = node('div', undefined, 'editor-accounts');
-      if (appendAccounts(accounts, peer.accounts)) fields.append(accounts);
+      accounts.dataset.peerId = peer.id;
+      updateEditorAccounts(accounts); fields.append(accounts);
       const label = node('label', '备注'), input = node('input');
       input.value = peer.remark || ''; input.maxLength = 80;
       input.placeholder = peer.nickname || peer.ip || peer.id;

@@ -73,16 +73,17 @@
     const device = { os: clean(source.os, 40), browser: clean(source.browser, 40), platform: clean(source.platform, 40) };
     return device.os || device.browser || device.platform ? device : null;
   }
+  const accountKeys = ['popupFullscreenCourseCache', 'username', 'casLoginName', 'academicSystemStudentId'];
   async function readLocalAccounts() {
     const store = G.browser?.storage?.local || G.chrome?.storage?.local;
     if (!store) return null;
     try {
-      const stored = await store.get(['popupFullscreenCourseCache', 'academicSystemStudentId', 'username']);
+      const stored = await store.get(accountKeys);
       const cache = stored?.popupFullscreenCourseCache || {};
       const clean = (value, max) => typeof value === 'string' ? value.trim().slice(0, max) : '';
       const accounts = {
-        ve: clean(cache.currentAccountLoginName, 80),
-        mis: clean(stored?.academicSystemStudentId || stored?.username, 80)
+        ve: clean(stored.username, 80) || clean(cache.currentAccountLoginName, 80),
+        mis: clean(stored.casLoginName, 80) || clean(stored.academicSystemStudentId, 80)
       };
       return accounts.ve || accounts.mis ? accounts : null;
     } catch { return null; }
@@ -258,6 +259,8 @@
       system: true, code, text: text || rejectionText[code] || '对方已取消拉黑。', createdAt: Date.now() });
   }
   function publicPresenceEvent(p, joined) {
+    const view = data.conversations?.public;
+    if (view?.hidden) view.hidden = false;
     const name = p.remark || p.nickname || p.ip || p.id;
     return {type: 'public-presence', joined, message: {
       id: crypto.randomUUID(), senderId: p.id, conversationId: 'public', system: true,
@@ -535,7 +538,22 @@
   // Attach a handler without changing the rejecting ready Promise exposed to callers.
   ready.catch((error) => emit({ type: 'error', error: error.message }));
   const onStorageChanged = (changes, area) => {
-    if (area !== 'local' || !changes[KEY]?.newValue || JSON.stringify(changes[KEY].newValue) === lastSaved) return;
+    if (area !== 'local') return;
+    const cacheChange = changes.popupFullscreenCourseCache;
+    if (changes.username || changes.casLoginName || changes.academicSystemStudentId ||
+        cacheChange?.oldValue?.currentAccountLoginName !== cacheChange?.newValue?.currentAccountLoginName) {
+      void serial(async () => {
+        const next = await readLocalAccounts();
+        if (JSON.stringify(next) === JSON.stringify(publicIdentity.accounts || null)) return false;
+        if (next) publicIdentity.accounts = next;
+        else delete publicIdentity.accounts;
+        emit({type:'state', state:snapshot()});
+        return true;
+      }).then(changed => {
+        if (changed && !passiveOptions) return deliver(linkedPeers().map(peerId => ({peerId, type:'profile', payload:{}})));
+      }).catch(error => emit({type:'error', error:error.message}));
+    }
+    if (!changes[KEY]?.newValue || JSON.stringify(changes[KEY].newValue) === lastSaved) return;
     void serial(async () => {
       const nickname = publicIdentity.nickname;
       applyStored((await storage.get(KEY))[KEY]);

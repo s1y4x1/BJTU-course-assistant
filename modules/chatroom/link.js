@@ -78,7 +78,8 @@
     s.channel = channel;
     channel.onopen = () => {
       s.localNonce = crypto.randomUUID();
-      identity().then(info => send(s, { protocol: VERSION, type: 'hello', identity: info, nonce: s.localNonce })).catch(() => drop(s));
+      Promise.resolve(engine().refreshAccounts?.()).then(identity)
+        .then(info => send(s, { protocol: VERSION, type: 'hello', identity: info, nonce: s.localNonce })).catch(() => drop(s));
     };
     channel.onmessage = ({ data }) => {
       if (typeof data !== 'string' || data.length > MAX || s.count >= 64) { drop(s); return; }
@@ -301,7 +302,6 @@
     if (existing) return {sessionId: existing.id};
     const peer = discovered.get(id);
     if (peer.identityId && isConnected(peer.identityId)) return {};
-    await engine().refreshAccounts?.();
     const own = await identity();
     if (peer.identityId === own.id) return {};
     const pending = [...sessions.values()].find(s => s.target === id && !s.closed);
