@@ -94,13 +94,29 @@
     }
     return files;
   }
-  async function saveSelection(id,version) {
+  async function saveSelection(id,version,installedBytes) {
     await navigator.locks.request('bjtu-markdown-vendor-options',async () => {
       const stored = await chrome.storage.local.get(settingsKey);
       const versions = {...stored[settingsKey]};
-      if (version) versions[id] = {version}; else delete versions[id];
+      if (version) versions[id] = {version,installedBytes}; else delete versions[id];
       await chrome.storage.local.set({[settingsKey]:versions});
     });
+  }
+  async function getInstalledBytes(id,legacyVersion) {
+    async function sum(directory) {
+      let bytes = 0;
+      for await (const handle of directory.values()) {
+        bytes += handle.kind === 'directory' ? await sum(handle) : (await handle.getFile()).size;
+      }
+      return bytes;
+    }
+    try {
+      await globalThis.__bjtuUpdaterReady;
+      let dir = await globalThis.BjtuUpdateFileSystem?.readDirectoryHandle();
+      if (!dir || await dir.queryPermission({mode:'read'}) !== 'granted') return 0;
+      for (const part of ['UI','vendor',id,legacyVersion].filter(Boolean)) dir = await dir.getDirectoryHandle(part);
+      return await sum(dir);
+    } catch { return 0; }
   }
   async function clearComponent(root,id) {
     try {
@@ -120,6 +136,7 @@
     const fileSizes = globalThis.BjtuFileSizeEmphasis;
     let busy = false, loaded = false, configured = '', installed = '', installedBytes = 0, revision = 0;
     let controller = null;
+    let writing = false;
     const status = (text,tone = '') => { state.textContent = text; state.dataset.tone = tone; };
     function styledBytes(bytes) {
       const span = document.createElement('span');
@@ -136,7 +153,7 @@
       else progress.setAttribute('aria-valuenow',value);
       bar.style.width = value === undefined ? '' : `${value}%`;
     }
-    function showProgress(loadedBytes,total) {
+    function showProgress(loadedBytes,total,title = '官方安装包下载进度') {
       if (total > 0) {
         const percent = Math.min(100,Math.floor(100 * loadedBytes / total));
         setProgress(percent);
@@ -147,15 +164,16 @@
         setProgress();
         size.replaceChildren(styledBytes(loadedBytes));
       }
-      size.title = '官方安装包下载进度';
+      size.title = title;
     }
     function showInstalledSize() {
       progress.hidden = true;
       size.replaceChildren(...(installedBytes ? [styledBytes(installedBytes)] : []));
-      size.title = installedBytes ? '已安装的主脚本大小' : '';
+      size.title = installedBytes ? '组件全部已安装文件的大小' : '';
     }
     function render() {
       versions.disabled = busy || !loaded;
+      download.hidden = writing;
       download.disabled = busy || (loaded && !versions.value);
       download.textContent = versions.value && versions.value === installed ? '修复' : loaded ? '下载' : '重试';
       remove.hidden = !controller && !installed;
@@ -171,19 +189,24 @@
       const selection = value?.[id];
       const legacy = typeof selection === 'string';
       const version = (legacy ? selection : selection?.version) || '';
-      let bytes = 0;
+      let exists = false, bytes = 0;
       if (supported(component,version)) {
         const file = component.script.replace(/^dist\//,'');
         const base = `UI/vendor/${id}/` + (legacy ? version + '/' : '');
         try {
           const response = await fetch(chrome.runtime.getURL(base + file),{cache:'no-store'});
-          if (response.ok) bytes = (await response.blob()).size;
+          exists = response.ok;
+          await response.body?.cancel();
         } catch {}
+        if (exists) {
+          bytes = Number.isSafeInteger(selection?.installedBytes) && selection.installedBytes > 0
+            ? selection.installedBytes : await getInstalledBytes(id,legacy ? version : '');
+        }
       }
       if (current !== revision) return;
       const wasConfigured = configured;
       configured = version;
-      installed = bytes ? version : '';
+      installed = exists ? version : '';
       installedBytes = bytes;
       if (version && (!versions.value || versions.value === wasConfigured) &&
           [...versions.options].some(option => option.value === version)) {
@@ -232,24 +255,31 @@
               status('下载中…'); showProgress(done,total);
             },signal);
             signal.throwIfAborted();
-            controller = null; render();
+            controller = null;
+            writing = true; render();
           }
           status(version ? '正在写入本地扩展目录…' : '正在删除…');
+          const totalBytes = files ? [...files.values()].reduce((sum,bytes) => sum + bytes.byteLength,0) : 0;
+          const writeTitle = '组件文件写入进度';
+          if (files) showProgress(0,totalBytes,writeTitle);
           await globalThis.BjtuUpdateFileSystem.withInstallLock(async () => {
             await saveSelection(id,'');
             await clearComponent(root,id);
             if (!files) return;
+            let writtenBytes = 0;
             for (const [path,bytes] of files) {
               const relative = path.replace(/^dist\//,'');
               await globalThis.BjtuUpdateFileSystem.writeFile(root,`UI/vendor/${id}/${relative}`,bytes);
+              writtenBytes += bytes.byteLength;
+              showProgress(writtenBytes,totalBytes,writeTitle);
             }
-            await saveSelection(id,version);
+            await saveSelection(id,version,totalBytes);
           });
         });
         await refresh((await chrome.storage.local.get(settingsKey))[settingsKey]);
         installedStatus();
       } catch (error) { status(controller?.signal.aborted ? '已取消下载' : error.message,controller?.signal.aborted ? '' : 'error'); }
-      finally { controller = null; busy = false; showInstalledSize(); render(); }
+      finally { controller = null; writing = false; busy = false; showInstalledSize(); render(); }
     }
     versions.onchange = render;
     remove.onclick = () => {
