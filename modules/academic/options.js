@@ -208,13 +208,34 @@
     return global.BjtuFileSizeEmphasis.buildBytesStyle(bytes);
   }
 
+  function renderExternalScriptProgressLabel(element, label, loaded, total) {
+    element.textContent = label;
+    if (!(loaded > 0 || total > 0)) return;
+    const appendSize = bytes => {
+      const span = document.createElement('span');
+      span.className = 'file-size-emphasis';
+      span.dataset.fileSizeBytes = String(bytes);
+      span.textContent = formatExternalScriptBytes(bytes);
+      global.BjtuFileSizeEmphasis.applyBytes(span, bytes);
+      element.append(span);
+    };
+    if (total > 0) element.append(`${Math.min(100, Math.round(loaded / total * 100))}% · `);
+    appendSize(loaded);
+    if (total > 0) {
+      const separator = document.createElement('span');
+      separator.className = 'file-size-separator'; separator.textContent = ' / ';
+      element.append(separator);
+      appendSize(total);
+    }
+  }
+
   function setAssessmentScriptProgress({ visible = true, loaded = 0, total = 0, label = '正在下载…' } = {}) {
     const container = element('academicAssessmentScriptProgress');
     const bar = element('academicAssessmentScriptProgressBar');
     const labelElement = container?.querySelector('.academic-external-script-progress-label');
     if (!(container instanceof HTMLElement) || !(bar instanceof HTMLElement)) return;
     container.hidden = !visible;
-    if (labelElement instanceof HTMLElement) labelElement.textContent = label;
+    if (labelElement instanceof HTMLElement) renderExternalScriptProgressLabel(labelElement, label, loaded, total);
     if (!visible) {
       container.classList.remove('is-indeterminate');
       bar.style.width = '0';
@@ -366,12 +387,11 @@
       setAssessmentScriptStatus('正在从 GreasyFork 下载…');
       setAssessmentScriptProgress({ visible: true });
       const source = await fetchAssessmentScript(({ loaded, total }) => {
-        const percent = total > 0 ? `${Math.round(loaded / total * 100)}% · ` : '';
         setAssessmentScriptProgress({
           visible: true,
           loaded,
           total,
-          label: `正在下载：${percent}${formatExternalScriptBytes(loaded)}${total > 0 ? ` / ${formatExternalScriptBytes(total)}` : ''}`
+          label: '正在下载：'
         });
       });
       await manager.writeManagedFile(root, ASSESSMENT_SCRIPT_PATH, new TextEncoder().encode(source));
@@ -495,12 +515,11 @@
       const current = await (await manager.readManagedFile(root, ASSESSMENT_SCRIPT_PATH)).text();
       setAssessmentScriptProgress({ visible: true, label: '正在从 GreasyFork 检查更新…' });
       const latest = await fetchAssessmentScript(({ loaded, total }) => {
-        const percent = total > 0 ? `${Math.round(loaded / total * 100)}% · ` : '';
         setAssessmentScriptProgress({
           visible: true,
           loaded,
           total,
-          label: `正在检查：${percent}${formatExternalScriptBytes(loaded)}${total > 0 ? ` / ${formatExternalScriptBytes(total)}` : ''}`
+          label: '正在检查：'
         });
       });
       const normalize = (value) => String(value || '').replace(/\r\n/g, '\n').trim();
@@ -580,7 +599,7 @@
     const labelElement = container?.querySelector('.academic-external-script-progress-label');
     if (!(container instanceof HTMLElement) || !(bar instanceof HTMLElement)) return;
     container.hidden = !visible;
-    if (labelElement instanceof HTMLElement) labelElement.textContent = label;
+    if (labelElement instanceof HTMLElement) renderExternalScriptProgressLabel(labelElement, label, loaded, total);
     if (!visible) {
       container.classList.remove('is-indeterminate');
       bar.style.width = '0';
@@ -790,7 +809,7 @@
     const labelElement = container?.querySelector('.academic-external-script-progress-label');
     if (!(container instanceof HTMLElement) || !(bar instanceof HTMLElement)) return;
     container.hidden = !visible;
-    if (labelElement instanceof HTMLElement) labelElement.textContent = label;
+    if (labelElement instanceof HTMLElement) renderExternalScriptProgressLabel(labelElement, label, loaded, total);
     if (!visible) {
       container.classList.remove('is-indeterminate');
       bar.style.width = '0';
@@ -930,10 +949,9 @@
       setExternalScriptStatus(script, '正在从 GreasyFork 下载…');
       setExternalScriptProgress(script, { visible: true });
       const source = state.prefetchedSource || await fetchExternalScriptSource(script, ({ loaded, total }) => {
-        const percent = total > 0 ? `${Math.round(loaded / total * 100)}% · ` : '';
         setExternalScriptProgress(script, {
           visible: true, loaded, total,
-          label: `正在下载：${percent}${formatExternalScriptBytes(loaded)}${total > 0 ? ` / ${formatExternalScriptBytes(total)}` : ''}`
+          label: '正在下载：'
         });
       });
       const bytes = new TextEncoder().encode(source);
@@ -1038,10 +1056,9 @@
       const current = await (await manager.readManagedFile(root, script.path)).text();
       setExternalScriptProgress(script, { visible: true, label: '正在从 GreasyFork 检查更新…' });
       const latest = await fetchExternalScriptSource(script, ({ loaded, total }) => {
-        const percent = total > 0 ? `${Math.round(loaded / total * 100)}% · ` : '';
         setExternalScriptProgress(script, {
           visible: true, loaded, total,
-          label: `正在检查：${percent}${formatExternalScriptBytes(loaded)}${total > 0 ? ` / ${formatExternalScriptBytes(total)}` : ''}`
+          label: '正在检查：'
         });
       });
       const normalize = (value) => String(value || '').replace(/\r\n/g, '\n').trim();
@@ -1126,12 +1143,11 @@
       setBbScriptStatus('正在从 GreasyFork 下载…');
       setBbScriptProgress({ visible: true });
       const source = await fetchBbScript(({ loaded, total }) => {
-        const percent = total > 0 ? `${Math.round(loaded / total * 100)}% · ` : '';
         setBbScriptProgress({
           visible: true,
           loaded,
           total,
-          label: `正在下载：${percent}${formatExternalScriptBytes(loaded)}${total > 0 ? ` / ${formatExternalScriptBytes(total)}` : ''}`
+          label: '正在下载：'
         });
       });
       const bytes = new TextEncoder().encode(source);
@@ -1255,12 +1271,11 @@
       const current = await (await manager.readManagedFile(root, BB_SCRIPT_PATH)).text();
       setBbScriptProgress({ visible: true, label: '正在从 GreasyFork 检查更新…' });
       const latest = await fetchBbScript(({ loaded, total }) => {
-        const percent = total > 0 ? `${Math.round(loaded / total * 100)}% · ` : '';
         setBbScriptProgress({
           visible: true,
           loaded,
           total,
-          label: `正在检查：${percent}${formatExternalScriptBytes(loaded)}${total > 0 ? ` / ${formatExternalScriptBytes(total)}` : ''}`
+          label: '正在检查：'
         });
       });
       const normalize = (value) => String(value || '').replace(/\r\n/g, '\n').trim();
