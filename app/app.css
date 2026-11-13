@@ -402,7 +402,9 @@ body.column-resizing .right-column {
 body.page-top-config-in-left-column {
     padding-top: 0;
 }
-body.page-top-config-in-left-column:not(.course-helper-focus) .left-column {
+body.page-top-config-in-left-column:not(.course-helper-focus) .left-column > .page-top-config {
+    position: sticky;
+    top: 0;
     padding-top: 15px;
 }
 body.page-top-config-in-left-column:not(.course-helper-focus) .right-column {
@@ -684,7 +686,7 @@ body.platform-column-resizing {
         overflow-y: auto;
         overflow-x: auto;
     }
-    body.page-top-config-in-left-column:not(.course-helper-focus) .left-column {
+    body.page-top-config-in-left-column:not(.course-helper-focus) .left-column > .page-top-config {
         padding-top: 12px;
     }
     body.page-top-config-in-left-column:not(.course-helper-focus) .right-column,
