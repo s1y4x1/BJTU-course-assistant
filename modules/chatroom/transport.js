@@ -41,7 +41,15 @@
   const passiveOptions = !!G.location && !G.location.pathname.endsWith('/modules/chatroom/chat.html');
   const MAX = { peers: 500, rooms: 100, requests: 100, messages: 600, historyBytes: 2 * 1024 * 1024, seen: 2048, packet: 262144, members: 100 };
   const encoder = new TextEncoder(), listeners = new Set(), keyCache = new Map();
-  const domainTypes = new Set(['profile', 'message', 'message-result', 'peer-policy', 'signal', 'friend-request', 'friend-response', 'friend-delete', 'group-invite', 'group-response', 'group-state', 'group-leave', 'group-event','draft']);
+  const domainTypes = new Set(['profile', 'profile-request', 'message', 'message-result', 'peer-policy', 'signal', 'friend-request', 'friend-response', 'friend-delete', 'group-invite', 'group-response', 'group-state', 'group-leave', 'group-event','draft']);
+  const profileRequests = new Map(), profileReplies = new Map();
+  function allowProfileRefresh(times, peerId) {
+    const now = Date.now();
+    if (now - (times.get(peerId) || 0) < 5000) return false;
+    times.delete(peerId); times.set(peerId, now);
+    if (times.size > MAX.peers) times.delete(times.keys().next().value);
+    return true;
+  }
   const draftClocks = new Map();
   let data, privateKey, publicIdentity, link, queue = Promise.resolve();
   let retryTimer, flushing = false, disposed = false;
@@ -658,6 +666,13 @@
   async function action(name, args = {}) {
     await ready;
     args = copy(args);
+    if (name === 'profile-request') {
+      const peerId = id(args.peerId);
+      const send = await serial(() => linkedPeers().includes(peerId) && !peer(peerId).blockedByPeer &&
+        allowProfileRefresh(profileRequests,peerId));
+      if (send) await deliver([{peerId,type:'profile-request',payload:{}}]);
+      return {ok:true};
+    }
     if (name === 'draft') {
       const text = messageText(args.text, true), conversationId = token(args.conversationId), draftId = token(args.draftId);
       if (!Number.isSafeInteger(args.revision) || args.revision < 1) fail('无效草稿版本。');
@@ -678,6 +693,7 @@
       if (!link || typeof link[method] !== 'function') fail('当前浏览器连接引擎不支持此操作。');
       return await link[method](args);
     }
+    if (name === 'set-background' && linkedPeers().length) await refreshAccounts();
     const { result, effects } = await commit((effects) => localAction(name, args, effects));
     const delivery = await deliver(effects);
     if (result?.messageId) {
@@ -979,6 +995,8 @@
       case 'profile': {
         peer(from).nickname = packet.identity.nickname;
         peer(from).background = packet.identity.background === true;
+        const device = publicDevice(packet.identity);
+        if (device) peer(from).device = device;
         const accounts = publicAccounts(packet.identity);
         if (accounts) peer(from).accounts = accounts; else delete peer(from).accounts;
         peer(from).version = typeof packet.identity.version === 'string' ? packet.identity.version.slice(0, 32) : '';
@@ -1094,6 +1112,12 @@
     let packet;
     try { packet = typeof value === 'string' ? JSON.parse(value) : copy(value); } catch { return { ok: false, error: '无效协议包。' }; }
     if (!domainTypes.has(packet?.type) || packet.from !== peerId || !await verifyPacket(packet)) return { ok: false, error: '身份、签名或协议类型校验失败。' };
+    if (packet.type === 'profile-request') {
+      const send = await serial(() => linkedPeers().includes(peerId) && allowProfileRefresh(profileReplies,peerId));
+      if (!send) return {ok:true};
+      await refreshAccounts();
+      return {ok:true, ...await deliver([{peerId,type:'profile',payload:{}}])};
+    }
     if (packet.type === 'draft') {
       try {
         const event = await serial(() => {

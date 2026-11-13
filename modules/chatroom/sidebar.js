@@ -109,7 +109,7 @@
       if (container.dataset.accounts === signature) return;
       container.dataset.accounts = signature;
       container.replaceChildren();
-      if (!appendAccounts(container, info)) container.textContent = '对方未共享账号信息';
+      if (!appendAccounts(container, info)) container.textContent = '未收到对方的账号信息';
       if (peer?.version) container.append(node('p', `扩展版本：${peer.version}`, 'editor-info'));
     }
     async function action(name, args = {}) {
@@ -318,7 +318,7 @@
       return;
     }
     const peer = state.peers.find(item => item.id === peerId);
-    if (!peer) return;
+    if (!peer || $('editor').open) return;
     openEditor(peer.remark || peer.nickname || peer.ip || peer.id, fields => {
       const meta = node('div', undefined, 'editor-personal');
       if (peer.ip) meta.append(node('p', peer.ip, 'editor-ip'));
@@ -343,6 +343,9 @@
       if (actions.childElementCount) fields.append(actions);
       return value => mutate('remark', {peerId, remark: value.trim()});
     }, {autoSave:true});
+    if (peer.online && !peer.accounts && !peer.blocked && !peer.blockedByPeer) {
+      void action('profile-request', {peerId}).catch(() => {});
+    }
   }
   let editorSubmit = null, editorAutoSave = false;
   function openEditor(title, build, {autoSave = false} = {}) {

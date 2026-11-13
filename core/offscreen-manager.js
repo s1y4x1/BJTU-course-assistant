@@ -40,6 +40,17 @@
   const chatUrl = chrome.runtime.getURL('modules/chatroom/chat.html');
   const keyAllowed = key => typeof key === 'string' && /^chatroom[A-Za-z0-9]*$/.test(key);
   const readOnly = new Set(['themeMode','animationMode','animationSpeed','fontSizeSettings','colorSettings','dateFormatSettings']);
+  const chatProfileKeys = new Set(['username','casLoginName','academicSystemStudentId','popupFullscreenCourseCache','loginAccountHistory']);
+  const accountName = value => typeof value === 'string' ? value.trim().slice(0,80) : '';
+  const profileValue = (key, value) => {
+    if (key === 'popupFullscreenCourseCache') return {currentAccountLoginName:accountName(value?.currentAccountLoginName)};
+    if (key === 'loginAccountHistory') {
+      const latest = (Array.isArray(value) ? value : []).reduce((best, item) =>
+        Number(item?.lastLoginAt) > Number(best?.lastLoginAt || 0) ? item : best, null);
+      return latest ? [{loginName:accountName(latest.loginName) || accountName(latest.userId), lastLoginAt:Number(latest.lastLoginAt)}] : [];
+    }
+    return accountName(value);
+  };
   chrome.runtime.onMessage.addListener((message,sender,respond) => {
     if (message?.type !== 'BJTU_OFFSCREEN_STORAGE') return false;
     if (sender.id !== chrome.runtime.id || !sender.url ||
@@ -48,6 +59,12 @@
       const {method,value} = message;
       if (!['get','set'].includes(method) || !value) throw new Error('不支持的后台存储操作。');
       const keys = typeof value === 'string' ? [value] : Array.isArray(value) ? value : Object.keys(value);
+      // Project account names only; never forward the course cache or login history.
+      if (method === 'get' && Array.isArray(value) && keys.length && keys.every(key => chatProfileKeys.has(key))) {
+        const stored = await chrome.storage.local.get(keys);
+        respond({ok:true,value:Object.fromEntries(keys.map(key => [key,profileValue(key,stored[key])]))});
+        return;
+      }
       if (!keys.every(key => keyAllowed(key) || (method === 'get' && readOnly.has(key)))) throw new Error('后台存储键不在允许范围。');
       const result = await chrome.storage.local[method](value);
       respond({ok:true,value:result});
