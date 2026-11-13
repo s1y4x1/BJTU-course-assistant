@@ -516,6 +516,7 @@
     const fingerprint = hex(await crypto.subtle.digest('SHA-256', await crypto.subtle.exportKey('raw', pub)));
     if (data.settings.nickname === '设备-' + fingerprint.slice(0, 6)) data.settings.nickname = '';
     publicIdentity = { id: fingerprint, fingerprint, nickname: data.settings.nickname, publicKey: data.identity.publicKey,
+      version: G.chrome?.runtime?.getManifest?.()?.version || '',
       background: G.BjtuChatroomBackgroundMode?.enabled === true, device: detectDevice(), accounts: await readLocalAccounts() };
     removeStoredPresenceMessages();
     await importIdentity(publicIdentity);
@@ -620,6 +621,7 @@
       if (device) p.device = device; else delete p.device;
       const accounts = publicAccounts(identity);
       if (accounts) p.accounts = accounts; else delete p.accounts;
+      p.version = typeof identity.version === 'string' ? identity.version.slice(0, 32) : '';
       if (typeof value?.ip === 'string') p.ip = str(value.ip, 64, true);
       p.publicKey = { kty: 'EC', crv: 'P-256', x: identity.publicKey.x, y: identity.publicKey.y, ext: true, key_ops: ['verify'] };
       p.fingerprint = identity.id;
@@ -979,6 +981,7 @@
         peer(from).background = packet.identity.background === true;
         const accounts = publicAccounts(packet.identity);
         if (accounts) peer(from).accounts = accounts; else delete peer(from).accounts;
+        peer(from).version = typeof packet.identity.version === 'string' ? packet.identity.version.slice(0, 32) : '';
         break;
       }
       case 'message': {

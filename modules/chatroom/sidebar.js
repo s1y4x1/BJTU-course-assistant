@@ -98,15 +98,19 @@
       appendAccounts(container, {ve, mis});
       if (previousVe) container.append(node('p', `智慧课程平台（最近登录）：${previousVe}`, 'editor-info'));
       if (!container.childElementCount) container.textContent = '未找到本机账号记录';
+      const version = global.chrome.runtime.getManifest?.()?.version;
+      if (version) container.append(node('p', `扩展版本：${version}`, 'editor-info'));
     }
     function updateEditorAccounts(container) {
       const id = container.dataset.peerId;
-      const info = state.peers.find(peer => peer.id === id)?.accounts;
-      const signature = JSON.stringify(info || null);
+      const peer = state.peers.find(peer => peer.id === id);
+      const info = peer?.accounts;
+      const signature = JSON.stringify([info, peer?.version]);
       if (container.dataset.accounts === signature) return;
       container.dataset.accounts = signature;
       container.replaceChildren();
       if (!appendAccounts(container, info)) container.textContent = '对方未共享账号信息';
+      if (peer?.version) container.append(node('p', `扩展版本：${peer.version}`, 'editor-info'));
     }
     async function action(name, args = {}) {
       if (!online) throw new Error('当前页连接引擎尚未就绪，请重试。');

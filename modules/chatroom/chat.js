@@ -1144,7 +1144,8 @@
       appendFileActions(s, preview);
     } else if (TEXT_EXTENSIONS.has(ext)) {
       // Plain text is never interpreted as HTML or executable code.
-      const max = 256 * 1024, text = await file.slice(0, max).text();
+      const fullPreview = ['md', 'html', 'htm'].includes(ext);
+      const max = 256 * 1024, text = await (fullPreview ? file : file.slice(0, max)).text();
       if (!previewCurrent(s, preview)) return;
       if (ext === 'html' || ext === 'htm') {
         const frame = node('iframe', undefined, 'file-html-preview');
@@ -1157,7 +1158,7 @@
         const content = node('div', undefined, 'message-text bjtu-markdown');
         content.innerHTML = markdown.parse(text); preview.append(content);
       } else preview.append(node('pre', text));
-      if (file.size > max) preview.append(node('p', '仅预览前 256 KB，完整内容已保存在文件中。', 'muted'));
+      if (!fullPreview && file.size > max) preview.append(node('p', '仅预览前 256 KB，完整内容已保存在文件中。', 'muted'));
       s.previewURL = URL.createObjectURL(file.slice(0, file.size, 'text/plain'));
       s.openButton = button('打开', () => {
         if (s.previewURL) globalThis.open(s.previewURL, '_blank', 'noopener,noreferrer');
