@@ -324,7 +324,8 @@
       if (!peer.friend && !peer.blocked) actions.append(button('加好友', async () => {
         await mutate('friend-request', {peerId}); $('editor').close(); chooseConversation(`peer:${peerId}`);
       }));
-      if (!peer.blockedByPeer && !peer.friendRequiredByPeer) actions.append(button('私聊', () => {
+      if (!peer.blockedByPeer && !peer.friendRequiredByPeer) actions.append(button('私聊', async () => {
+        await mutate('conversation-open', {peerId});
         $('editor').close(); chooseConversation(`peer:${peerId}`);
       }));
       if (actions.childElementCount) fields.append(actions);

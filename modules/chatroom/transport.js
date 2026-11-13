@@ -676,6 +676,15 @@
         if (view.lastMessageId === args.lastMessageId) view.unread = 0;
         return {unread:view.unread,lastMessageId:view.lastMessageId};
       }
+      case 'conversation-open': {
+        const peerId = id(args.peerId);
+        const p = peer(peerId);
+        if (!p) fail('联系人不存在。');
+        const code = privateDenial(p);
+        if (code) fail(rejectionText[code]);
+        conversationView(`peer:${peerId}`).hidden = false;
+        return {};
+      }
       case 'conversation-remark': {
         const conversationId = token(args.conversationId), remark = str(args.remark,80,true).trim();
         if (conversationId.startsWith('peer:')) {

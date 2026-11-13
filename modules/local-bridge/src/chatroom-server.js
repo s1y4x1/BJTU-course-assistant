@@ -50,7 +50,6 @@ export async function startChatroomServer({ port = DEFAULT_CHATROOM_PORT, host =
   }
   const peers = new Map(), sessions = new Map(), sockets = new Set(), ipCounts = new Map(), upgradeRates = new Map();
   const serverId = randomUUID(), remotePeers = new Map();
-  const localIP = Object.values(networkInterfaces()).flat().find(entry => entry.family === 'IPv4' && !entry.internal && /^(?:10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/.test(entry.address))?.address;
   let closing = false, closePromise, heartbeat, federation;
   const server = http.createServer({ maxHeaderSize: 16384, headersTimeout: 10000, requestTimeout: 10000 }, (req, res) => {
     if (req.method === 'GET' && req.url === '/health') {
@@ -169,8 +168,7 @@ export async function startChatroomServer({ port = DEFAULT_CHATROOM_PORT, host =
     } catch { reject(socket, '400 Bad Request'); return; }
     wss.handleUpgrade(req, socket, head, ws => {
       socket.setTimeout(0);
-      let clientIP = String(socket.remoteAddress || '').replace(/^::ffff:/, '');
-      if (discovery && clientIP.startsWith('127.') && localIP) clientIP = localIP;
+      const clientIP = String(socket.remoteAddress || '').replace(/^::ffff:/, '').replace(/^::1$/, '127.0.0.1');
       const peer = { id: `${serverId}:${randomUUID()}`, info, ws, ip: clientIP, alive: true, count: 0, windowStart: now };
       const existing = [...peers.values(), ...remotePeers.values()].map(describe);
       peers.set(peer.id, peer);

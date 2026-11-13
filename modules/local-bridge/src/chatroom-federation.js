@@ -34,7 +34,7 @@ export function createChatroomFederation({ id, port, listPeers, onPeers, onSigna
     for (const [peerId, route] of routes) if (route.link === link) { routes.delete(peerId); removed.push(peerId); }
     if (removed.length) onPeers([], removed);
   }
-  function attach(ws, remoteId) {
+  function attach(ws, remoteId, remoteIP) {
     if (stopped || links.has(remoteId)) { ws.terminate(); return; }
     const link = {id:remoteId, ws, alive:true, count:0, window:Date.now()};
     links.set(remoteId, link);
@@ -53,7 +53,11 @@ export function createChatroomFederation({ id, port, listPeers, onPeers, onSigna
           const next = new Map();
           for (const value of message.peers) {
             if (typeof value.id !== 'string' || !value.id.startsWith(remoteId + ':') || value.id.length > 160 || next.has(value.id)) throw new Error('Invalid device');
-            const peer = {...validatePeer(value), id:value.id, ip:normalizeIP(value.ip)};
+            const ip = normalizeIP(value.ip);
+            // Loopback is meaningful only on the originating server. Use the
+            // address of this actual server connection for remote displays.
+            const peer = {...validatePeer(value), id:value.id, ip:ip.startsWith('127.') || ip === '::1'
+              ? remoteIP : ip};
             if (!privateIP(peer.ip)) throw new Error('Invalid device address');
             next.set(peer.id, peer);
           }
@@ -81,7 +85,7 @@ export function createChatroomFederation({ id, port, listPeers, onPeers, onSigna
       maxPayload, perMessageDeflate:false, handshakeTimeout:5000,
       headers:{'X-BJTUCA-Server':PROTOCOL}
     });
-    attach(ws, remote.id);
+    attach(ws, remote.id, remote.ip);
   }
   function announce(type = 'ANNOUNCE', address = group) {
     if (!bound || stopped) return;
@@ -147,7 +151,7 @@ export function createChatroomFederation({ id, port, listPeers, onPeers, onSigna
       const remote = directory.get(remoteId);
       if (stopped || req.headers.origin || req.headers['x-bjtuca-server'] !== PROTOCOL || !remote || remoteId > id ||
           remote.ip !== normalizeIP(socket.remoteAddress) || links.has(remoteId)) { socket.destroy(); return; }
-      wss.handleUpgrade(req, socket, head, ws => attach(ws, remoteId));
+      wss.handleUpgrade(req, socket, head, ws => attach(ws, remoteId, remote.ip));
     },
     async close() {
       if (stopped) return;
