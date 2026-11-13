@@ -120,24 +120,30 @@
       }
     }
     const parser = new global.marked.Marked({gfm:true, breaks:true, renderer});
-    if (preserveWhitespace) parser.use({hooks:{processAllTokens(tokens) {
-      const blockTypes = new Set(['heading', 'list', 'code', 'blockquote', 'table', 'hr', 'html', 'bjtuMathBlock']);
-      function markBlockSpaces(items) {
-        for (let index = 0; index < items.length; index++) {
-          const token = items[index];
-          const previous = items[index - 1], next = items[index + 1];
-          // Block tokens already lay out their own lines. The blank lines that
-          // surround them in the source should not add another visible line.
-          if (token.type === 'space') {
-            if (previous?.type === 'table' && next) token.afterTable = true;
-            else if (blockTypes.has(previous?.type) || blockTypes.has(next?.type)) token.afterBlock = true;
+    if (preserveWhitespace) parser.use({hooks:{
+      // A preserved final LF alone does not create a final line box.
+      postprocess: html => /\n[ \t]*$/.test(html)
+        ? html + '<span aria-hidden="true" style="display:inline-block;width:0;height:1px"></span>'
+        : html,
+      processAllTokens(tokens) {
+        const blockTypes = new Set(['heading', 'list', 'code', 'blockquote', 'table', 'hr', 'html', 'bjtuMathBlock']);
+        function markBlockSpaces(items) {
+          for (let index = 0; index < items.length; index++) {
+            const token = items[index];
+            const previous = items[index - 1], next = items[index + 1];
+            // Block tokens already lay out their own lines. The blank lines that
+            // surround them in the source should not add another visible line.
+            if (token.type === 'space') {
+              if (previous?.type === 'table' && next) token.afterTable = true;
+              else if (blockTypes.has(previous?.type) || blockTypes.has(next?.type)) token.afterBlock = true;
+            }
+            if (token.tokens) markBlockSpaces(token.tokens);
+            for (const item of token.items || []) if (item.tokens) markBlockSpaces(item.tokens);
           }
-          if (token.tokens) markBlockSpaces(token.tokens);
-          for (const item of token.items || []) if (item.tokens) markBlockSpaces(item.tokens);
         }
+        markBlockSpaces(tokens); return tokens;
       }
-      markBlockSpaces(tokens); return tokens;
-    }}});
+    }});
     if (math && global.katex && vendorStatus.get('katex') !== false) {
       const renderMath = token => global.katex.renderToString(token.text, {
         displayMode:token.display, throwOnError:false, trust:false, strict:'ignore',
