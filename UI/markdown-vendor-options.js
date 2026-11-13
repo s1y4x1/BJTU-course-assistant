@@ -22,13 +22,17 @@
     if (!response.ok) throw new Error(`npm 返回 HTTP ${response.status}`);
     return response;
   }
-  async function readBytes(stream,limit,onProgress = () => {}) {
+  async function readBytes(stream,limit,onProgress = () => {},signal) {
     if (!stream) throw new Error('下载未返回文件内容');
     const reader = stream.getReader(), chunks = [];
     let count = 0;
+    const cancel = () => { void reader.cancel(signal.reason).catch(() => {}); };
+    signal?.addEventListener('abort',cancel,{once:true});
     try {
       while (true) {
+        signal?.throwIfAborted();
         const {done,value} = await reader.read();
+        signal?.throwIfAborted();
         if (done) break;
         count += value.length;
         if (count > limit) throw new Error('官方安装包超出大小限制');
@@ -37,7 +41,7 @@
     } catch (error) {
       await reader.cancel().catch(() => {});
       throw error;
-    } finally { reader.releaseLock(); }
+    } finally { signal?.removeEventListener('abort',cancel); reader.releaseLock(); }
     const bytes = new Uint8Array(count);
     let offset = 0;
     for (const chunk of chunks) { bytes.set(chunk,offset); offset += chunk.length; }
@@ -61,23 +65,23 @@
     }
     return files;
   }
-  async function getPackage(id,version,report) {
+  async function getPackage(id,version,report,signal) {
     const component = components[id];
     if (!supported(component,version)) throw new Error('请选择受支持的正式版本');
-    const metadata = await (await request(packageUrl(component,version))).json();
+    const metadata = await (await request(packageUrl(component,version),{signal})).json();
     const tarball = new URL(metadata?.dist?.tarball);
     const integrity = String(metadata?.dist?.integrity || '');
     if (metadata.name !== component.packageName || metadata.version !== version ||
         tarball.origin !== new URL(registry).origin || !/^sha512-[A-Za-z0-9+/]+={0,2}$/.test(integrity)) {
       throw new Error('未能验证官方安装包来源');
     }
-    const response = await request(tarball.href);
+    const response = await request(tarball.href,{signal});
     const total = Number(response.headers.get('content-length')) || 0;
     report(0,total);
-    const bytes = await readBytes(response.body,32 * 1024 * 1024,loaded => report(loaded,total));
+    const bytes = await readBytes(response.body,32 * 1024 * 1024,loaded => report(loaded,total),signal);
     const hash = new Uint8Array(await crypto.subtle.digest('SHA-512',bytes));
     if ('sha512-' + btoa(String.fromCharCode(...hash)) !== integrity) throw new Error('安装包完整性校验失败');
-    const unpacked = await readBytes(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip')),64 * 1024 * 1024);
+    const unpacked = await readBytes(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip')),64 * 1024 * 1024,undefined,signal);
     const allow = path => path === component.script || /^LICENSE(?:\.[a-z]+)?$/i.test(path)
       || (id === 'katex' && (path === 'dist/katex.min.css' || /^dist\/fonts\/[A-Za-z0-9_-]+\.(?:woff2?|ttf)$/.test(path)));
     const files = readTar(unpacked,allow);
@@ -111,9 +115,11 @@
     const id = row.dataset.markdownVendor, component = components[id];
     const versions = row.querySelector('select'), state = row.querySelector('[data-state]');
     const download = row.querySelector('[data-download]'), remove = row.querySelector('[data-delete]');
-    const size = row.querySelector('[data-size]'), progress = row.querySelector('progress');
+    const size = row.querySelector('[data-size]'), progress = row.querySelector('[role="progressbar"]');
+    const bar = progress.querySelector('.option-download-progress-bar');
     const fileSizes = globalThis.BjtuFileSizeEmphasis;
     let busy = false, loaded = false, configured = '', installed = '', installedBytes = 0, revision = 0;
+    let controller = null;
     const status = (text,tone = '') => { state.textContent = text; state.dataset.tone = tone; };
     function styledBytes(bytes) {
       const span = document.createElement('span');
@@ -123,15 +129,22 @@
       fileSizes.applyBytes(span,bytes);
       return span;
     }
-    function showProgress(loadedBytes,total) {
+    function setProgress(value) {
       progress.hidden = false;
+      progress.classList.toggle('is-indeterminate',value === undefined);
+      if (value === undefined) progress.removeAttribute('aria-valuenow');
+      else progress.setAttribute('aria-valuenow',value);
+      bar.style.width = value === undefined ? '' : `${value}%`;
+    }
+    function showProgress(loadedBytes,total) {
       if (total > 0) {
-        progress.value = Math.min(1,loadedBytes / total);
+        const percent = Math.min(100,Math.floor(100 * loadedBytes / total));
+        setProgress(percent);
         const separator = document.createElement('span');
         separator.className = 'file-size-separator'; separator.textContent = ' / ';
-        size.replaceChildren(styledBytes(loadedBytes),separator,styledBytes(total),` ${Math.floor(progress.value * 100)}%`);
+        size.replaceChildren(styledBytes(loadedBytes),separator,styledBytes(total),` ${percent}%`);
       } else {
-        progress.removeAttribute('value');
+        setProgress();
         size.replaceChildren(styledBytes(loadedBytes));
       }
       size.title = '官方安装包下载进度';
@@ -145,7 +158,9 @@
       versions.disabled = busy || !loaded;
       download.disabled = busy || (loaded && !versions.value);
       download.textContent = versions.value && versions.value === installed ? '修复' : loaded ? '下载' : '重试';
-      remove.disabled = busy || !configured;
+      remove.hidden = !controller && !installed;
+      remove.disabled = controller ? controller.signal.aborted : busy;
+      remove.textContent = controller ? '取消' : '删除';
     }
     function installedStatus() {
       if (configured && !installed) status('本地文件已缺失，可重新下载','error');
@@ -208,10 +223,16 @@
           if (!root) return;
           let files;
           if (version) {
+            controller = new AbortController();
+            const {signal} = controller;
             status('正在连接 npm 官方源…');
+            size.replaceChildren();
+            setProgress(); render();
             files = await getPackage(id,version,(done,total) => {
               status('下载中…'); showProgress(done,total);
-            });
+            },signal);
+            signal.throwIfAborted();
+            controller = null; render();
           }
           status(version ? '正在写入本地扩展目录…' : '正在删除…');
           await globalThis.BjtuUpdateFileSystem.withInstallLock(async () => {
@@ -227,11 +248,14 @@
         });
         await refresh((await chrome.storage.local.get(settingsKey))[settingsKey]);
         installedStatus();
-      } catch (error) { status(error.message,'error'); }
-      finally { busy = false; showInstalledSize(); render(); }
+      } catch (error) { status(controller?.signal.aborted ? '已取消下载' : error.message,controller?.signal.aborted ? '' : 'error'); }
+      finally { controller = null; busy = false; showInstalledSize(); render(); }
     }
     versions.onchange = render;
-    remove.onclick = () => modify('');
+    remove.onclick = () => {
+      if (!controller) { void modify(''); return; }
+      controller.abort(); render();
+    };
     download.onclick = () => loaded ? modify(versions.value) : loadVersions();
     void chrome.storage.local.get(settingsKey).then(async stored => {
       await refresh(stored[settingsKey]);
