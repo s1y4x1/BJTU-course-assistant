@@ -102,7 +102,7 @@
       await chrome.storage.local.set({[settingsKey]:versions});
     });
   }
-  async function getInstalledBytes(id,legacyVersion) {
+  async function getInstalledBytes(id) {
     async function sum(directory) {
       let bytes = 0;
       for await (const handle of directory.values()) {
@@ -114,7 +114,7 @@
       await globalThis.__bjtuUpdaterReady;
       let dir = await globalThis.BjtuUpdateFileSystem?.readDirectoryHandle();
       if (!dir || await dir.queryPermission({mode:'read'}) !== 'granted') return 0;
-      for (const part of ['UI','vendor',id,legacyVersion].filter(Boolean)) dir = await dir.getDirectoryHandle(part);
+      for (const part of ['UI','vendor',id]) dir = await dir.getDirectoryHandle(part);
       return await sum(dir);
     } catch { return 0; }
   }
@@ -134,7 +134,7 @@
     const size = row.querySelector('[data-size]'), progress = row.querySelector('[role="progressbar"]');
     const bar = progress.querySelector('.option-download-progress-bar');
     const fileSizes = globalThis.BjtuFileSizeEmphasis;
-    let busy = false, loaded = false, configured = '', installed = '', installedBytes = 0, revision = 0;
+    let busy = false, loaded = false, configured = '', installed = false, installedVersion = '', installedBytes = 0, revision = 0;
     let controller = null;
     let writing = false;
     const status = (text,tone = '') => { state.textContent = text; state.dataset.tone = tone; };
@@ -175,38 +175,38 @@
       versions.disabled = busy || !loaded;
       download.hidden = writing;
       download.disabled = busy || (loaded && !versions.value);
-      download.textContent = versions.value && versions.value === installed ? '修复' : loaded ? '下载' : '重试';
-      remove.hidden = !controller && !installed;
+      download.textContent = installed && versions.value && versions.value === installedVersion ? '修复' : loaded ? '下载' : '重试';
+      remove.hidden = !controller && (busy || !installed);
       remove.disabled = controller ? controller.signal.aborted : busy;
       remove.textContent = controller ? '取消' : '删除';
     }
     function installedStatus() {
       if (configured && !installed) status('本地文件已缺失，可重新下载','error');
-      else status(installed ? `已安装 ${installed}` : '未安装');
+      else status(installed ? (installedVersion ? `已安装 ${installedVersion}` : '已安装（本地文件）') : '未安装');
     }
     async function refresh(value) {
       const current = ++revision;
       const selection = value?.[id];
-      const legacy = typeof selection === 'string';
-      const version = (legacy ? selection : selection?.version) || '';
+      const version = selection?.version || '';
       let exists = false, bytes = 0;
-      if (supported(component,version)) {
-        const file = component.script.replace(/^dist\//,'');
-        const base = `UI/vendor/${id}/` + (legacy ? version + '/' : '');
-        try {
-          const response = await fetch(chrome.runtime.getURL(base + file),{cache:'no-store'});
-          exists = response.ok;
-          await response.body?.cancel();
-        } catch {}
-        if (exists) {
-          bytes = Number.isSafeInteger(selection?.installedBytes) && selection.installedBytes > 0
-            ? selection.installedBytes : await getInstalledBytes(id,legacy ? version : '');
-        }
+      const file = component.script.replace(/^dist\//,'');
+      const required = id === 'katex' ? [file,'katex.min.css'] : [file];
+      try {
+        const readable = await Promise.all(required.map(async name => {
+          const response = await fetch(chrome.runtime.getURL(`UI/vendor/${id}/${name}`),{cache:'no-store'});
+          return response.ok && (await response.blob()).size > 0;
+        }));
+        exists = readable.every(Boolean);
+      } catch {}
+      if (exists) {
+        bytes = Number.isSafeInteger(selection?.installedBytes) && selection.installedBytes > 0
+          ? selection.installedBytes : await getInstalledBytes(id);
       }
       if (current !== revision) return;
       const wasConfigured = configured;
       configured = version;
-      installed = exists ? version : '';
+      installed = exists;
+      installedVersion = exists ? version : '';
       installedBytes = bytes;
       if (version && (!versions.value || versions.value === wasConfigured) &&
           [...versions.options].some(option => option.value === version)) {
@@ -216,7 +216,9 @@
       render();
     }
     chrome.storage.onChanged.addListener((changes,area) => {
-      if (area === 'local' && changes[settingsKey]) void refresh(changes[settingsKey].newValue);
+      if (area !== 'local' || !changes[settingsKey]) return;
+      const {oldValue,newValue} = changes[settingsKey];
+      if (JSON.stringify(oldValue?.[id]) !== JSON.stringify(newValue?.[id])) void refresh(newValue);
     });
     async function loadVersions() {
       if (loaded || busy) return;

@@ -6,14 +6,9 @@
   const vendorStatus = new Map();
   let highlightedBytes = 0;
   const vendorEntries = [['katex','katex','katex.min.js'], ['hljs','highlight','highlight.min.js']];
-  function loadVendor(name, directory, file, versions) {
-    if (global[name]) { vendorStatus.set(name, true); return Promise.resolve(); }
-    const selection = versions?.[directory];
-    const legacy = typeof selection === 'string';
-    const version = legacy ? selection : selection?.version;
-    if (typeof version !== 'string' || !/^\d+\.\d+\.\d+$/.test(version)) {
-      vendorStatus.set(name,false); return Promise.resolve();
-    }
+  async function loadVendor(name, directory, file) {
+    if (global[name]) { vendorStatus.set(name, true); return; }
+    if (!global.chrome?.runtime?.getURL) { vendorStatus.set(name,false); return; }
     const load = path => global.BjtuModuleRegistry?.loadScript ? global.BjtuModuleRegistry.loadScript(path) : new Promise((resolve, reject) => {
       const script = document.createElement('script'); script.src = chrome.runtime.getURL(path);
       script.onload = resolve; script.onerror = () => reject(new Error(`Markdown 组件加载失败：${name}`));
@@ -25,14 +20,15 @@
       link.onload = resolve; link.onerror = reject;
       document.head.append(link);
     });
-    // String selections point to existing versioned installs; new installs use a fixed path.
-    const base = `UI/vendor/${directory}/` + (legacy ? version + '/' : '');
-    return Promise.all([load(base + file),css(base)]).then(() => { vendorStatus.set(name,!!global[name]); })
-      .catch(() => { vendorStatus.set(name,false); });
+    const base = `UI/vendor/${directory}/`;
+    try {
+      await css(base);
+      await load(base + file);
+      vendorStatus.set(name,!!global[name]);
+    } catch { vendorStatus.set(name,false); }
   }
   const ready = typeof document === 'undefined' ? Promise.resolve()
-    : Promise.resolve(global.chrome?.storage?.local?.get('markdownVendorVersions')).catch(() => ({}))
-      .then(settings => Promise.all(vendorEntries.map(([name,directory,file]) => loadVendor(name,directory,file,settings?.markdownVendorVersions))));
+    : Promise.all(vendorEntries.map(([name,directory,file]) => loadVendor(name,directory,file)));
   function missingVendors() {
     return vendorEntries.filter(([name]) => vendorStatus.get(name) === false).map(([name]) => name);
   }
