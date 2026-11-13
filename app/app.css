@@ -751,15 +751,17 @@ html[data-color-scheme="dark"] .btn.resource-select-compact:not(#extension-downl
 .btn.extension-download-cancel:disabled:hover { background:#dc2626; }
 #extension-download-dedup-dialog {
     box-sizing:border-box; width:min(560px,calc(100% - 32px)); max-height:calc(100% - 32px); padding:16px;
-    border:1px solid #94a3b8; border-radius:8px; background:var(--bjtu-card-background,#fff); color:inherit;
+    border:1px solid #94a3b8; border-radius:8px; background:var(--bjtu-page-background,#f9f9f9); color:inherit;
 }
 #extension-download-dedup-dialog::backdrop { background:rgba(15,23,42,.5); }
 #extension-download-dedup-dialog h2 { margin:0; font-size:var(--bjtu-font-size-primaryTitle,20px); }
-#extension-download-dedup-dialog p { margin:8px 0; }
+#extension-download-dedup-dialog p { margin:8px 0; font-size:var(--bjtu-font-size-body,13px); }
 .extension-download-dedup-groups { display:grid; gap:8px; }
 .extension-download-dedup-groups fieldset { min-width:0; margin:0; padding:6px 10px; border:1px solid #94a3b8; border-radius:6px; }
 .extension-download-dedup-groups label { display:flex; align-items:flex-start; gap:6px; overflow-wrap:anywhere; padding:3px 0; cursor:pointer; }
 .extension-download-dedup-groups input { flex:none; }
+.extension-download-dedup-file { font-size:var(--bjtu-font-size-body,13px); }
+.extension-download-dedup-date { font-size:var(--bjtu-font-size-auxiliary,11px); }
 .extension-download-dedup-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; margin-top:12px; }
 .extension-download-dedup-actions [value="cancel"] { background:#64748b; }
 .extension-download-dedup-actions [value="delete"] { background:#dc2626; }
@@ -1517,6 +1519,7 @@ html[data-color-scheme="dark"] :is(.homework-toggle-row--done, .homework-toggle-
 .homework-card-title { font-size:var(--bjtu-font-size-secondaryTitle, 16px); font-weight:700; overflow-wrap:anywhere; }
 .homework-card-main { min-width:0; flex:1 1 auto; }
 .homework-card-actions { flex:0 0 auto; }
+.hw-card-item[data-homework-done="1"] .homework-card-actions { align-self:center; }
 .btn:is([data-action="download-homework-package"], [data-action="assessment"], [data-action="archive-batch-download"]):disabled { opacity:.55; cursor:not-allowed; }
 .homework-feedback { margin-top:3px; color:#111827; font-size:var(--bjtu-font-size-body, 13px); overflow-wrap:anywhere; }
 .homework-feedback-comment { white-space:pre-wrap; }

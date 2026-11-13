@@ -253,7 +253,7 @@ html[data-color-scheme="dark"] .upload-total-progress-wrap .progress-bar-contain
 }
 .version-modal-card {
   width: min(560px, 92vw);
-  background: #fff;
+  background: var(--bjtu-page-background,#f9f9f9);
   border-radius: 12px;
   border: 1px solid #e8edf5;
   box-shadow: 0 20px 44px rgba(0,0,0,0.25);
@@ -276,10 +276,15 @@ html[data-color-scheme="dark"] .upload-total-progress-wrap .progress-bar-contain
 }
 
 html[data-color-scheme="dark"] .version-modal-card,
-html[data-color-scheme="dark"] #login-modal .login-panel,
 html[data-color-scheme="dark"] .account-init-card,
 html[data-color-scheme="dark"] .account-recovery-card,
-html[data-color-scheme="dark"] .mooc-progress-card,
+html[data-color-scheme="dark"] .mooc-progress-card {
+  background: var(--bjtu-page-background,#111827) !important;
+  border-color: #334155 !important;
+  color: #e5e7eb !important;
+}
+
+html[data-color-scheme="dark"] #login-modal .login-panel,
 html[data-color-scheme="dark"] .ve-teacher-pop,
 html[data-color-scheme="dark"] .ve-student-pop,
 html[data-color-scheme="dark"] .ve-course-teacher-pop {

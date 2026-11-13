@@ -17,7 +17,7 @@
   padding: 16px;
   border: 1px solid #e8edf5;
   border-radius: 12px;
-  background: #fff;
+  background: var(--bjtu-page-background,#f9f9f9);
   box-shadow: 0 20px 44px rgba(0, 0, 0, .25);
 }
 
@@ -121,7 +121,7 @@
 
 html[data-color-scheme="dark"] .upload-duplicate-card {
   border-color: #334155;
-  background: #111827;
+  background: var(--bjtu-page-background,#111827);
   color: #e5e7eb;
 }
 

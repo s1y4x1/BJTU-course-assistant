@@ -303,8 +303,10 @@
         const label = document.createElement('label'), input = document.createElement('input');
         input.type = 'checkbox';
         input.checked = i === 0;
-        const detail = span(''), date = span('');
-        detail.append(entry.path,' · ',BjtuDateTime.set(date,entry.savedAt));
+        const detail = span('extension-download-dedup-file',entry.path);
+        const date = span('extension-download-dedup-date');
+        BjtuDateTime.set(date,entry.savedAt);
+        detail.append(' · ',date);
         label.append(input,detail); field.append(label); choices.set(entry,input);
       }
       return field;
@@ -317,8 +319,23 @@
     container.onchange = sync;
     sync();
     dedupDialog.returnValue = '';
+    const backdrop = event => {
+      if (event.target !== dedupDialog) return false;
+      const {left, right, top, bottom} = dedupDialog.getBoundingClientRect();
+      return event.clientX < left || event.clientX >= right || event.clientY < top || event.clientY >= bottom;
+    };
     return new Promise(resolve => {
+      let pressedBackdrop = false;
+      const onPointerDown = event => { pressedBackdrop = backdrop(event); };
+      const onClick = event => {
+        if (pressedBackdrop && backdrop(event)) dedupDialog.close('cancel');
+        pressedBackdrop = false;
+      };
+      dedupDialog.addEventListener('pointerdown',onPointerDown);
+      dedupDialog.addEventListener('click',onClick);
       dedupDialog.addEventListener('close',() => {
+        dedupDialog.removeEventListener('pointerdown',onPointerDown);
+        dedupDialog.removeEventListener('click',onClick);
         const keep = dedupDialog.returnValue === 'delete'
           ? new Set([...choices].filter(([,input]) => input.checked).map(([entry]) => entry))
           : null;
