@@ -53,6 +53,21 @@
       let permission = 'granted';
       if (typeof handle.queryPermission === 'function') {
         permission = await handle.queryPermission({mode: 'read'});
+        if (permission !== 'granted') {
+          // A deserialized child handle may lack a direct grant even when
+          // the saved downloads directory is still readable in this page.
+          const match = /^downloads\/([^/]+)$/i.exec(String(entry?.downloadPath || ''));
+          if (match) {
+            try {
+              const root = await directory();
+              if (root && await root.queryPermission({mode:'read'}) === 'granted') {
+                const folder = await root.getDirectoryHandle('downloads');
+                const current = await folder.getFileHandle(match[1]);
+                if (await current.isSameEntry(handle)) return await current.getFile();
+              }
+            } catch { /* The stored handle still has its normal authorization flow. */ }
+          }
+        }
         if (permission !== 'granted' && requestPermission && typeof handle.requestPermission === 'function')
           permission = await handle.requestPermission({mode: 'read'});
       }

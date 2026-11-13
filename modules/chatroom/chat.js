@@ -469,12 +469,24 @@
     content.after(toggle);
   }
   function renderMessages() {
+    const savedMessages = new Map(state.messages.filter(m => m.file && m.fileHandleRef).map(m => [m.id, m]));
     for (const [id, task] of savedPreviews) {
-      if (task.conversationId !== selected || !state.messages.some(m => m.id === id)) {
+      if (task.conversationId !== selected || savedMessages.get(id)?.fileHandleRef !== task.message.fileHandleRef) {
         releaseResources(task); savedPreviews.delete(id);
       }
     }
     for (const message of mediaMessages.values()) {
+      // After receiving, use the durable file record on re-entry, just as a
+      // foreground page attached to the background engine does.
+      if (!background && !message.sessions.values().next().value?.outgoing && savedMessages.has(message.id) &&
+          (message.conversationId !== selected || !message.preview) &&
+          [...message.sessions.values()].every(task => task.ended)) {
+        for (const task of message.sessions.values()) releaseResources(task);
+        mediaMessages.delete(message.id);
+        const index = transferHistory.indexOf(message);
+        if (index >= 0) transferHistory.splice(index,1);
+        continue;
+      }
       if (message.conversationId !== selected) for (const task of message.sessions.values()) releasePreview(task);
       else for (const task of message.sessions.values()) if (task.outgoing && task.previewSource && !message.preview) void previewFile(task, task.previewSource).catch(report);
       const header = message.card.querySelector(':scope > .message-author');
@@ -1051,6 +1063,7 @@
     const downloadPath = String(s.savedPath || '');
     let ref;
     try {
+      await s.message.mediaReady;
       ref = await globalThis.BjtuChatroomSettings.saveReceivedFile(s.message.id, s.handle, { downloadPath, privateName:s.privateName });
       const metadata = {id:s.message.id, file:{name:s.name, size:s.size}, fileHandleRef:ref, downloadPath, privateFile:!!s.privateName};
       await mutate('media-file-saved', metadata);
@@ -1063,7 +1076,7 @@
       }
       report(new Error('文件已写入，但保存历史引用失败：' + error.message));
     }
-    file = await s.handle.getFile().catch(error => { report(error); return null; });
+    if (!background) file = await s.handle.getFile().catch(error => { report(error); return null; });
     s.completed = true;
     s.completionText = s.savedPath ? `已保存到 ${s.savedPath}` : file ? '已保存到聊天室，可打开或另存文件' : '未能保存到聊天室';
     s.status = s.completionText; updateTransfer(s);

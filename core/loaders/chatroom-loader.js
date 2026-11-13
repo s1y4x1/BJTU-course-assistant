@@ -46,8 +46,18 @@
         type: 'BJTU_CHATROOM_NAVIGATE',
         conversationId: message.conversationId || ''
       }, location.origin);
-      if (frame?.contentDocument?.readyState === 'complete') navigate();
-      else frame?.addEventListener('load', navigate, {once:true});
+      if (frame) {
+        // iframe load can precede the asynchronous engine attachment. Replay
+        // on the chat UI's ready signal so opening from a notification works.
+        const ready = event => {
+          if (event.source !== frame.contentWindow || event.origin !== location.origin ||
+              event.data?.type !== 'BJTU_CHATROOM_WINDOW_READY') return;
+          clearTimeout(timer); window.removeEventListener('message', ready); navigate();
+        };
+        const timer = setTimeout(() => window.removeEventListener('message', ready), 30000);
+        window.addEventListener('message', ready);
+        if (frame.contentDocument?.readyState === 'complete') navigate();
+      }
       sendResponse({ok:true});
     })().catch(error => sendResponse({ok:false, error:String(error?.message || error)}));
     return true;
