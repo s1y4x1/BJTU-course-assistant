@@ -83,17 +83,30 @@
       if (info.mis) container.append(node('p', `MIS：${info.mis}`, 'editor-info'));
       return true;
     }
+    async function loadSelfAccounts(container) {
+      const stored = await global.chrome.storage.local.get([
+        'username', 'popupFullscreenCourseCache', 'loginAccountHistory', 'casLoginName', 'academicSystemStudentId'
+      ]);
+      if (!$('editor').open || !container.isConnected) return;
+      const clean = value => typeof value === 'string' ? value.trim() : '';
+      const latest = (Array.isArray(stored.loginAccountHistory) ? stored.loginAccountHistory : [])
+        .reduce((best, entry) => Number(entry?.lastLoginAt) > Number(best?.lastLoginAt || 0) ? entry : best, null);
+      const ve = clean(stored.username) || clean(stored.popupFullscreenCourseCache?.currentAccountLoginName);
+      const mis = clean(stored.casLoginName) || clean(stored.academicSystemStudentId);
+      const previousVe = !ve && (clean(latest?.loginName) || clean(latest?.userId));
+      container.replaceChildren();
+      appendAccounts(container, {ve, mis});
+      if (previousVe) container.append(node('p', `智慧课程平台（最近登录）：${previousVe}`, 'editor-info'));
+      if (!container.childElementCount) container.textContent = '未找到本机账号记录';
+    }
     function updateEditorAccounts(container) {
       const id = container.dataset.peerId;
-      const self = id === state.self.id;
-      const info = self ? state.self.accounts : state.peers.find(peer => peer.id === id)?.accounts;
+      const info = state.peers.find(peer => peer.id === id)?.accounts;
       const signature = JSON.stringify(info || null);
       if (container.dataset.accounts === signature) return;
       container.dataset.accounts = signature;
       container.replaceChildren();
-      const hasAccounts = appendAccounts(container, info);
-      container.hidden = !self && !hasAccounts;
-      if (self && !hasAccounts) container.textContent = '本机账号：未登录';
+      container.hidden = !appendAccounts(container, info);
     }
     async function action(name, args = {}) {
       if (!online) throw new Error('当前页连接引擎尚未就绪，请重试。');
@@ -201,7 +214,7 @@
     state = getState ? getState() : state;
     if (getSelected) selected = getSelected();
     const editorAccounts = $('editor-fields').querySelector('.editor-accounts');
-    if ($('editor').open && editorAccounts) updateEditorAccounts(editorAccounts);
+    if ($('editor').open && editorAccounts?.dataset.peerId) updateEditorAccounts(editorAccounts);
     const {visibleConversations, unreadCount} = global.BjtuChatroomConversations;
     const entries = visibleConversations(state).map(entry => {
       const isPublic = entry.id === 'public';
@@ -285,8 +298,9 @@
       const device = deviceText(state.self.device);
       if (device) fields.append(node('p', `设备：${device}`, 'editor-info'));
       const accounts = node('div', undefined, 'editor-accounts');
-      accounts.dataset.peerId = state.self.id;
-      updateEditorAccounts(accounts); fields.append(accounts);
+      accounts.textContent = '正在读取本机账号…';
+      fields.append(accounts);
+      void loadSelfAccounts(accounts).catch(() => { accounts.textContent = '无法读取本机账号'; });
       const label = node('label', '昵称（留空恢复默认 IP）'), input = node('input');
       input.value = state.settings.nickname || ''; input.maxLength = 40;
       input.placeholder = state.self.ip || state.self.nickname || '默认使用本机 IP';
