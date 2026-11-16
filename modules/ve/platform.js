@@ -1261,6 +1261,7 @@ async function fetchCoursewareItems(courseNum, fzId, externalAbortController = n
       url: urlNorm,
       rpId,
       courseId: String(courseIdPart || '').trim(),
+      rpSize: item?.rpSize,
       sizeMb: formatResourceSizeMb(sizeMbRaw),
       sizeMbRaw
     };

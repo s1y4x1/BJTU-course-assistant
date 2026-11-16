@@ -217,6 +217,10 @@ function getResourceItemSizeBytes(item) {
   return Math.round(mb * 1024 * 1024);
 }
 
+function shouldAnimateResourceProgress(item) {
+  return item?.rpSize === '0.0' || item?.rpSize === 0;
+}
+
 function getKnownResourceSizeBytes(resourceId) {
   const rid = String(resourceId || '').trim();
   if (!rid) return 0;
@@ -313,6 +317,7 @@ function enqueueResourceDownload(item) {
     loaded: 0,
     total: expectedBytes,
     indeterminate: direct,
+    animateProgress: shouldAnimateResourceProgress(item),
     speed: 0,
     etaSec: null,
     status: '排队等待…'
@@ -409,6 +414,9 @@ function updateResourceDownloadTotals() {
   const batch = window.resourceDownloadBatch || {};
   const hasActiveOrQueued = !!tasks.length || !!batch.active || !!queuedEntries.length;
   const indeterminate = tasks.some((t) => t.indeterminate) || queuedEntries.some((q) => q.direct);
+  // A zero reported size changes the bar animation, not the download stats.
+  const animateProgress = indeterminate || tasks.some((t) => t.animateProgress)
+    || queuedEntries.some((q) => shouldAnimateResourceProgress(q.item));
 
   const completedLoaded = Math.max(0, Number(window.resourceDownloadCompletedContribution?.loadedBytes) || 0);
   const completedTotal = Math.max(0, Number(window.resourceDownloadCompletedContribution?.totalBytes) || 0);
@@ -470,8 +478,8 @@ function updateResourceDownloadTotals() {
     : 0;
   const percent = Math.round(exactPercent);
   if (resourceProgressWrap instanceof HTMLElement) {
-    resourceProgressWrap.classList.toggle('is-indeterminate', indeterminate);
-    resourceProgressWrap.style.display = indeterminate || totalSize > 0 ? '' : 'none';
+    resourceProgressWrap.classList.toggle('is-indeterminate', animateProgress);
+    resourceProgressWrap.style.display = animateProgress || totalSize > 0 ? '' : 'none';
   }
   resourceTotalPercent.style.display = !indeterminate && totalSize > 0 ? '' : 'none';
   resourceTotalBar.style.width = `${exactPercent}%`;
@@ -543,7 +551,7 @@ function cancelResourceDownload(resourceId) {
   return false;
 }
 
-function setResourceDownloadUi(resourceId, { active = false, percent = 0, loaded = 0, total = 0, speed = 0, etaSec = null, status = '', indeterminate = false } = {}) {
+function setResourceDownloadUi(resourceId, { active = false, percent = 0, loaded = 0, total = 0, speed = 0, etaSec = null, status = '', indeterminate = false, animateProgress = false } = {}) {
   const row = findResourceItemElementById(resourceId);
   const task = getResourceDownloadTask(resourceId);
   if (!row) {
@@ -570,7 +578,9 @@ function setResourceDownloadUi(resourceId, { active = false, percent = 0, loaded
   if (!(wrap instanceof HTMLElement) || !(bar instanceof HTMLElement)) return;
 
   indeterminate = active && (indeterminate || !!task?.indeterminate);
-  wrap.querySelector('.progress-bar-container')?.classList.toggle('is-indeterminate', indeterminate);
+  wrap.querySelector('.progress-bar-container')?.classList.toggle(
+    'is-indeterminate', indeterminate || (active && (animateProgress || !!task?.animateProgress))
+  );
 
   wrap.style.display = active ? 'block' : 'none';
 
@@ -669,6 +679,7 @@ async function downloadResourceItemWithProgress(item, direct = window.downloadIn
     chromeDownloadId: null
   };
   task.indeterminate = direct;
+  task.animateProgress = shouldAnimateResourceProgress(item);
   task.item = item;
   window.resourceDownloadTasks[id] = task;
   setResourceItemDownloadingState(id, true);
@@ -712,6 +723,7 @@ async function downloadResourceItemWithProgress(item, direct = window.downloadIn
   };
 
   const finalizeSuccessUi = (loaded, total, status = '已保存') => {
+    task.animateProgress = false;
     setResourceDownloadUi(id, {
       active: true,
       percent: 100,
@@ -724,6 +736,7 @@ async function downloadResourceItemWithProgress(item, direct = window.downloadIn
   };
 
   const finalizeCancelledUi = () => {
+    task.animateProgress = false;
     setResourceDownloadUi(id, {
       active: true,
       percent: 0,
@@ -976,6 +989,7 @@ async function downloadResourceItemWithProgress(item, direct = window.downloadIn
           fallbackToBrowserDirectDownload();
           cleanup();
         } catch {
+          task.animateProgress = false;
           setResourceDownloadUi(id, { active: true, percent: 0, loaded: 0, total: 0, speed: 0, etaSec: null, status: '下载失败' });
           cleanup();
           throw new Error(`下载失败：${String(fetchErr?.message || fetchErr)}; ${String(xhrErr?.message || xhrErr)}`);
