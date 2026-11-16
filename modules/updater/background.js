@@ -34,6 +34,7 @@
   ]);
   let runningPromise = null;
   let manualInstallPromise = null;
+  let activeAutoCleanOwnerId = '';
   const manualModuleSelectionRequests = new Map();
 
   function normalizeIntervalMinutes(value) {
@@ -731,11 +732,12 @@
     });
   }
 
-  async function installRelease(root, release, { manual = false } = {}) {
-    const archive = await retryNetworkOperation(() => downloadArchive(release.url, manual
+  async function installRelease(root, release, { manual = false, tracking = {} } = {}) {
+    const archive = await retryNetworkOperation(() => downloadArchive(release.url, manual || tracking.clean
       ? (transfer) => setStatus('downloading', {
-          manual: true,
-          ownerId: release.ownerId,
+          ...tracking,
+          manual,
+          ...(manual ? { ownerId: release.ownerId } : {}),
           version: release.version,
           name: release.name,
           directoryName: root.name,
@@ -775,6 +777,7 @@
       if (!selectedArchiveFiles.length) throw new Error('更新压缩包中没有需要写入的文件');
       const files = filterFilesByModules(selectedArchiveFiles, selectedModules);
       const reportProgress = (completed, clearing = false) => setStatus('installing', {
+        ...tracking,
         manual,
         ...(manual ? { ownerId: release.ownerId } : {}),
         version: release.version,
@@ -941,6 +944,7 @@
   async function runBackgroundUpdate({ forceCheck = false, suppressRecentReloadRetry = false, installVersion = '' } = {}) {
     if (runningPromise) return runningPromise;
     if (manualInstallPromise) return { skipped: true };
+    let tracking = {};
     runningPromise = (async () => {
       const stored = await chrome.storage.local.get([
         ENABLED_KEY, INSTALL_OPTIONAL_KEY, INSTALL_FORCED_KEY, APPLIED_WITHOUT_RELOAD_KEY, PENDING_RELOAD_KEY,
@@ -1052,15 +1056,21 @@
         return { updated: false, optionalUpdateAvailable: true, release };
       }
       await clearUpdateIssueNotificationState('permission');
+      if (release.clean) {
+        activeAutoCleanOwnerId = `background:${crypto.randomUUID()}`;
+        tracking = { clean: true, ownerId: activeAutoCleanOwnerId };
+      }
       await setStatus('downloading', {
+        ...tracking,
         localVersion,
         version: release.version,
         name: release.name,
         directoryName: root.name
       });
-      const fileCount = await installRelease(root, release);
+      const fileCount = await installRelease(root, release, { tracking });
       const reloadRequired = release.reload;
       const record = {
+        ...tracking,
         ver: release.version,
         name: release.name,
         description: release.description,
@@ -1125,9 +1135,10 @@
       if (category === 'permission') {
         await notifyUpdateIssue('permission', String(normalizedError?.message || normalizedError), '').catch(() => {});
       }
-      await setStatus('error', { error: String(normalizedError?.message || normalizedError) }).catch(() => {});
+      await setStatus('error', { ...tracking, error: String(normalizedError?.message || normalizedError) }).catch(() => {});
       throw normalizedError;
     }).finally(() => {
+      activeAutoCleanOwnerId = '';
       runningPromise = null;
     });
     return runningPromise;
@@ -1189,6 +1200,19 @@
     if (message?.type === 'BACKGROUND_UPDATE_INSTALL_KEEPALIVE') {
       sendResponse({ ok: !!manualInstallPromise });
       return false;
+    }
+    if (message?.type === 'BACKGROUND_UPDATE_GET_ACTIVE_INSTALL') {
+      if (!manualInstallPromise && !activeAutoCleanOwnerId) {
+        sendResponse({ status: null });
+        return false;
+      }
+      chrome.storage.local.get(STATUS_KEY).then((stored) => {
+        const status = stored[STATUS_KEY];
+        const isActive = status?.manual === true ? !!manualInstallPromise : status?.ownerId === activeAutoCleanOwnerId;
+        sendResponse({ status: isActive && status?.ownerId &&
+          ['downloading', 'selecting-modules', 'installing', 'reloading'].includes(status.status) ? status : null });
+      }, () => sendResponse({ status: null }));
+      return true;
     }
     if (!['BACKGROUND_UPDATE_CHECK_NOW', 'BACKGROUND_UPDATE_INSTALL_CLEAN'].includes(message?.type)) return false;
     const task = message.type === 'BACKGROUND_UPDATE_INSTALL_CLEAN'

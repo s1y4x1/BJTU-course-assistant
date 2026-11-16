@@ -6,6 +6,7 @@
 
 // 标记模块已加载
 window.__updateCheckerLoaded = true;
+const escapeVersionHtml = globalThis.BjtuMarkdown.escapeHtml;
 
 // -- 版本比较工具函数 --
 
@@ -507,21 +508,21 @@ function getVersionMarkdownParser() {
 
   const renderer = new markedApi.Renderer();
   const defaultTableRenderer = renderer.table;
-  renderer.html = ({ text }) => escapeHtml(String(text || ''));
+  renderer.html = ({ text }) => escapeVersionHtml(String(text || ''));
   renderer.link = function renderSafeLink({ href, title, tokens }) {
     const text = this.parser.parseInline(tokens || []);
     const safeHref = normalizeVersionMarkdownUrl(href, new Set(['http:', 'https:', 'mailto:']));
     if (!safeHref) return text;
-    const titleAttribute = title ? ` title="${escapeHtml(String(title))}"` : '';
-    return `<a href="${escapeHtml(safeHref)}"${titleAttribute} target="_blank" rel="noopener noreferrer">${text}</a>`;
+    const titleAttribute = title ? ` title="${escapeVersionHtml(String(title))}"` : '';
+    return `<a href="${escapeVersionHtml(safeHref)}"${titleAttribute} target="_blank" rel="noopener noreferrer">${text}</a>`;
   };
   renderer.image = ({ href, title, text }) => {
     const safeSrc = normalizeVersionMarkdownUrl(href, new Set(['http:', 'https:']));
-    if (!safeSrc) return escapeHtml(String(text || ''));
-    const titleAttribute = title ? ` title="${escapeHtml(String(title))}"` : '';
-    return `<img class="version-markdown-image" src="${escapeHtml(safeSrc)}" alt="${escapeHtml(String(text || ''))}"${titleAttribute} loading="lazy">`;
+    if (!safeSrc) return escapeVersionHtml(String(text || ''));
+    const titleAttribute = title ? ` title="${escapeVersionHtml(String(title))}"` : '';
+    return `<img class="version-markdown-image" src="${escapeVersionHtml(safeSrc)}" alt="${escapeVersionHtml(String(text || ''))}"${titleAttribute} loading="lazy">`;
   };
-  renderer.codespan = ({ text }) => `<code class="version-markdown-inline-code">${escapeHtml(String(text || ''))}</code>`;
+  renderer.codespan = ({ text }) => `<code class="version-markdown-inline-code">${escapeVersionHtml(String(text || ''))}</code>`;
   renderer.code = ({text, lang}) => globalThis.BjtuMarkdown.renderCodeBlock(text, lang);
   renderer.blockquote = function renderBlockquote({ tokens }) {
     return `<blockquote class="version-markdown-blockquote">${this.parser.parse(tokens || [])}</blockquote>`;
@@ -558,9 +559,9 @@ function getVersionMarkdownParser() {
       },
       renderer(token) {
         const timeHtml = token.time
-          ? `<span class="version-markdown-release-time">${escapeHtml(token.time)}</span>`
+          ? `<span class="version-markdown-release-time">${escapeVersionHtml(token.time)}</span>`
           : '';
-        return `<div class="version-markdown-release"><span class="version-markdown-release-name">${escapeHtml(token.version)}</span>${timeHtml}</div>`;
+        return `<div class="version-markdown-release"><span class="version-markdown-release-name">${escapeVersionHtml(token.version)}</span>${timeHtml}</div>`;
       }
     }]
   });
@@ -571,12 +572,12 @@ function renderMarkdownBasic(markdownText) {
   const source = String(markdownText || '').replace(/\r\n?/g, '\n').trim();
   if (!source) return '<p class="version-markdown-empty">此版本暂无更新说明。</p>';
   const parser = getVersionMarkdownParser();
-  if (!parser) return `<p class="version-markdown-empty">${escapeHtml(source)}</p>`;
+  if (!parser) return `<p class="version-markdown-empty">${escapeVersionHtml(source)}</p>`;
   try {
     return parser.parse(source, { async: false });
   } catch (error) {
     console.warn('[bjtu] release markdown render failed:', error);
-    return `<p class="version-markdown-empty">${escapeHtml(source)}</p>`;
+    return `<p class="version-markdown-empty">${escapeVersionHtml(source)}</p>`;
   }
 }
 
@@ -851,16 +852,16 @@ function openVersionNoticeModal(overrideMode) {
     const titleVersion = mode === 'latest'
       ? (manifest.version_name || versionButtonLocalVersion || manifest.version)
       : [versionButtonLatestVersion, versionButtonLatestDisplayVersion !== versionButtonLatestVersion ? versionButtonLatestDisplayVersion : ''].filter(Boolean).join(' ');
-    const versionLabel = escapeHtml(String(titleVersion || '').trim() || '--');
-    const publishedText = escapeHtml(formatReleasePublishedAt(versionButtonLatestPublishedAt));
+    const versionLabel = escapeVersionHtml(String(titleVersion || '').trim() || '--');
+    const publishedText = escapeVersionHtml(formatReleasePublishedAt(versionButtonLatestPublishedAt));
     const timeHtml = publishedText ? `<span class="version-notice-title-time">${publishedText}</span>` : '';
     if (mode === 'failure') {
       titleEl.textContent = '检查更新失败';
     } else if (mode === 'latest') {
       titleEl.innerHTML = `<span class="version-notice-title-main">已是最新版本：${versionLabel}</span>${timeHtml}`;
     } else if (mode === 'ahead') {
-      const localLabel = escapeHtml(String(manifest.version_name || versionButtonLocalReleaseVersion || versionButtonLocalVersion || '').trim() || '--');
-      const localPublishedText = escapeHtml(formatReleasePublishedAt(versionButtonLocalPublishedAt));
+      const localLabel = escapeVersionHtml(String(manifest.version_name || versionButtonLocalReleaseVersion || versionButtonLocalVersion || '').trim() || '--');
+      const localPublishedText = escapeVersionHtml(formatReleasePublishedAt(versionButtonLocalPublishedAt));
       const localTimeHtml = localPublishedText ? `<span class="version-notice-title-time">${localPublishedText}</span>` : '';
       titleEl.innerHTML = `<span class="version-notice-title-main">当前为开发预览版本：${localLabel}</span>${localTimeHtml}`;
     } else {
@@ -957,6 +958,7 @@ function ensureVersionDownloadModal() {
   if (closeDownloadBtn instanceof HTMLButtonElement) {
     closeDownloadBtn.addEventListener('click', () => {
       if (modal.dataset.locked === '1') return;
+      if (modal.dataset.readOnly === '1' && observedBackgroundInstall) observedBackgroundInstall.dismissed = true;
       cancelVersionRefreshCountdown();
       modal.style.display = 'none';
     });
@@ -1012,12 +1014,12 @@ function setVersionDownloadRetryVisible(visible) {
 }
 
 function renderVersionDownloadBodyHtml(bodyText) {
-  const safe = escapeHtml(String(bodyText || ''));
+  const safe = escapeVersionHtml(String(bodyText || ''));
   const linkLabel = 'about:extensions';
   const linkHtml = '<span style="color:#0f766e; font-weight:700;">about:extensions</span>';
-  let html = safe.replaceAll(escapeHtml(linkLabel), linkHtml);
+  let html = safe.replaceAll(escapeVersionHtml(linkLabel), linkHtml);
   const boldLabel = '**重新加载**';
-  html = html.replaceAll(escapeHtml(boldLabel), '<b>重新加载</b>');
+  html = html.replaceAll(escapeVersionHtml(boldLabel), '<b>重新加载</b>');
   return html.replace(/\r?\n/g, '<br>');
 }
 
@@ -1026,10 +1028,14 @@ function setVersionDownloadProgressUi({
   status = '下载中…',
   title = '正在下载',
   body = '请稍候，正在下载更新文件…',
-  phase = 'downloading'
+  phase = 'downloading',
+  readOnly = false,
+  floating = false
 } = {}) {
   const modal = ensureVersionDownloadModal();
   if (!modal) return;
+  modal.classList.toggle('version-download-floating', floating);
+  modal.dataset.readOnly = readOnly ? '1' : '0';
   versionDownloadPhase = String(phase || 'downloading').trim() || 'downloading';
   syncVersionNoticeDownloadButton();
   const forceShow = phase !== 'downloading';
@@ -1047,17 +1053,17 @@ function setVersionDownloadProgressUi({
   const refreshBtn = document.getElementById('version-download-refresh');
   const closeBtn = document.getElementById('version-download-close');
 
-  if (phase === 'downloading' || phase === 'failed') modal.dataset.locked = '0';
+  if (readOnly || phase === 'downloading' || phase === 'failed') modal.dataset.locked = '0';
 
   if (minBtn instanceof HTMLButtonElement) {
-    minBtn.style.display = versionDownloadPhase === 'downloading' ? 'inline-block' : 'none';
+    minBtn.style.display = !readOnly && versionDownloadPhase === 'downloading' ? 'inline-block' : 'none';
   }
-  if (phase !== 'finished') {
+  if (phase !== 'finished' || readOnly) {
     if (openExtensionsBtn instanceof HTMLElement) openExtensionsBtn.style.display = 'none';
     if (refreshBtn instanceof HTMLElement) refreshBtn.style.display = 'none';
     if (closeBtn instanceof HTMLElement) closeBtn.style.display = 'none';
   }
-  if (phase === 'failed' && closeBtn instanceof HTMLElement) closeBtn.style.display = '';
+  if ((readOnly || phase === 'failed') && closeBtn instanceof HTMLElement) closeBtn.style.display = '';
   if (phase === 'finished' || phase === 'failed') setVersionDownloadBar({ visible: false });
 
   if (titleEl) titleEl.textContent = versionDownloadSelectedSource === 'history' && title === '正在下载更新压缩包'
@@ -1071,7 +1077,7 @@ function setVersionDownloadProgressUi({
     delete statusEl.dataset.speed;
     delete statusEl.dataset.eta;
     delete statusEl.dataset.percent;
-    const message = phase === 'finished' ? '' : String(status || '下载中…');
+    const message = phase === 'finished' && !floating ? '' : String(status);
     if (message) {
       const messageEl = document.createElement('span');
       messageEl.className = 'version-download-status-message';
@@ -1148,7 +1154,8 @@ async function handleBackgroundModuleSelection(status) {
       status: `更新失败：${String(error?.message || error)}`,
       title: '提交模块选择失败',
       body: '未清空或写入扩展目录，请重新开始更新。',
-      phase: 'failed'
+      phase: 'failed',
+      floating: true
     });
     setVersionDownloadRetryVisible(true);
   } finally {
@@ -1159,18 +1166,19 @@ async function handleBackgroundModuleSelection(status) {
   }
 }
 
-function renderBackgroundCleanInstallStatus(status) {
-  if (status?.manual !== true || status.ownerId !== VERSION_FOREGROUND_SESSION_ID) return;
+function renderBackgroundCleanInstallStatus(status, {readOnly = false} = {}) {
+  if ((!status?.manual && !status?.clean) || (!readOnly && status.ownerId !== VERSION_FOREGROUND_SESSION_ID)) return;
   const state = String(status.status || '');
   if (!['downloading', 'selecting-modules', 'installing', 'complete', 'reloading', 'error'].includes(state)) return;
+  const show = (options) => setVersionDownloadProgressUi({ ...options, readOnly, floating: true });
   if (state === 'downloading') {
-    versionDownloadInProgress = true;
+    if (!readOnly) versionDownloadInProgress = true;
     const loaded = Math.max(0, Number(status.loaded) || 0);
     const total = Math.max(0, Number(status.total) || 0);
     const percent = total > 0
       ? Math.max(0, Math.min(100, Number(status.percent) || loaded * 100 / total))
       : null;
-    setVersionDownloadProgressUi({
+    show({
       visible: true,
       status: total > 0
         ? `${Math.floor(percent)}% · ${formatDownloadBytes(loaded)} / ${formatDownloadBytes(total)}`
@@ -1180,7 +1188,7 @@ function renderBackgroundCleanInstallStatus(status) {
       phase: 'downloading'
     });
     setVersionDownloadBar({ visible: true, percent: percent || 0, indeterminate: percent === null });
-    setVersionDownloadTransferStatus({
+    if (loaded || total) setVersionDownloadTransferStatus({
       loaded,
       total,
       speed: Math.max(0, Number(status.speed) || 0),
@@ -1190,15 +1198,25 @@ function renderBackgroundCleanInstallStatus(status) {
     return;
   }
   if (state === 'selecting-modules') {
-    void handleBackgroundModuleSelection(status);
+    if (readOnly) {
+      show({
+        status: '等待在发起更新的页面确认模块…',
+        title: '正在后台进行全新安装',
+        body: '此页面仅显示进度，不能提交模块选择。',
+        phase: 'extracting'
+      });
+      setVersionDownloadBar({ visible: false });
+    } else {
+      void handleBackgroundModuleSelection(status);
+    }
     return;
   }
   if (state === 'installing') {
-    versionDownloadInProgress = true;
+    if (!readOnly) versionDownloadInProgress = true;
     const completed = Math.max(0, Number(status.completed) || 0);
     const total = Math.max(0, Number(status.total) || 0);
     const percent = total > 0 ? completed * 100 / total : 0;
-    setVersionDownloadProgressUi({
+    show({
       visible: true,
       status: status.clearing ? '正在清理扩展安装目录…' : `正在写入 ${completed} / ${total}`,
       title: '正在后台进行全新安装',
@@ -1209,7 +1227,7 @@ function renderBackgroundCleanInstallStatus(status) {
     return;
   }
   if (state === 'reloading') {
-    setVersionDownloadProgressUi({
+    show({
       visible: true,
       status: '正在重新加载扩展…',
       title: '全新安装已完成',
@@ -1219,31 +1237,64 @@ function renderBackgroundCleanInstallStatus(status) {
     return;
   }
   if (state === 'complete') {
+    if (readOnly) {
+      show({
+        title: '全新安装已完成',
+        body: `后台已写入 ${Math.max(0, Number(status.fileCount) || 0)} 个文件。`,
+        status: '',
+        phase: 'finished'
+      });
+      return;
+    }
     versionDownloadInProgress = false;
     syncVersionNoticeDownloadButton();
     setVersionDownloadCompletionUi({
       reloadRequired: false,
       fileCount: status.fileCount,
-      displayVersion: status.name || status.ver
+      displayVersion: status.name || status.ver,
+      floating: true
     });
     return;
   }
-  versionDownloadInProgress = false;
-  syncVersionNoticeDownloadButton();
+  if (!readOnly) {
+    versionDownloadInProgress = false;
+    syncVersionNoticeDownloadButton();
+  }
   const message = String(status.error || '后台更新失败');
-  setVersionDownloadProgressUi({
+  show({
     visible: true,
     status: `更新失败：${message}`,
     title: '全新安装失败',
     body: '后台更新任务未能完成，请检查安装目录权限和网络连接后重试。',
     phase: 'failed'
   });
-  setVersionDownloadRetryVisible(true);
+  if (!readOnly) setVersionDownloadRetryVisible(true);
+}
+
+let observedBackgroundInstall;
+let backgroundInstallStatusChanged = false;
+
+function renderObservedBackgroundInstall(status) {
+  if ((!status?.manual && !status?.clean) || status.ownerId === VERSION_FOREGROUND_SESSION_ID || !status.ownerId || versionDownloadInProgress) return;
+  const active = ['downloading', 'selecting-modules', 'installing', 'reloading'].includes(status.status);
+  if (observedBackgroundInstall?.ownerId !== status.ownerId) {
+    if (!active) return;
+    observedBackgroundInstall = { ownerId: status.ownerId, dismissed: false };
+    versionDownloadMinimized = false;
+    setVersionDownloadReleaseNotes('');
+    resetVersionUpdateFileTree();
+  }
+  observedBackgroundInstall.status = status;
+  if (!observedBackgroundInstall.dismissed) renderBackgroundCleanInstallStatus(status, { readOnly: true });
+  if (!active) observedBackgroundInstall = null;
 }
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== 'local' || !changes[VERSION_BACKGROUND_UPDATE_STATUS_KEY]) return;
-  renderBackgroundCleanInstallStatus(changes[VERSION_BACKGROUND_UPDATE_STATUS_KEY].newValue);
+  backgroundInstallStatusChanged = true;
+  const status = changes[VERSION_BACKGROUND_UPDATE_STATUS_KEY].newValue;
+  renderBackgroundCleanInstallStatus(status);
+  renderObservedBackgroundInstall(status);
 });
 
 function setVersionDownloadReleaseNotes(markdownText = '') {
@@ -1256,7 +1307,7 @@ function setVersionDownloadReleaseNotes(markdownText = '') {
 }
 
 
-function setVersionDownloadCompletionUi({ reloadRequired, fileCount, displayVersion } = {}) {
+function setVersionDownloadCompletionUi({ reloadRequired, fileCount, displayVersion, floating = false } = {}) {
   const { version: versionButtonLatestVersion, name: versionButtonLatestDisplayVersion,
     force: versionButtonLatestForce } = getVersionDownloadRelease();
   const modal = ensureVersionDownloadModal();
@@ -1273,7 +1324,8 @@ function setVersionDownloadCompletionUi({ reloadRequired, fileCount, displayVers
     body: reloadRequired
       ? reloadBody
       : `已更新到 ${String(displayVersion || versionButtonLatestDisplayVersion || versionButtonLatestVersion)}，刷新页面后生效。`,
-    phase: 'finished'
+    phase: 'finished',
+    floating
   });
   const retryBtn = document.getElementById('version-download-retry');
   const openExtensionsBtn = document.getElementById('version-download-open-extensions');
@@ -1392,7 +1444,7 @@ function setVersionDownloadTransferStatus({ loaded = 0, total = 0, speed = 0, et
   const loadedBytes = Math.max(0, Number(loaded) || 0);
   const totalBytes = Math.max(0, Number(total) || 0);
   const speedBytes = Math.max(0, Number(speed) || 0);
-  const etaSeconds = totalBytes > 0 && Number.isFinite(Number(eta)) && Number(eta) >= 0 ? Number(eta) : null;
+  const etaSeconds = totalBytes > 0 && eta != null && Number.isFinite(Number(eta)) && Number(eta) >= 0 ? Number(eta) : null;
   const explicitPercent = percent !== null && percent !== undefined && Number.isFinite(Number(percent))
     ? Number(percent)
     : null;
@@ -1400,16 +1452,16 @@ function setVersionDownloadTransferStatus({ loaded = 0, total = 0, speed = 0, et
     ? Math.max(0, Math.min(100, explicitPercent))
     : (totalBytes > 0 ? Math.min(100, loadedBytes / totalBytes * 100) : null);
   const sizePart = totalBytes > 0
-    ? `<span class="version-download-size-pair"><span style="${buildVersionDownloadEmphasisStyle(loadedBytes)}">${escapeHtml(formatDownloadBytes(loadedBytes))}</span><span class="version-download-status-separator">/</span><span style="${buildVersionDownloadEmphasisStyle(totalBytes)}">${escapeHtml(formatDownloadBytes(totalBytes))}</span></span>`
-    : `<span style="${buildVersionDownloadEmphasisStyle(loadedBytes)}">${escapeHtml(formatDownloadBytes(loadedBytes))}</span>`;
+    ? `<span class="version-download-size-pair"><span style="${buildVersionDownloadEmphasisStyle(loadedBytes)}">${escapeVersionHtml(formatDownloadBytes(loadedBytes))}</span><span class="version-download-status-separator">/</span><span style="${buildVersionDownloadEmphasisStyle(totalBytes)}">${escapeVersionHtml(formatDownloadBytes(totalBytes))}</span></span>`
+    : `<span style="${buildVersionDownloadEmphasisStyle(loadedBytes)}">${escapeVersionHtml(formatDownloadBytes(loadedBytes))}</span>`;
   const percentPart = progressPercent !== null
     ? `<span class="version-download-percent">${Math.round(progressPercent)}%</span>`
     : '';
-  const speedPart = `<span style="${buildVersionDownloadEmphasisStyle(speedBytes)}">${escapeHtml(formatDownloadBytes(speedBytes))}/s</span>`;
+  const speedPart = `<span style="${buildVersionDownloadEmphasisStyle(speedBytes)}">${escapeVersionHtml(formatDownloadBytes(speedBytes))}/s</span>`;
   const etaText = etaSeconds !== null
     ? `剩余: ${formatVersionDownloadEta(etaSeconds)}`
     : '剩余: 计算中…';
-  statusEl.innerHTML = `${sizePart}${percentPart}${speedPart}<span class="version-download-eta">${escapeHtml(etaText)}</span>`;
+  statusEl.innerHTML = `${sizePart}${percentPart}${speedPart}<span class="version-download-eta">${escapeVersionHtml(etaText)}</span>`;
   statusEl.dataset.transfer = '1';
   statusEl.dataset.loaded = String(loadedBytes);
   statusEl.dataset.total = String(totalBytes);
@@ -2142,7 +2194,8 @@ function presentUpdateModuleChoices(choices, { autoConfirm = true, requireConfir
       status: '请选择要保留的模块',
       title: '选择更新模块',
       body: '确认后将开始清空、解压并写入更新文件。',
-      phase: 'extracting'
+      phase: 'extracting',
+      floating: requireConfirmationUi
     });
     const template = document.getElementById('version-module-selection-template');
     if (!(template instanceof HTMLTemplateElement)) {
@@ -2757,7 +2810,8 @@ async function startVersionDownloadWithFallback(downloadUrl, source = '', instal
       status: '正在连接下载源…',
       title: '正在下载更新压缩包',
       body: '正在下载更新文件，下载完成后将自动覆盖解压。',
-      phase: 'downloading'
+      phase: 'downloading',
+      floating: versionDownloadClean
     });
     versionDownloadRelease = resolveVersionDownloadRelease(primaryUrl, selectedSource);
     const { version: versionButtonLatestVersion, name: versionButtonLatestDisplayVersion,
@@ -2787,7 +2841,8 @@ async function startVersionDownloadWithFallback(downloadUrl, source = '', instal
         setVersionDownloadCompletionUi({
           reloadRequired: false,
           fileCount: response.fileCount,
-          displayVersion: versionDownloadRelease.name
+          displayVersion: versionDownloadRelease.name,
+          floating: true
         });
       }
     } else {
@@ -2810,7 +2865,8 @@ async function startVersionDownloadWithFallback(downloadUrl, source = '', instal
       status: `更新失败：${errorMessage}`,
       title: failure.title,
       body: failure.body,
-      phase: 'failed'
+      phase: 'failed',
+      floating: versionDownloadClean
     });
     setVersionDownloadRetryVisible(true);
     showToast(failure.toast, 'error', 3200);
@@ -2848,23 +2904,23 @@ function setVersionButtonState(mode, { localVersion = '', latestVersion = '', la
     return;
   }
   if (versionButtonMode === 'failure') {
-    versionBtn.innerHTML = `<span>当前版本：${escapeHtml(localVersion || '--')}</span>`;
+    versionBtn.innerHTML = `<span>当前版本：${escapeVersionHtml(localVersion || '--')}</span>`;
     versionBtn.querySelectorAll('.version-btn-spinner').forEach((spinner) => spinner.remove());
     return;
   }
   if (versionButtonMode === 'latest') {
-    versionBtn.innerHTML = `<span>最新版本：${escapeHtml(versionButtonLatestDisplayVersion || latestVersion || localVersion || '--')}</span>`;
+    versionBtn.innerHTML = `<span>最新版本：${escapeVersionHtml(versionButtonLatestDisplayVersion || latestVersion || localVersion || '--')}</span>`;
     return;
   }
   if (versionButtonMode === 'outdated') {
-    versionBtn.innerHTML = `<span class="version-btn-stack"><span>发现新版本：${escapeHtml(versionButtonLatestDisplayVersion || latestVersion || '--')}</span></span>`;
+    versionBtn.innerHTML = `<span class="version-btn-stack"><span>发现新版本：${escapeVersionHtml(versionButtonLatestDisplayVersion || latestVersion || '--')}</span></span>`;
     return;
   }
   if (versionButtonMode === 'ahead') {
-    versionBtn.innerHTML = `<span>开发版本：${escapeHtml(localVersion || '--')}</span>`;
+    versionBtn.innerHTML = `<span>开发版本：${escapeVersionHtml(localVersion || '--')}</span>`;
     return;
   }
-  versionBtn.innerHTML = `<span>当前版本：${escapeHtml(localVersion || '--')}</span>`;
+  versionBtn.innerHTML = `<span>当前版本：${escapeVersionHtml(localVersion || '--')}</span>`;
 }
 
 function pickReleaseDownloadUrl(releaseData) {
@@ -3247,6 +3303,9 @@ async function loadVersionInfo(releaseOverride = null) {
 function setupVersionButton() {
   setupVersionDirectoryPermissionCheck();
   initializeVersionReinstallCommand();
+  void chrome.runtime.sendMessage({ type: 'BACKGROUND_UPDATE_GET_ACTIVE_INSTALL' }).then((result) => {
+    if (!backgroundInstallStatusChanged) renderObservedBackgroundInstall(result?.status);
+  }).catch(() => {});
   const versionBtn = document.getElementById('version-btn');
   if (!versionBtn) return;
 
@@ -3321,6 +3380,11 @@ function setupVersionButton() {
   versionBtn.style.display = '';
 
   versionBtn.addEventListener('click', async () => {
+    if (observedBackgroundInstall && !versionDownloadInProgress) {
+      observedBackgroundInstall.dismissed = false;
+      renderObservedBackgroundInstall(observedBackgroundInstall.status);
+      return;
+    }
     await loadVersionInfo().catch(() => {});
     openVersionNoticeModal(versionButtonMode === 'ahead' ? 'ahead' : undefined);
     triggerPendingVersionClick();
@@ -3330,11 +3394,9 @@ function setupVersionButton() {
   loadVersionInfo().catch(() => {}).finally(triggerPendingVersionClick);
 }
 
-// 在 app.js 加载完成后再初始化版本按钮
-// app.js 的 IIFE 同步执行完毕后，所有工具函数（escapeHtml, showToast 等）才可用
+// 等宿主页面的 DOM 和同步初始化就绪，再绑定更新界面。
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', setupVersionButton);
 } else {
-  // DOM 已就绪，但需确保 app.js 同步代码执行完毕，故延迟一微任务
   Promise.resolve().then(setupVersionButton);
 }

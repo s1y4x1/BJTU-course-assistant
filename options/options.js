@@ -1153,14 +1153,18 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   };
   renderSystemNotificationStatus(systemNotificationStatus);
 
-  const renderBackgroundAutoUpdateStatus = (status) => {
+  let latestBackgroundAutoUpdateStatus = backgroundAutoUpdateStatus;
+  const renderBackgroundAutoUpdateStatus = (status = latestBackgroundAutoUpdateStatus) => {
+    latestBackgroundAutoUpdateStatus = status;
     if (!(backgroundAutoUpdateStatusEl instanceof HTMLElement)) return;
     const enabled = !!document.getElementById('backgroundAutoUpdateEnabled')?.checked;
-    if (!enabled) {
+    const state = String(status?.status || 'waiting');
+    const activeInstall = !!(status?.manual || status?.clean) &&
+      ['downloading', 'selecting-modules', 'installing', 'reloading'].includes(state);
+    if (!enabled && !activeInstall) {
       backgroundAutoUpdateStatusEl.textContent = '后台自动更新未启用。';
       return;
     }
-    const state = String(status?.status || 'waiting');
     const versionName = String(status?.name || status?.version || status?.ver || '').trim();
     const messages = {
       checking: '正在后台检查更新…',
@@ -1169,7 +1173,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       'directory-required': `检测到${versionName ? ` ${versionName}` : '新版本'}，请先在全屏页面手动更新一次并授权扩展安装目录。`,
       'optional-update-available': `检测到非强制更新${versionName ? `：${versionName}` : ''}，已按设置保留为手动更新。`,
       downloading: `正在后台下载${versionName ? ` ${versionName}` : '更新'}…`,
-      installing: `正在后台覆盖更新文件${status?.total ? `：${Number(status.completed || 0)} / ${Number(status.total)}` : ''}。`,
+      'selecting-modules': '等待在发起更新的页面确认模块…',
+      installing: status?.clearing ? '正在清理扩展安装目录…'
+        : `正在后台写入更新文件${status?.total ? `：${Number(status.completed || 0)} / ${Number(status.total)}` : ''}。`,
       reloading: '更新已写入，正在自动重新加载扩展…',
       'reload-pending': `更新文件已写入${versionName ? `（${versionName}）` : ''}，正在等待扩展重新加载。`,
       'reload-cooldown': `本地版本仍未更新${versionName ? `（目标 ${versionName}）` : ''}，将在下一轮后台检查时重新覆盖。`,
@@ -1787,7 +1793,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       if (changes.backgroundAutoUpdateEnabled) {
         applyBooleanUi('backgroundAutoUpdateEnabled', changes.backgroundAutoUpdateEnabled.newValue, DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED);
         updateBackgroundAutoUpdateOptionsDisabled();
-        renderBackgroundAutoUpdateStatus(changes.backgroundAutoUpdateStatus?.newValue || null);
+        if (!changes.backgroundAutoUpdateStatus) renderBackgroundAutoUpdateStatus();
       }
       if (changes.backgroundAutoInstallOptionalEnabled) {
         applyBooleanUi('backgroundAutoInstallOptionalEnabled', changes.backgroundAutoInstallOptionalEnabled.newValue, DEFAULT_BACKGROUND_AUTO_INSTALL_OPTIONAL_ENABLED);
@@ -1798,7 +1804,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       if (changes.backgroundAutoUpdateIntervalMinutes) {
         setScheduleIntervalEditor('backgroundAutoUpdateInterval', changes.backgroundAutoUpdateIntervalMinutes.newValue, DEFAULT_BACKGROUND_AUTO_UPDATE_INTERVAL_MINUTES);
       }
-      if (changes.backgroundAutoUpdateStatus) renderBackgroundAutoUpdateStatus(changes.backgroundAutoUpdateStatus.newValue);
+      if (changes.backgroundAutoUpdateStatus) renderBackgroundAutoUpdateStatus(changes.backgroundAutoUpdateStatus.newValue ?? null);
     });
   } catch {
     // ignore non-extension contexts

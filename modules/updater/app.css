@@ -111,6 +111,18 @@
     flex-direction: column;
     overflow: hidden;
 }
+.version-download-modal.version-download-floating {
+    inset: auto 12px 12px auto;
+    width: min(410px, calc(100% - 24px));
+    background: none;
+}
+.version-download-floating .version-modal-card {
+    box-sizing: border-box;
+    width: 100%;
+    max-height: min(70dvh, 570px);
+}
+.version-download-floating .version-download-status { justify-content: flex-start; }
+.version-download-floating .version-download-status:empty { display: none; }
 .toolbar-pin-modal { z-index: 10030; }
 .toolbar-pin-card {
     width: min(440px, 92vw);
@@ -787,8 +799,14 @@ html[data-color-scheme="dark"] .version-uninstall-message { color: #cbd5e1; }
     gap: 8px;
 }
 .version-download-progress {
+    width: 100%;
+    height: 3px;
     margin-top: 4px;
+    overflow: hidden;
+    background: #e5e7eb;
 }
+.version-download-progress > .progress-bar { height: 100%; background: #4caf50; }
+html[data-color-scheme="dark"] .version-download-progress { background: #334155; }
 .version-download-progress.indeterminate .progress-bar {
     width: 35% !important;
     transition: none;
