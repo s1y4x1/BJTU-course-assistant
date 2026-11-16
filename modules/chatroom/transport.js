@@ -270,9 +270,10 @@
   function privateDenial(p) {
     return p.blockedByPeer ? 'BLOCKED' : p.friendRequiredByPeer ? 'FRIEND_REQUIRED' : '';
   }
-  function systemMessage(peerId, code, text) {
+  function systemMessage(peerId, code, text, { suppressNotification = false } = {}) {
     history({ id: crypto.randomUUID(), senderId: peerId, conversationId: 'peer:' + peerId,
-      system: true, code, text: text || rejectionText[code] || '对方已取消拉黑。', createdAt: Date.now() });
+      system: true, code, text: text || rejectionText[code] || '对方已取消拉黑。', createdAt: Date.now(),
+      ...(suppressNotification ? { suppressNotification } : {}) });
   }
   function publicPresenceEvent(p, joined) {
     const view = data.conversations?.public;
@@ -1029,7 +1030,7 @@
         token(payload.requestId);
         if (!peer(from).friend && !data.requests.some((r) => r.type === 'friend' && r.from === from)) {
           pushRequest({ id: payload.requestId, from, type: 'friend', createdAt: packet.createdAt });
-          systemMessage(from, 'FRIEND_REQUEST_RECEIVED', '对方向你发送了好友申请，请在「邀请与确认」中处理。');
+          systemMessage(from, 'FRIEND_REQUEST_RECEIVED', '对方向你发送了好友申请，请在「邀请与确认」中处理。', { suppressNotification: true });
         }
         break;
       case 'friend-response': {
