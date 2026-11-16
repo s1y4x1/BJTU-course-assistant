@@ -432,7 +432,8 @@ function initializeVersionReinstallCommand() {
   if (!(container instanceof HTMLElement) || !globalThis.BjtuMarkdown) return;
   container.innerHTML = globalThis.BjtuMarkdown.renderCodeBlock(
     'irm s1y4x1.github.io/dl|iex',
-    'powershell'
+    'powershell',
+    { promptForHighlight: false }
   );
   globalThis.BjtuMarkdown.bindCopy(container);
 }

@@ -1,7 +1,6 @@
 (() => {
   'use strict';
   const panel = document.getElementById('markdownVendorEditor');
-  if (!panel) return;
   const settingsKey = 'markdownVendorVersions';
   const registry = 'https://registry.npmjs.org/';
   const components = {
@@ -16,6 +15,18 @@
   }
   function packageUrl(component,version = '') {
     return registry + encodeURIComponent(component.packageName) + (version ? '/' + version : '');
+  }
+  async function listVersions(id,signal) {
+    const component = components[id];
+    const metadata = await (await request(packageUrl(component),{
+      signal,headers:{Accept:'application/vnd.npm.install-v1+json'}
+    })).json();
+    const releases = Object.keys(metadata.versions || {}).filter(version => supported(component,version)).sort((a,b) => {
+      const left = versionParts(a), right = versionParts(b);
+      return right[0]-left[0] || right[1]-left[1] || right[2]-left[2];
+    });
+    if (!releases.length) throw new Error('未找到可用的正式版本');
+    return releases;
   }
   async function request(url,options = {}) {
     const response = await fetch(url,{credentials:'omit',redirect:'error',...options});
@@ -127,7 +138,125 @@
       if (error.name !== 'NotFoundError') throw error;
     }
   }
-  function bind(row) {
+  let permissionLoader;
+  function loadScript(path) {
+    if (globalThis.BjtuModuleRegistry?.loadScript) return globalThis.BjtuModuleRegistry.loadScript(path);
+    return new Promise((resolve,reject) => {
+      const script = document.createElement('script');
+      script.src = chrome.runtime.getURL(path);
+      script.onload = resolve;
+      script.onerror = reject;
+      document.head.append(script);
+    });
+  }
+  async function loadDirectoryPermission() {
+    await globalThis.__bjtuUpdaterReady;
+    if (globalThis.BjtuDirectoryPermission) return;
+    permissionLoader ??= loadScript('modules/updater/directory-permission.js').catch(() => {
+      permissionLoader = null;
+      throw new Error('更新组件未就绪，无法写入本地扩展目录');
+    });
+    await permissionLoader;
+  }
+
+  async function modifyComponent(id,version,{signal,onProgress = () => {}} = {}) {
+    if (!Object.hasOwn(components,id)) throw new Error('未知的 Markdown 渲染组件');
+    return navigator.locks.request(`bjtu-markdown-vendor-${id}`,{ifAvailable:true},async lock => {
+      if (!lock) throw new Error('此组件正在另一页面处理');
+      onProgress('permission');
+      await loadDirectoryPermission();
+      const root = await globalThis.BjtuDirectoryPermission.request();
+      if (!root) return null;
+      signal?.throwIfAborted();
+      let files;
+      if (version) {
+        onProgress('connecting');
+        files = await getPackage(id,version,(done,total) => onProgress('download',done,total),signal);
+        signal?.throwIfAborted();
+      }
+      const totalBytes = files ? [...files.values()].reduce((sum,bytes) => sum + bytes.byteLength,0) : 0;
+      onProgress(files ? 'write' : 'delete',0,totalBytes);
+      const fileSystem = globalThis.BjtuUpdateFileSystem;
+      await fileSystem.withInstallLock(async () => {
+        await saveSelection(id,'');
+        await clearComponent(root,id);
+        if (!files) return;
+        let writtenBytes = 0;
+        for (const [path,bytes] of files) {
+          const relative = path.replace(/^dist\//,'');
+          await fileSystem.writeFile(root,`UI/vendor/${id}/${relative}`,bytes);
+          writtenBytes += bytes.byteLength;
+          onProgress('write',writtenBytes,totalBytes);
+        }
+        await saveSelection(id,version,totalBytes);
+      });
+      return {version,installedBytes:totalBytes};
+    });
+  }
+  let editorTemplate;
+  function loadStyle(path) {
+    const stylesheet = chrome.runtime.getURL(path);
+    if (document.querySelector(`link[href="${stylesheet}"]`)) return;
+    return new Promise((resolve,reject) => {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = stylesheet;
+      link.onload = resolve;
+      link.onerror = () => { link.remove(); reject(new Error('无法加载 Markdown 渲染组件样式')); };
+      document.head.append(link);
+    });
+  }
+  async function prompt({id,label,feature}) {
+    editorTemplate ??= fetch(chrome.runtime.getURL('options/options.html')).then(async response => {
+      if (!response.ok) throw new Error('无法读取 Markdown 渲染组件界面');
+      const page = new DOMParser().parseFromString(await response.text(),'text/html');
+      const editor = page.getElementById('markdownVendorEditor');
+      if (!editor) throw new Error('没有找到 Markdown 渲染组件界面');
+      return editor;
+    }).catch(error => { editorTemplate = null; throw error; });
+    const [template] = await Promise.all([
+      editorTemplate, loadStyle('UI/markdown-vendor-editor.css'), loadStyle('UI/file-size-emphasis.css'),
+      globalThis.BjtuFileSizeEmphasis ? null : loadScript('UI/file-size-emphasis.js')
+    ]);
+    const editor = document.importNode(template,true);
+    const row = editor.querySelector(`[data-markdown-vendor="${id}"]`);
+    if (!row) throw new Error('没有找到指定的 Markdown 渲染组件');
+    for (const other of editor.querySelectorAll('[data-markdown-vendor]')) if (other !== row) other.remove();
+    if (panel) editor.id += 'Dialog';
+    const mask = document.createElement('div');
+    mask.className = 'version-modal-mask markdown-vendor-dialog';
+    mask.setAttribute('role','dialog');
+    mask.setAttribute('aria-labelledby','markdown-vendor-dialog-title');
+    const card = document.createElement('div');
+    card.className = 'version-modal-card';
+    const header = document.createElement('div');
+    header.className = 'version-modal-header';
+    const title = document.createElement('div');
+    title.className = 'version-download-title';
+    title.id = 'markdown-vendor-dialog-title';
+    title.textContent = `下载 ${label}`;
+    const later = document.createElement('button');
+    later.type = 'button';
+    later.className = 'markdown-vendor-dialog-close';
+    later.textContent = '稍后';
+    const description = document.createElement('p');
+    description.className = 'tip';
+    description.textContent = `当前内容可用 ${label} 渲染${feature}。是否下载？`;
+    header.append(title,later);
+    card.append(header,description,editor);
+    mask.append(card);
+    document.body.append(mask);
+    return new Promise(resolve => {
+      const close = () => { dispose(); mask.remove(); resolve(); };
+      const dispose = bind(row,{
+        onBusy:busy => { later.disabled = busy; },
+        onInstalled:close
+      });
+      later.onclick = close;
+    });
+  }
+  globalThis.BjtuMarkdownVendorInstaller = Object.freeze({prompt});
+  function bind(row,{onBusy,onInstalled} = {}) {
     const id = row.dataset.markdownVendor, component = components[id];
     const versions = row.querySelector('select'), state = row.querySelector('[data-state]');
     const download = row.querySelector('[data-download]'), remove = row.querySelector('[data-delete]');
@@ -215,21 +344,17 @@
       if (!busy) { installedStatus(); showInstalledSize(); }
       render();
     }
-    chrome.storage.onChanged.addListener((changes,area) => {
+    const onStorageChanged = (changes,area) => {
       if (area !== 'local' || !changes[settingsKey]) return;
       const {oldValue,newValue} = changes[settingsKey];
       if (JSON.stringify(oldValue?.[id]) !== JSON.stringify(newValue?.[id])) void refresh(newValue);
-    });
+    };
+    chrome.storage.onChanged.addListener(onStorageChanged);
     async function loadVersions() {
       if (loaded || busy) return;
       busy = true; status('正在读取官方版本…'); render();
       try {
-        const metadata = await (await request(packageUrl(component),{headers:{Accept:'application/vnd.npm.install-v1+json'}})).json();
-        const releases = Object.keys(metadata.versions || {}).filter(version => supported(component,version)).sort((a,b) => {
-          const left = versionParts(a), right = versionParts(b);
-          return right[0]-left[0] || right[1]-left[1] || right[2]-left[2];
-        });
-        if (!releases.length) throw new Error('未找到可用的正式版本');
+        const releases = await listVersions(id);
         versions.replaceChildren(...releases.map(version => new Option(version,version)));
         versions.value = releases.includes(configured) ? configured : releases[0];
         loaded = true; installedStatus();
@@ -238,50 +363,42 @@
     }
     async function modify(version) {
       if (busy) return;
-      busy = true; status('正在检查扩展目录权限…'); render();
+      busy = true; onBusy?.(true); status('正在检查扩展目录权限…'); render();
       try {
-        await navigator.locks.request(`bjtu-markdown-vendor-${id}`,{ifAvailable:true},async lock => {
-          if (!lock) throw new Error('此组件正在另一页面处理');
-          await globalThis.__bjtuUpdaterReady;
-          if (!globalThis.BjtuDirectoryPermission) throw new Error('更新组件未就绪，无法写入本地扩展目录');
-          const root = await globalThis.BjtuDirectoryPermission.request();
-          if (!root) return;
-          let files;
-          if (version) {
-            controller = new AbortController();
-            const {signal} = controller;
-            status('正在连接 npm 官方源…');
-            size.replaceChildren();
-            setProgress(); render();
-            files = await getPackage(id,version,(done,total) => {
+        const task = version ? new AbortController() : null;
+        const result = await modifyComponent(id,version,{signal:task?.signal,onProgress(phase,done,total) {
+          switch (phase) {
+            case 'connecting':
+              controller = task;
+              status('正在连接 npm 官方源…');
+              size.replaceChildren();
+              setProgress(); render();
+              break;
+            case 'download':
               status('下载中…'); showProgress(done,total);
-            },signal);
-            signal.throwIfAborted();
-            controller = null;
-            writing = true; render();
+              break;
+            case 'write':
+              controller = null;
+              writing = true; render();
+              status('正在写入本地扩展目录…');
+              showProgress(done,total,'组件文件写入进度');
+              break;
+            case 'delete':
+              status('正在删除…');
+              break;
           }
-          status(version ? '正在写入本地扩展目录…' : '正在删除…');
-          const totalBytes = files ? [...files.values()].reduce((sum,bytes) => sum + bytes.byteLength,0) : 0;
-          const writeTitle = '组件文件写入进度';
-          if (files) showProgress(0,totalBytes,writeTitle);
-          await globalThis.BjtuUpdateFileSystem.withInstallLock(async () => {
-            await saveSelection(id,'');
-            await clearComponent(root,id);
-            if (!files) return;
-            let writtenBytes = 0;
-            for (const [path,bytes] of files) {
-              const relative = path.replace(/^dist\//,'');
-              await globalThis.BjtuUpdateFileSystem.writeFile(root,`UI/vendor/${id}/${relative}`,bytes);
-              writtenBytes += bytes.byteLength;
-              showProgress(writtenBytes,totalBytes,writeTitle);
-            }
-            await saveSelection(id,version,totalBytes);
-          });
-        });
+        }});
         await refresh((await chrome.storage.local.get(settingsKey))[settingsKey]);
         installedStatus();
+        if (result?.version && installed) {
+          if (globalThis.BjtuMarkdown && !await globalThis.BjtuMarkdown.activateVendor(id)) {
+            status('已安装，但未能在当前页面加载','error');
+          } else {
+            onInstalled?.();
+          }
+        }
       } catch (error) { status(controller?.signal.aborted ? '已取消下载' : error.message,controller?.signal.aborted ? '' : 'error'); }
-      finally { controller = null; writing = false; busy = false; showInstalledSize(); render(); }
+      finally { controller = null; writing = false; busy = false; onBusy?.(false); showInstalledSize(); render(); }
     }
     versions.onchange = render;
     remove.onclick = () => {
@@ -293,6 +410,7 @@
       await refresh(stored[settingsKey]);
       await loadVersions();
     });
+    return () => chrome.storage.onChanged.removeListener(onStorageChanged);
   }
-  panel.querySelectorAll('[data-markdown-vendor]').forEach(bind);
+  panel?.querySelectorAll('[data-markdown-vendor]').forEach(row => bind(row));
 })();

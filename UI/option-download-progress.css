@@ -1,0 +1,41 @@
+.option-download-progress { margin:8px 0 10px; }
+.option-download-progress-label {
+  margin-bottom:5px;
+  overflow:hidden;
+  color:#475569;
+  font-size:12px;
+  font-variant-numeric:tabular-nums;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.option-download-progress-track {
+  width:100%;
+  height:4px;
+  overflow:hidden;
+  border-radius:2px;
+  background:#dbeafe;
+}
+.option-download-progress-separator {
+  margin:0 2px;
+  color:#64748b;
+  font-size:12px;
+  font-weight:500;
+}
+.option-download-progress-bar {
+  width:0;
+  height:100%;
+  border-radius:inherit;
+  background:#1976d2;
+  transition:width .15s ease;
+}
+.option-download-progress.is-indeterminate .option-download-progress-bar {
+  width:35%;
+  animation:optionDownloadProgressIndeterminate 1s ease-in-out infinite;
+}
+@keyframes optionDownloadProgressIndeterminate {
+  from { transform:translateX(-110%); }
+  to { transform:translateX(300%); }
+}
+html[data-color-scheme="dark"] .option-download-progress-label { color:#94a3b8; }
+html[data-color-scheme="dark"] .option-download-progress-track { background:#1e3a5f; }
+html[data-color-scheme="dark"] .option-download-progress-bar { background:#60a5fa; }

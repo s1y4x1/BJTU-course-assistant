@@ -1,0 +1,38 @@
+@import url("option-download-progress.css");
+
+.markdown-vendor-heading {
+  display:flex; align-items:center; gap:6px; margin-bottom:6px;
+  font-weight:400;
+}
+.markdown-vendor-row {
+  display:flex; flex-wrap:wrap; align-items:center; gap:6px 8px; min-width:0;
+  padding:7px 8px; border:1px solid #e2e8f0; border-radius:8px; background:#f8fafc;
+  font-size:var(--bjtu-font-size-body,13px);
+}
+.markdown-vendor-row + .markdown-vendor-row { margin-top:6px; }
+.markdown-vendor-row label { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:0; }
+.markdown-vendor-size, .markdown-vendor-actions { white-space:nowrap; }
+.markdown-vendor-size:empty { display:none; }
+.markdown-vendor-status { margin-inline-start:auto; color:#475569; }
+.markdown-vendor-actions { display:flex; gap:6px; }
+.markdown-vendor-actions button, .markdown-vendor-dialog-close {
+  border:0; border-radius:6px; padding:5px 9px; background:#1976d2; color:#fff; font:inherit; cursor:pointer;
+}
+.markdown-vendor-actions button:disabled, .markdown-vendor-dialog-close:disabled { opacity:.6; cursor:not-allowed; }
+.markdown-vendor-actions [data-delete]:not(:disabled) { background:#dc2626; }
+.markdown-vendor-status[data-tone="error"] { color:#b91c1c; }
+.markdown-vendor-progress { flex:0 0 100%; width:100%; margin:0; }
+.markdown-vendor-progress[hidden], .markdown-vendor-actions [hidden] { display:none; }
+html[data-color-scheme="dark"] .markdown-vendor-row { border-color:#334155; background:#111827; }
+html[data-color-scheme="dark"] .markdown-vendor-status { color:#cbd5e1; }
+html[data-color-scheme="dark"] .markdown-vendor-status[data-tone="error"] { color:#fca5a5; }
+
+.version-modal-mask.markdown-vendor-dialog {
+  display:flex; z-index:10024; inset:12px 12px auto auto; background:none;
+  width:min(560px, calc(100% - 24px));
+}
+.markdown-vendor-dialog .version-modal-card { box-sizing:border-box; width:100%; max-height:90dvh; overflow:auto; }
+.markdown-vendor-heading .tip,
+.markdown-vendor-dialog .tip { font-size:var(--bjtu-font-size-body,13px); }
+.markdown-vendor-dialog .tip { margin:0 0 8px; }
+.markdown-vendor-dialog-close { background:#6b7280; }

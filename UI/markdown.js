@@ -4,26 +4,32 @@
   const boundContainers = new WeakSet();
   const highlighted = new Map();
   const vendorStatus = new Map();
+  const vendorActivations = new Map();
   let highlightedBytes = 0;
   const vendorEntries = [['katex','katex','katex.min.js'], ['hljs','highlight','highlight.min.js']];
+  function loadExtensionScript(path) {
+    if (global.BjtuModuleRegistry?.loadScript) return global.BjtuModuleRegistry.loadScript(path);
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = chrome.runtime.getURL(path);
+      script.onload = resolve;
+      script.onerror = () => reject(new Error('无法加载 Markdown 组件：' + path));
+      document.head.append(script);
+    });
+  }
   async function loadVendor(name, directory, file) {
     if (global[name]) { vendorStatus.set(name, true); return; }
     if (!global.chrome?.runtime?.getURL) { vendorStatus.set(name,false); return; }
-    const load = path => global.BjtuModuleRegistry?.loadScript ? global.BjtuModuleRegistry.loadScript(path) : new Promise((resolve, reject) => {
-      const script = document.createElement('script'); script.src = chrome.runtime.getURL(path);
-      script.onload = resolve; script.onerror = () => reject(new Error(`Markdown 组件加载失败：${name}`));
-      document.head.append(script);
-    });
     const css = base => name !== 'katex' ? Promise.resolve() : new Promise((resolve,reject) => {
       const link = document.createElement('link'); link.rel = 'stylesheet';
       link.href = chrome.runtime.getURL(base + 'katex.min.css');
-      link.onload = resolve; link.onerror = reject;
+      link.onload = resolve; link.onerror = () => { link.remove(); reject(new Error('无法加载 KaTeX 样式')); };
       document.head.append(link);
     });
     const base = `UI/vendor/${directory}/`;
     try {
       await css(base);
-      await load(base + file);
+      await loadExtensionScript(base + file);
       vendorStatus.set(name,!!global[name]);
     } catch { vendorStatus.set(name,false); }
   }
@@ -33,17 +39,133 @@
     return vendorEntries.filter(([name]) => vendorStatus.get(name) === false).map(([name]) => name);
   }
 
+  function renderMath(text, displayMode) {
+    return global.katex.renderToString(text, {
+      displayMode, throwOnError:false, trust:false, strict:'ignore',
+      maxExpand:1000, maxSize:20, output:'htmlAndMathml'
+    });
+  }
+
+  function activateVendor(id) {
+    const entry = vendorEntries.find(([, directory]) => directory === id);
+    if (!entry || typeof document === 'undefined') return Promise.resolve(false);
+    const [name] = entry;
+    if (vendorActivations.has(name)) return vendorActivations.get(name);
+    const activation = ready.then(async () => {
+      if (vendorStatus.get(name) !== true) await loadVendor(...entry);
+      if (vendorStatus.get(name) !== true) return false;
+      for (const node of document.querySelectorAll(`[data-bjtu-md-vendor="${name}"]`)) {
+        if (name === 'hljs') {
+          const code = node.querySelector('.bjtu-md-codeblock > code');
+          if (!code) continue;
+          code.innerHTML = highlightCode(code.textContent, node.dataset.language || '');
+        } else {
+          node.innerHTML = renderMath(node.dataset.bjtuMdMath || '', node.dataset.bjtuMdDisplay === 'true');
+          node.classList.remove('bjtu-md-math-source');
+        }
+        delete node.dataset.bjtuMdVendor;
+        delete node.dataset.bjtuMdMath;
+        delete node.dataset.bjtuMdDisplay;
+      }
+      return true;
+    }).finally(() => vendorActivations.delete(name));
+    vendorActivations.set(name, activation);
+    return activation;
+  }
+
+  const vendorPrompts = {
+    katex: { label: 'KaTeX', feature: '数学公式', id: 'katex' },
+    hljs: { label: 'Highlight.js', feature: '代码高亮', id: 'highlight' }
+  };
+
+  function observeMissingVendors() {
+    const missing = new Set(missingVendors());
+    if (!missing.size || !document.body || !global.IntersectionObserver) return;
+    const selector = '[data-bjtu-md-vendor]:not([data-bjtu-md-no-prompt])';
+    const observed = new Set(), visible = new Set();
+    let promptOpen = false;
+    const showNext = () => {
+      if (promptOpen || document.visibilityState !== 'visible') return;
+      const target = [...visible].find(element => element.isConnected && missing.has(element.dataset.bjtuMdVendor)
+        && vendorStatus.get(element.dataset.bjtuMdVendor) !== true);
+      if (!target) return;
+      const name = target.dataset.bjtuMdVendor;
+      missing.delete(name);
+      for (const element of observed) if (element.dataset.bjtuMdVendor === name) watch(element, false);
+      if (!missing.size) {
+        mutations.disconnect();
+        intersection.disconnect();
+        document.removeEventListener('visibilitychange', showNext);
+      }
+      promptOpen = true;
+      void (async () => {
+        if (!global.BjtuMarkdownVendorInstaller) await loadExtensionScript('UI/markdown-vendor-options.js');
+        await global.BjtuMarkdownVendorInstaller.prompt(vendorPrompts[name]);
+      })().catch(error => console.warn('[bjtu] 无法打开 Markdown 组件下载界面:', error)).finally(() => {
+        promptOpen = false;
+        showNext();
+      });
+    };
+    const intersection = new IntersectionObserver(entries => {
+      for (const { target, isIntersecting } of entries) {
+        if (!observed.has(target)) continue;
+        if (isIntersecting) visible.add(target);
+        else visible.delete(target);
+      }
+      showNext();
+    });
+    function watch(element, added) {
+      if (added && missing.has(element.dataset.bjtuMdVendor)) {
+        observed.add(element);
+        intersection.observe(element);
+      } else if (!added && observed.delete(element)) {
+        intersection.unobserve(element);
+        visible.delete(element);
+      }
+    }
+    const mutations = new MutationObserver(records => {
+      for (const record of records) for (const node of [...record.removedNodes, ...record.addedNodes]) {
+        if (node.nodeType !== 1) continue;
+        const added = node.isConnected;
+        if (node.matches(selector)) watch(node, added);
+        node.querySelectorAll(selector).forEach(element => watch(element, added));
+      }
+    });
+    document.querySelectorAll(selector).forEach(element => watch(element, true));
+    mutations.observe(document.body, { childList: true, subtree: true });
+    document.addEventListener('visibilitychange', showNext);
+  }
+  if (global.chrome?.runtime?.getURL && typeof document !== 'undefined') {
+    global.chrome.storage?.onChanged?.addListener((changes, area) => {
+      const versions = changes.markdownVendorVersions;
+      if (area !== 'local' || !versions) return;
+      for (const [name, id] of vendorEntries) {
+        if (versions.newValue?.[id]?.version && versions.newValue[id] !== versions.oldValue?.[id] && vendorStatus.get(name) !== true) {
+          void activateVendor(id).catch(error => console.warn('[bjtu] 无法即时加载 Markdown 组件:', error));
+        }
+      }
+    });
+    void ready.then(() => {
+      if (document.body) observeMissingVendors();
+      else document.addEventListener('DOMContentLoaded', observeMissingVendors, { once: true });
+    });
+  }
+
   function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, (character) => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     }[character]));
   }
 
-  function renderCodeBlock(text, languageInfo = '') {
+  function renderCodeBlock(text, languageInfo = '', { promptForHighlight = true } = {}) {
     const language = String(languageInfo || '').trim().split(/\s+/)[0];
     const label = language || '代码';
     const attribute = language ? ` data-language="${escapeHtml(language)}"` : '';
-    return `<div class="bjtu-md-codeblock-wrap"${attribute}><div class="bjtu-md-codeblock-toolbar"><span class="bjtu-md-codeblock-language">${escapeHtml(label)}</span><button type="button" class="bjtu-md-codeblock-copy" title="复制代码">复制</button></div><pre class="bjtu-md-codeblock"><code class="hljs">${highlightCode(text, language)}</code></pre></div>`;
+    const code = String(text ?? '');
+    const needsHighlight = !global.hljs && code.trim() && code.length <= 65536 &&
+      !/^(?:plain(?:text)?|text|txt|none|nohighlight)$/i.test(language);
+    const pending = needsHighlight ? ' data-bjtu-md-vendor="hljs"' + (promptForHighlight ? '' : ' data-bjtu-md-no-prompt') : '';
+    return `<div class="bjtu-md-codeblock-wrap"${attribute}${pending}><div class="bjtu-md-codeblock-toolbar"><span class="bjtu-md-codeblock-language">${escapeHtml(label)}</span><button type="button" class="bjtu-md-codeblock-copy" title="复制代码">复制</button></div><pre class="bjtu-md-codeblock"><code class="hljs">${highlightCode(text, language)}</code></pre></div>`;
   }
   function highlightCode(value, language = '') {
     const text = String(value || ''), engine = global.hljs;
@@ -140,11 +262,12 @@
         markBlockSpaces(tokens); return tokens;
       }
     }});
-    if (math && global.katex && vendorStatus.get('katex') !== false) {
-      const renderMath = token => global.katex.renderToString(token.text, {
-        displayMode:token.display, throwOnError:false, trust:false, strict:'ignore',
-        maxExpand:1000, maxSize:20, output:'htmlAndMathml'
-      });
+    if (math) {
+      const renderMathToken = token => {
+        if (global.katex && vendorStatus.get('katex') !== false) return renderMath(token.text, token.display);
+        const tag = token.type === 'bjtuMathBlock' ? 'div' : 'span';
+        return `<${tag} class="bjtu-md-math-source" data-bjtu-md-vendor="katex" data-bjtu-md-math="${escapeHtml(token.text)}" data-bjtu-md-display="${token.display}">${escapeHtml(token.raw)}</${tag}>`;
+      };
       parser.use({extensions:[{
         name:'bjtuMathBlock', level:'block',
         start:source => source.search(/(?:^|\n) {0,3}(?:\$\$|\\\[)/),
@@ -152,7 +275,7 @@
           const match = /^ {0,3}(?:\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\])(?=[ \t]*(?:\n|$))/.exec(source);
           if (match) return {type:'bjtuMathBlock', raw:match[0], text:match[1] ?? match[2], display:true};
         },
-        renderer:renderMath
+        renderer:renderMathToken
       }, {
         name:'bjtuMathInline', level:'inline',
         start:source => source.search(/\$|\\[([]/),
@@ -162,7 +285,7 @@
           const match = /^(?:\\\(([\s\S]+?)\\\)|\$(?!\$)((?:\\.|[^$\\\n])+?)\$(?!\$))/.exec(source);
           if (match) return {type:'bjtuMathInline', raw:match[0], text:match[1] ?? match[2], display:false};
         },
-        renderer:renderMath
+        renderer:renderMathToken
       }]});
     }
     return parser;
@@ -223,5 +346,5 @@
     });
   }
 
-  global.BjtuMarkdown = Object.freeze({ ready, escapeHtml, renderCodeBlock, highlightCode, createRenderer, createParser, copyText, bindCopy, missingVendors });
+  global.BjtuMarkdown = Object.freeze({ ready, activateVendor, escapeHtml, renderCodeBlock, highlightCode, createRenderer, createParser, copyText, bindCopy, missingVendors });
 })(globalThis);

@@ -125,3 +125,4 @@ html[data-color-scheme="dark"] .bjtu-md-inline-code {
 .bjtu-md-codeblock .hljs-tag, .bjtu-md-codeblock .hljs-name, .bjtu-md-codeblock .hljs-type { color:#8ddb8c; }
 .bjtu-md-codeblock .hljs-meta, .bjtu-md-codeblock .hljs-symbol, .bjtu-md-codeblock .hljs-bullet { color:#f69d50; }
 .bjtu-markdown .katex-display { overflow-x:auto; overflow-y:hidden; }
+.bjtu-md-math-source { white-space: pre-wrap; overflow-wrap: anywhere; }
