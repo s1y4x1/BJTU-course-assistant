@@ -191,11 +191,12 @@
     return { ok: true, data: [] };
   }
 
-  async function fetchGinsAnswer(tid) {
+  async function fetchGinsAnswerPage(tid, page = 0) {
+    const url = MOOC_API.answer + tid + (page > 0 ? `?page=${page}` : '');
     let lastStatus = 0;
     for (let attempt = 0; attempt < 8; attempt += 1) {
       try {
-        const response = await fetch(MOOC_API.answer + tid, { cache: 'no-store' });
+        const response = await fetch(url, { cache: 'no-store' });
         lastStatus = response.status;
         if (response.ok) return normalizeGinsAnswer(await response.json());
         if (response.status !== 429) return { ok: false, message: `GinsMooc HTTP ${response.status}` };
@@ -205,6 +206,27 @@
       if (attempt < 7) await sleep(Math.min(750 * (2 ** attempt), 8000));
     }
     return { ok: false, code: 'rate-limit', message: lastStatus ? `GinsMooc HTTP ${lastStatus}` : 'GinsMooc 网络请求失败' };
+  }
+
+  async function fetchGinsAnswer(tid) {
+    const first = await fetchGinsAnswerPage(tid);
+    if (!first.ok) return first;
+    const data = first.data?.data;
+    const totalPages = Number(data?.totalPages ?? 1);
+    if (!Number.isSafeInteger(totalPages) || totalPages < 1) {
+      return { ok: false, message: 'GinsMooc 返回的答案页数无效' };
+    }
+    const pages = [];
+    for (let page = 0; page < totalPages; page += 1) {
+      const result = page === 0 ? first : await fetchGinsAnswerPage(tid, page);
+      if (!result.ok) return { ...result, message: `GinsMooc 第 ${page + 1} 页获取失败：${result.message}` };
+      const questions = result.data?.data?.questionList;
+      if (!Array.isArray(questions) || !questions.length) {
+        return { ok: false, message: `GinsMooc 第 ${page + 1} 页没有返回答案` };
+      }
+      pages.push(questions);
+    }
+    return { ...first, data: { ...first.data, data: { ...data, questionList: pages.flat() } } };
   }
 
   async function completeTask(payload, csrfKey) {
@@ -234,7 +256,7 @@
       }));
     } else {
       const answerResponse = await fetchGinsAnswer(String(tid));
-      if (!answerResponse.ok && answerResponse.code === 'gins-system-error') return answerResponse;
+      if (!answerResponse.ok) return answerResponse;
       const paperResponse = await postJson(MOOC_API.quizPaper, { tid }, csrfKey);
       if (!paperResponse.ok || !paperResponse.data?.result) {
         return paperResponse.ok ? { ok: false, message: '试卷数据为空' } : paperResponse;
