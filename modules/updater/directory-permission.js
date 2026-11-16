@@ -109,16 +109,27 @@ function initialize() {
 }
 
 async function verify(handle, store = false) {
-  await withVersionDirectoryPermissionAuditLock(async () => {
+  const fileSystem = globalThis.BjtuUpdateFileSystem;
+  await fileSystem.withInstallLock(() => withVersionDirectoryPermissionAuditLock(async () => {
     const foregroundProbe = await verifyVersionDirectoryWriteAccess(handle);
-    if (store) await globalThis.BjtuUpdateFileSystem.storeDirectoryHandle(handle);
+    if (store) await fileSystem.storeDirectoryHandle(handle);
     await verifyVersionBackgroundDirectoryWriteAccess(handle, foregroundProbe);
-  });
+  }));
   if (store) {
     const channel = new BroadcastChannel('bjtu-extension-downloads');
     channel.postMessage('changed'); channel.close();
   }
   return handle;
+}
+
+async function check() {
+  try {
+    const handle = await globalThis.BjtuUpdateFileSystem.readDirectoryHandle();
+    if (await handle?.queryPermission({mode:'readwrite'}) !== 'granted') return null;
+    return await verify(handle);
+  } catch {
+    return null;
+  }
 }
 
 async function request({ startup = false, audit = false } = {}) {
@@ -165,6 +176,6 @@ async function request({ startup = false, audit = false } = {}) {
   return requestInProgress;
 }
 
-globalThis.BjtuDirectoryPermission = { request, validate: validateVersionUpdateDirectory };
+globalThis.BjtuDirectoryPermission = { check, request, validate: validateVersionUpdateDirectory };
 
 })();

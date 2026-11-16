@@ -438,23 +438,53 @@ function initializeVersionReinstallCommand() {
 }
 
 function setupVersionDirectoryPermissionCheck() {
+  const button = document.getElementById('checkUpdateDirectoryPermission');
+  let checking = false;
+  const setPermissionButton = (granted) => {
+    button.textContent = granted ? '已授权扩展安装目录' : '授权扩展安装目录';
+    button.disabled = granted;
+  };
+  const check = async () => {
+    if (checking || versionDownloadInProgress) return;
+    checking = true;
+    try {
+      setPermissionButton(!!await globalThis.BjtuDirectoryPermission.check());
+    } finally {
+      checking = false;
+    }
+  };
   const audit = () => {
-    if (!versionDownloadInProgress) {
+    if (button) {
+      if (document.visibilityState === 'visible') void check();
+    } else if (!versionDownloadInProgress) {
       void globalThis.BjtuDirectoryPermission.request({startup:true,audit:true})
         .catch(error => console.warn('[bjtu] updater directory permission audit failed:', error));
     }
   };
-  document.getElementById('checkUpdateDirectoryPermission')?.addEventListener('click', async ({currentTarget:button}) => {
+  button?.addEventListener('click', async () => {
+    if (checking) return;
+    checking = true;
     button.disabled = true;
+    let granted = false;
     try {
-      if (await globalThis.BjtuDirectoryPermission.request({audit:true})) {
+      granted = !!await globalThis.BjtuDirectoryPermission.request({audit:true});
+      if (granted) {
         showToast('前台与后台的扩展安装目录写入权限均已验证通过', 'success');
       }
     } catch (error) {
       showToast(`目录权限检查失败：${error?.message || error}`, 'error');
-    } finally { button.disabled = false; }
+    } finally {
+      checking = false;
+      setPermissionButton(granted);
+    }
   });
-  void audit();
+  if (button) {
+    void check();
+    document.addEventListener('visibilitychange', audit);
+    window.addEventListener('focus', audit);
+  } else {
+    audit();
+  }
   setInterval(audit, 30000);
 }
 
@@ -1077,6 +1107,7 @@ window.addEventListener('pagehide', () => {
     type: 'BACKGROUND_UPDATE_MODULE_SELECTION',
     payload: {
       requestId,
+      ownerId: VERSION_FOREGROUND_SESSION_ID,
       cancelled: true,
       error: '模块选择页面已关闭'
     }
@@ -1096,7 +1127,7 @@ async function handleBackgroundModuleSelection(status) {
     });
     const response = await chrome.runtime.sendMessage({
       type: 'BACKGROUND_UPDATE_MODULE_SELECTION',
-      payload: { requestId, selected: [...selected] }
+      payload: { requestId, ownerId: VERSION_FOREGROUND_SESSION_ID, selected: [...selected] }
     });
     if (!response?.ok) throw new Error('后台更新任务已失效，请重新开始更新');
   } catch (error) {
@@ -1104,6 +1135,7 @@ async function handleBackgroundModuleSelection(status) {
       type: 'BACKGROUND_UPDATE_MODULE_SELECTION',
       payload: {
         requestId,
+        ownerId: VERSION_FOREGROUND_SESSION_ID,
         cancelled: true,
         error: String(error?.message || error)
       }
@@ -1127,7 +1159,7 @@ async function handleBackgroundModuleSelection(status) {
 }
 
 function renderBackgroundCleanInstallStatus(status) {
-  if (!status || status.manual !== true) return;
+  if (status?.manual !== true || status.ownerId !== VERSION_FOREGROUND_SESSION_ID) return;
   const state = String(status.status || '');
   if (!['downloading', 'selecting-modules', 'installing', 'complete', 'reloading', 'error'].includes(state)) return;
   if (state === 'downloading') {
@@ -1167,12 +1199,12 @@ function renderBackgroundCleanInstallStatus(status) {
     const percent = total > 0 ? completed * 100 / total : 0;
     setVersionDownloadProgressUi({
       visible: true,
-      status: total > 0 ? `正在写入 ${completed} / ${total}` : '正在清理并写入更新文件…',
+      status: status.clearing ? '正在清理扩展安装目录…' : `正在写入 ${completed} / ${total}`,
       title: '正在后台进行全新安装',
       body: '扩展目录已交由后台更新任务处理，请勿关闭浏览器。',
       phase: 'extracting'
     });
-    setVersionDownloadBar({ visible: true, percent, indeterminate: total <= 0 });
+    setVersionDownloadBar({ visible: true, percent, indeterminate: status.clearing === true || total <= 0 });
     return;
   }
   if (state === 'reloading') {
@@ -2731,6 +2763,10 @@ async function startVersionDownloadWithFallback(downloadUrl, source = '', instal
       body: versionButtonLatestBodyMarkdown, force: versionButtonLatestForce } = versionDownloadRelease;
     setVersionDownloadReleaseNotes(versionButtonLatestBodyMarkdown || '暂无更新说明。');
     if (versionDownloadClean) {
+      // Keep the worker alive while the user can leave the module picker open.
+      const keepAlive = setInterval(() => {
+        chrome.runtime.sendMessage({ type: 'BACKGROUND_UPDATE_INSTALL_KEEPALIVE' }).catch(() => {});
+      }, 15000);
       const response = await chrome.runtime.sendMessage({
         type: 'BACKGROUND_UPDATE_INSTALL_CLEAN',
         payload: {
@@ -2743,7 +2779,7 @@ async function startVersionDownloadWithFallback(downloadUrl, source = '', instal
           force: versionButtonLatestForce,
           ownerId: VERSION_FOREGROUND_SESSION_ID
         }
-      });
+      }).finally(() => clearInterval(keepAlive));
       if (response?.ok !== true) throw new Error(String(response?.message || '后台全新安装失败'));
       versionDownloadRelease = { ...versionDownloadRelease, ...response.release };
       if (!versionDownloadReload) {
@@ -3210,31 +3246,6 @@ async function loadVersionInfo(releaseOverride = null) {
 function setupVersionButton() {
   setupVersionDirectoryPermissionCheck();
   initializeVersionReinstallCommand();
-  chrome.storage.local.get(VERSION_BACKGROUND_UPDATE_STATUS_KEY).then((stored) => {
-    const status = stored?.[VERSION_BACKGROUND_UPDATE_STATUS_KEY];
-    if (status?.manual === true && String(status.status || '') === 'selecting-modules') {
-      const requestId = String(status.requestId || '');
-      if (String(status.ownerId || '') === VERSION_FOREGROUND_SESSION_ID) {
-        renderBackgroundCleanInstallStatus(status);
-        return;
-      }
-      if (requestId) {
-        chrome.runtime.sendMessage({
-          type: 'BACKGROUND_UPDATE_MODULE_SELECTION',
-          payload: {
-            requestId,
-            cancelled: true,
-            error: '模块选择页面已关闭'
-          }
-        }).catch(() => {});
-      }
-      return;
-    }
-    if (status?.manual === true
-        && ['downloading', 'installing', 'reloading'].includes(String(status.status || ''))) {
-      renderBackgroundCleanInstallStatus(status);
-    }
-  }).catch(() => {});
   const versionBtn = document.getElementById('version-btn');
   if (!versionBtn) return;
 

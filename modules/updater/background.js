@@ -505,6 +505,7 @@
     ];
     const selectionPromise = new Promise((resolve, reject) => {
       manualModuleSelectionRequests.set(requestId, {
+        ownerId: release.ownerId,
         allowed: new Set(candidates),
         resolve,
         reject
@@ -530,7 +531,7 @@
   function resolveManualModuleSelection(payload) {
     const requestId = String(payload?.requestId || '');
     const pending = manualModuleSelectionRequests.get(requestId);
-    if (!pending) return false;
+    if (!pending || pending.ownerId !== payload?.ownerId) return false;
     manualModuleSelectionRequests.delete(requestId);
     if (payload?.cancelled === true) {
       pending.reject(new Error(String(payload?.error || '已取消模块选择')));
@@ -734,6 +735,7 @@
     const archive = await retryNetworkOperation(() => downloadArchive(release.url, manual
       ? (transfer) => setStatus('downloading', {
           manual: true,
+          ownerId: release.ownerId,
           version: release.version,
           name: release.name,
           directoryName: root.name,
@@ -772,43 +774,49 @@
       const selectedArchiveFiles = selectFiles(archiveFiles);
       if (!selectedArchiveFiles.length) throw new Error('更新压缩包中没有需要写入的文件');
       const files = filterFilesByModules(selectedArchiveFiles, selectedModules);
-      if (manual) {
-        await setStatus('installing', {
-          manual: true,
-          version: release.version,
-          name: release.name,
-          completed: 0,
-          total: files.length,
-          directoryName: root.name
-        });
-      }
+      const reportProgress = (completed, clearing = false) => setStatus('installing', {
+        manual,
+        ...(manual ? { ownerId: release.ownerId } : {}),
+        version: release.version,
+        name: release.name,
+        completed,
+        clearing,
+        total: files.length,
+        directoryName: root.name
+      });
       if (release.clean) {
+        await reportProgress(0, true);
         await clearDirectory(root);
       } else {
         await removeUnselectedModules(root, selectedModules);
       }
+      await reportProgress(0);
       let completed = 0;
       let writtenCount = 0;
-      const concurrency = Math.max(1, Math.min(await globalThis.BjtuUpdateFileSystem.readFileConcurrency(), files.length));
-      for (const batch of Array.from(
-        { length: Math.ceil(files.length / concurrency) },
-        (_, index) => files.slice(index * concurrency, index * concurrency + concurrency)
-      )) {
-        await Promise.all(batch.map(async ({ entry, path }) => {
+      const fileSystem = globalThis.BjtuUpdateFileSystem;
+      const write = release.clean ? fileSystem.writeFile : fileSystem.writeFileIfChanged;
+      const directoryCache = new Map();
+      let lastReportAt = -Infinity;
+      let progressWrite = null;
+      try {
+        await fileSystem.processFiles(files, async ({ entry, path }) => {
           let bytes = await inflateEntry(entry);
-          if (path === 'manifest.json') bytes = globalThis.BjtuUpdateFileSystem.applyReleaseVersionName(bytes, release);
-          if (await writeFile(root, path, bytes)) writtenCount += 1;
+          if (path === 'manifest.json') bytes = fileSystem.applyReleaseVersionName(bytes, release);
+          if (await write(root, path, bytes, { directoryCache })) writtenCount += 1;
           completed += 1;
-        }));
-        await setStatus('installing', {
-          manual,
-          version: release.version,
-          name: release.name,
-          completed,
-          total: files.length,
-          directoryName: root.name
+          const now = Date.now();
+          if (completed < files.length && !progressWrite && now - lastReportAt >= 100) {
+            lastReportAt = now;
+            progressWrite = reportProgress(completed).catch((error) => {
+              console.warn('[bjtu] updater progress write failed:', error);
+            }).finally(() => { progressWrite = null; });
+          }
         });
+      } finally {
+        // Never overwrite a later complete/error status with a pending progress report.
+        await progressWrite;
       }
+      await reportProgress(completed);
       packagedModuleIds.forEach((id) => knownModules.add(id));
       await chrome.storage.local.set({
         [MODULE_SELECTION_KEY]: [...selectedModules].filter((id) => !REQUIRED_MODULE_IDS.has(id)),
@@ -837,14 +845,16 @@
   }
 
   async function runManualCleanInstall(payload, sender) {
-    if (manualInstallPromise) return manualInstallPromise;
+    if (manualInstallPromise) throw new Error('已有全新安装任务正在进行');
     manualInstallPromise = (async () => {
+      if (runningPromise) await runningPromise.catch(() => {});
       const release = normalizeManualRelease(payload);
       const directoryHandle = await readDirectoryHandle();
       const root = await validateDirectory(directoryHandle);
       if (!root) throw new Error('尚未授权扩展安装目录，或目录写入权限已失效');
       await setStatus('downloading', {
         manual: true,
+        ownerId: release.ownerId,
         version: release.version,
         name: release.name,
         directoryName: root.name,
@@ -863,7 +873,8 @@
         clean: true,
         appliedAt: Date.now(),
         background: true,
-        manual: true
+        manual: true,
+        ownerId: release.ownerId
       };
       await chrome.storage.local.set({
         [INSTALLED_RELEASE_DESCRIPTION_KEY]: {
@@ -917,6 +928,7 @@
         : error;
       await setStatus('error', {
         manual: true,
+        ownerId: String(payload?.ownerId || ''),
         error: String(normalizedError?.message || normalizedError)
       }).catch(() => {});
       throw normalizedError;
@@ -928,6 +940,7 @@
 
   async function runBackgroundUpdate({ forceCheck = false, suppressRecentReloadRetry = false, installVersion = '' } = {}) {
     if (runningPromise) return runningPromise;
+    if (manualInstallPromise) return { skipped: true };
     runningPromise = (async () => {
       const stored = await chrome.storage.local.get([
         ENABLED_KEY, INSTALL_OPTIONAL_KEY, INSTALL_FORCED_KEY, APPLIED_WITHOUT_RELOAD_KEY, PENDING_RELOAD_KEY,
@@ -1171,6 +1184,10 @@
     }
     if (message?.type === 'BACKGROUND_UPDATE_MODULE_SELECTION') {
       sendResponse({ ok: resolveManualModuleSelection(message?.payload) });
+      return false;
+    }
+    if (message?.type === 'BACKGROUND_UPDATE_INSTALL_KEEPALIVE') {
+      sendResponse({ ok: !!manualInstallPromise });
       return false;
     }
     if (!['BACKGROUND_UPDATE_CHECK_NOW', 'BACKGROUND_UPDATE_INSTALL_CLEAN'].includes(message?.type)) return false;

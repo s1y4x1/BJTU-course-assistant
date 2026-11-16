@@ -113,16 +113,23 @@
     }
   }
 
-  async function writeFile(root, relativePath, bytes, { skipUnchanged = false } = {}) {
+  async function writeFile(root, relativePath, bytes, { skipUnchanged = false, directoryCache } = {}) {
     if (!root) throw new Error('尚未授权更新目录');
     const parts = String(relativePath || '').replace(/\\/g, '/').split('/').filter(Boolean);
     if (!parts.length || parts.some((part) => part === '.' || part === '..')) {
       throw new Error(`更新文件路径无效：${relativePath}`);
     }
-    return retryInvalidState(async () => {
+    const write = async () => {
       let directory = root;
+      let path = '';
       for (const part of parts.slice(0, -1)) {
-        directory = await directory.getDirectoryHandle(part, { create: true });
+        path += '/' + part;
+        let opened = directoryCache?.get(path);
+        if (!opened) {
+          opened = directory.getDirectoryHandle(part, { create: true });
+          directoryCache?.set(path, opened);
+        }
+        directory = await opened;
       }
       if (skipUnchanged) {
         try {
@@ -143,7 +150,11 @@
         throw error;
       }
       return true;
-    });
+    };
+    return retryInvalidState(() => write().catch((error) => {
+      if (isInvalidStateError(error)) directoryCache?.clear();
+      throw error;
+    }));
   }
 
   async function removeEntry(root, name, options = { recursive: true }) {
@@ -280,7 +291,8 @@
     readDirectoryHandle,
     storeDirectoryHandle,
     writeFile,
-    writeFileIfChanged: (root, relativePath, bytes) => writeFile(root, relativePath, bytes, { skipUnchanged: true }),
+    writeFileIfChanged: (root, relativePath, bytes, options) =>
+      writeFile(root, relativePath, bytes, { ...options, skipUnchanged: true }),
     removeEntry
   };
 })(globalThis);
