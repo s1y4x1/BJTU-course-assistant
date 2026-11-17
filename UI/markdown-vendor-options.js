@@ -219,6 +219,7 @@
       globalThis.BjtuFileSizeEmphasis ? null : loadScript('UI/file-size-emphasis.js')
     ]);
     const editor = document.importNode(template,true);
+    editor.querySelector('.markdown-vendor-options-title')?.remove();
     const row = editor.querySelector(`[data-markdown-vendor="${id}"]`);
     if (!row) throw new Error('没有找到指定的 Markdown 渲染组件');
     for (const other of editor.querySelectorAll('[data-markdown-vendor]')) if (other !== row) other.remove();

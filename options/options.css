@@ -13,6 +13,11 @@ label { display:block; }
 input { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #ccc; border-radius: 6px; }
 button { border: 0; border-radius: 6px; padding: 8px 12px; background: #1976d2; color: #fff; cursor: pointer; }
 .option-status { margin-bottom: 12px; color: #666; font-size: 13px; }
+.markdown-vendor-options-title {
+  margin: 0;
+  font-size: var(--bjtu-font-size-secondaryTitle, 16px);
+}
+
 .option-tip-trigger {
   position:relative;
   z-index:20;
