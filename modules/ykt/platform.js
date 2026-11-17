@@ -741,7 +741,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
   }
 
   if (isStale()) return;
-  if (Number(listResp?.errcode) !== 0) {
+  if (Number(listResp?.errcode) !== 0 || !Array.isArray(listResp?.data?.list)) {
     window.platformLoadedOnce.ykt = true;
     renderYktNeedLoginMessage();
     return;
@@ -835,6 +835,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
       renderHomeworkList(`ykt-${entry.classroomId}`);
     }
   };
+  let cacheComplete = true;
   const courseTasks = entries.map(async (entry, idx) => {
     if (isStale()) return;
     const acts = [];
@@ -863,7 +864,9 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
           || response?.success === false;
         if (!hasExplicitError && Array.isArray(response?.data?.activities)) {
           acts.push(...response.data.activities.map((activity) => ({ ...activity, __actype: actype })));
-        }
+        } else cacheComplete = false;
+      } catch {
+        cacheComplete = false;
       } finally {
         if (!isStale()) updateIncrementalResult(actype);
       }
@@ -898,7 +901,8 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
     if (queuedChanged) rerenderEntryCard(entry);
   });
 
-  await Promise.allSettled(courseTasks);
+  const courseResults = await Promise.allSettled(courseTasks);
+  if (courseResults.some(result => result.status === 'rejected')) cacheComplete = false;
   if (isStale()) return;
 
   const progressByCourse = entries.map((entry) => {
@@ -958,6 +962,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
         coursewareProgress?.[String(hw?.courseware_id || '')],
         hw?.leaf_id
       );
+      if (!videoProgress) cacheComplete = false;
       hw.video_progress_loading = false;
       hw.video_total_done = videoProgress ? videoProgress.totalDone : undefined;
       hw.video_progress_ratio = videoProgress ? videoProgress.ratio : undefined;
@@ -993,6 +998,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
       hw.detail_problems = Array.isArray(latest.detail_problems) ? latest.detail_problems : [];
       hw.classroom_report_question_count = latest.classroom_report_question_count;
       hw.exam_detail_state = latest.state === 'done' ? 'done' : 'failed';
+      if (latest.state !== 'done') cacheComplete = false;
       hw.exam_detail_error = latest.error || '';
       rerenderEntryCard(entry);
       markHomeworkDetailLoaded(entry, hw);
@@ -1032,6 +1038,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
         };
       }
     } catch (error) {
+      cacheComplete = false;
       hw.exam_detail_state = 'failed';
       hw.exam_detail_error = String(error?.message || '');
       if (detailKey) {
@@ -1048,6 +1055,7 @@ async function loadYktCoursesAndHomework(courses, loadVersion = 0) {
     markHomeworkDetailLoaded(entry, hw);
   }
   setPlatformContentLoadProgress('ykt', entries.length, entries.length);
+  if (cacheComplete) markFullscreenCourseCacheComplete('ykt');
 }
 
 function scheduleYktLoad(courses, loadVersion = 0) {

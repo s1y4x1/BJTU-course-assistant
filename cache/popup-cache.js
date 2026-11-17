@@ -327,6 +327,141 @@ function collectOmniboxSearchIndex() {
 let fullscreenCourseCacheSavePromise = null;
 let fullscreenCourseCacheSaveRequested = false;
 let fullscreenCourseCacheForceRequested = false;
+const fullscreenCourseCacheComplete = new Set();
+const cacheCourseFields = {
+  ykt: ['yktCourseGroupsSnapshot', 'yktStandaloneCourses', 'yktMatchedHomeworkByCourseId', 'yktMatchedCourseLinkByCourseId'],
+  mrjzy: ['mrjzyCourseGroupsSnapshot', 'mrjzyStandaloneCourses', 'mrjzyMatchedHomeworkByCourseId'],
+  jlgj: ['jlgjCourseGroupsSnapshot', 'jlgjStandaloneCourses', 'jlgjMatchedHomeworkByCourseId'],
+  mooc: ['moocCourses'], xuetangx: ['xuetangxCourses'], citel: ['citelCourses']
+};
+const veCacheFields = ['currentVeCourseList', 'courseHomeworkData', 'courseCardStateById',
+  'videoReplayCacheByCourseId', 'coursewareCacheByCourseId', 'homeworkScoreCacheByKey',
+  'homeworkNoteAttachmentCacheByKey', 'veTeacherMetaByCourseId', 'veCourseTeachersMetaByCourseId',
+  'currentAccountLoginName', 'isTeacherAccount', 'xqSelectHtml', 'xqSelectValue'];
+const cacheCourseKeys = {
+  ve: (item) => item.id ?? item.cId ?? item.courseId ?? item.course_id,
+  ykt: (item) => item.classroom_id,
+  mrjzy: (item) => item.classNum || item.divClass,
+  jlgj: (item) => item.groupId || item.name,
+  mooc: (item) => item.tid || item.id,
+  xuetangx: (item) => item.id, citel: (item) => item.id
+};
+const cacheTaskKeys = {
+  ve: (item) => item.id ?? item.noteId ?? item.courseNoteId ?? item.upId ?? item.UPID
+    ?? item.snId ?? item.noteSnId ?? item.workId ?? item.homeworkId,
+  ykt: (item) => [item.__actype, item.courseware_id, item.id].join(':'),
+  mrjzy: (item) => item.workId || item.link, jlgj: (item) => item.threadId || item.link,
+  mooc: (item) => [item.type, item.id].join(':'), xuetangx: (item) => [item.typeId, item.id || item.chapterLeafId].join(':'),
+  citel: (item) => [item.type, item.id].join(':')
+};
+
+function invalidateFullscreenCourseCacheCompletion(platform) {
+  fullscreenCourseCacheComplete.delete(platform);
+  if (platform === 've') window.veCacheCourseSource = null;
+}
+
+function markFullscreenCourseCacheComplete(platform) {
+  if (window.platformLoginState?.[platform] !== 'online' || !isPlatformEnabled(platform)) return;
+  fullscreenCourseCacheComplete.add(platform);
+  scheduleFullscreenCourseCacheSave(200);
+}
+
+function mergeCachedItems(previous = [], current = [], keyOf, update = (_old, item) => item) {
+  const merged = new Map(previous.map((item) => [String(keyOf(item) ?? '') || Symbol(), item]));
+  for (const item of current) {
+    const key = String(keyOf(item) ?? '');
+    if (key && merged.has(key)) merged.set(key, update(merged.get(key), item));
+    else if (key) merged.set(key, item);
+    else merged.set(Symbol(), item);
+  }
+  return [...merged.values()];
+}
+
+function mergeCachedTask(platform, old, task) {
+  const merged = { ...old, ...task };
+  const keep = (...fields) => { for (const field of fields) if (old[field] !== undefined) merged[field] = old[field]; };
+  if (platform === 'ykt') {
+    if (old.exam_detail_state === 'done' && task.exam_detail_state !== 'done') {
+      keep('exam_detail_state', 'exam_detail_error', 'detail_problems', 'classroom_report_question_count');
+    }
+    if (task.video_progress_ratio == null) keep('video_progress_ratio', 'video_total_done', 'video_progress_loading');
+  } else if (platform === 'jlgj' && (task.loadingMeta || task.detailUnavailable)) {
+    keep('content', 'start', 'end', 'loadingMeta');
+  } else if (platform === 'mrjzy' && task.details == null) {
+    keep('details', 'loadingMeta');
+  } else if (platform === 'mooc' && task.detail == null) {
+    keep('detail');
+  } else if (platform === 'xuetangx' && (task.exerciseDetailError || !task.exerciseProblems)) {
+    if (old.exerciseProblems) keep('exerciseProblems', 'exerciseDetailError', 'exerciseDetailLoading', 'done');
+  } else if (platform === 'citel' && task.actionable && !task.statusKnown && old.statusKnown) {
+    keep('done', 'statusKnown', 'description', 'descriptionHtml', 'loadError');
+  }
+  return merged;
+}
+
+function mergeFullscreenCourseCache(previous, current, complete, veSource) {
+  const result = { ...previous, ...current };
+  const preserve = (fields) => { for (const field of fields) result[field] = previous[field] ?? current[field]; };
+  const hasPreviousVe = !!previous.currentAccountLoginName || !!previous.currentVeCourseList?.length;
+  const sameVeScope = !hasPreviousVe || (
+    previous.currentAccountLoginName === current.currentAccountLoginName
+    && (!previous.xqSelectValue || previous.xqSelectValue === current.xqSelectValue));
+  const applyVe = veSource && (complete.has('ve') || sameVeScope);
+  if (!applyVe) preserve(veCacheFields);
+  else {
+    const ids = new Set(current.currentVeCourseList.map((course) => String(cacheCourseKeys.ve(course))));
+    const freshHomework = Object.fromEntries(Object.entries(current.courseHomeworkData)
+      .filter(([id]) => ids.has(id) && veSource.homeworkCourseIds.has(id)));
+    result.courseHomeworkData = freshHomework;
+    if (!complete.has('ve')) {
+      result.currentVeCourseList = mergeCachedItems(previous.currentVeCourseList, current.currentVeCourseList, cacheCourseKeys.ve);
+      result.courseHomeworkData = { ...previous.courseHomeworkData };
+      for (const [id, course] of Object.entries(freshHomework)) {
+        result.courseHomeworkData[id] = { ...course, list: mergeCachedItems(previous.courseHomeworkData?.[id]?.list, course.list,
+          cacheTaskKeys.ve, (old, task) => ({ ...old, ...task })) };
+      }
+    }
+    if (sameVeScope) for (const field of veCacheFields.slice(2, -4)) {
+      const updates = current[field];
+      result[field] = { ...previous[field], ...updates };
+      if (field === 'homeworkNoteAttachmentCacheByKey') {
+        for (const [key, entry] of Object.entries(updates)) {
+          if (previous[field]?.[key]?.loaded && (!entry.loaded || entry.failed)) result[field][key] = previous[field][key];
+        }
+      }
+    }
+  }
+  for (const [platform, [courseField, ...derived]] of Object.entries(cacheCourseFields)) {
+    if (platform === 'mrjzy' && Number(previous.mrjzySnapshotUpdatedAt) > current.mrjzySnapshotUpdatedAt) {
+      preserve([courseField, ...derived, 'mrjzySnapshotUpdatedAt']);
+      continue;
+    }
+    if (complete.has(platform)) continue;
+    const taskField = derived.length ? 'homeworks' : 'tasks';
+    if (!current[courseField].length) {
+      preserve([courseField, ...derived]);
+      continue;
+    }
+    result[courseField] = mergeCachedItems(previous[courseField], current[courseField], cacheCourseKeys[platform], (old, course) => ({
+      ...old, ...course, detailLoaded: course.detailLoaded || old.detailLoaded,
+      [taskField]: mergeCachedItems(old[taskField], course[taskField], cacheTaskKeys[platform], (prior, task) => mergeCachedTask(platform, prior, task))
+    }));
+  }
+  for (const platform of ['ve', ...Object.keys(cacheCourseFields)]) {
+    if (complete.has(platform)) continue;
+    const data = result[platform === 've' ? 'currentVeCourseList' : cacheCourseFields[platform][0]];
+    if (data?.length || previous.platformLoadedOnce?.[platform]) result.platformLoadedOnce[platform] = true;
+  }
+  if (!applyVe || !complete.has('ve') || Object.keys(cacheCourseFields).some((platform) => !complete.has(platform))) {
+    const labels = window.BjtuHomeworkReminders.labels;
+    const key = (item) => JSON.stringify([item.kind, item.platform, item.courseName, item.title, item.url]);
+    result.searchIndex = mergeCachedItems((previous.searchIndex || []).filter((item) => {
+      const platform = Object.keys(labels).find((id) => labels[id] === item.platform) || item.platform;
+      return !complete.has(platform);
+    }), (current.searchIndex || []).filter(item => applyVe || !['ve', labels.ve].includes(item.platform)), key);
+  }
+  return result;
+}
 
 function saveFullscreenCourseCache({ force = false } = {}) {
   if (popupMode || (!force && !shouldSaveFullscreenCourseCache()) || !courseListDiv) return Promise.resolve();
@@ -351,9 +486,8 @@ function saveFullscreenCourseCache({ force = false } = {}) {
   return fullscreenCourseCacheSavePromise;
 }
 
-async function writeFullscreenCourseCache({ force = false } = {}) {
-  if (popupMode || (!force && !shouldSaveFullscreenCourseCache()) || !courseListDiv) return;
-  const cache = {
+function collectFullscreenCourseCache() {
+  return {
     version: 1,
     structuredCourseCache: true,
     savedAt: Date.now(),
@@ -396,10 +530,30 @@ async function writeFullscreenCourseCache({ force = false } = {}) {
     xqSelectHtml: String(xqSelect?.innerHTML || ''),
     xqSelectValue: String(xqSelect?.value || '')
   };
+}
+
+async function writeFullscreenCourseCache({ force = false } = {}) {
+  if (popupMode || (!force && !shouldSaveFullscreenCourseCache()) || !courseListDiv) return;
   try {
     await window.BjtuHomeworkReminders.update(async () => {
-      if (cache.currentAccountLoginName && window.BjtuAccountStore && !await window.BjtuAccountStore.get(cache.currentAccountLoginName)) return;
-      await chrome.storage.local.set({ [POPUP_FULLSCREEN_CACHE_KEY]: cache });
+      const key = POPUP_FULLSCREEN_CACHE_KEY;
+      const previous = (await chrome.storage.local.get(key))[key] || {};
+      const veSource = window.veCacheCourseSource;
+      const account = String(window.currentAccountLoginName || '');
+      const hasAccount = !account || !window.BjtuAccountStore || !!await window.BjtuAccountStore.get(account);
+      const currentVeSource = hasAccount && veSource === window.veCacheCourseSource
+        && account === String(window.currentAccountLoginName || '') && veSource?.account === account && veSource;
+      const complete = new Set(fullscreenCourseCacheComplete);
+      if (!currentVeSource) complete.delete('ve');
+      const cache = collectFullscreenCourseCache();
+      if (!hasAccount) {
+        cache.currentAccountLoginName = '';
+        cache.currentVeCourseList = [];
+        for (const field of veCacheFields.slice(1, -4)) cache[field] = {};
+        cache.platformLoadedOnce.ve = false;
+      }
+      const merged = mergeFullscreenCourseCache(previous, cache, complete, currentVeSource);
+      await chrome.storage.local.set({ [key]: merged });
     });
   } catch (e) {
     try { console.warn('[bjtu] save popup cache failed:', e); } catch {}

@@ -199,7 +199,9 @@
     let data = await fetchPage(100);
     const total = Number(data?.total || 0);
     if (Number.isFinite(total) && total > 100) data = await fetchPage(total);
-    return Array.isArray(data?.courseList) ? data.courseList : [];
+    if (Array.isArray(data?.courseList) && data.courseList.length >= total) return data.courseList;
+    if (data?.total != null && Number(data.total) === 0) return [];
+    throw new Error('课程列表响应缺少完整数据');
   }
 
   function homeworkKey(homework) {
@@ -208,7 +210,7 @@
       ?? homework?.workId ?? homework?.homeworkId ?? '').trim();
   }
 
-  async function fetchCourseHomework(courseId, { previousList = [], signal, onTypeLoaded } = {}) {
+  async function fetchCourseHomework(courseId, { previousList = [], signal, onTypeLoaded, requireComplete = false } = {}) {
     const cid = String(courseId || '').trim();
     const previousByKey = new Map((Array.isArray(previousList) ? previousList : [])
       .map((item) => [homeworkKey(item), item]).filter(([key]) => key));
@@ -222,15 +224,19 @@
           headers: { Accept: 'application/json, text/javascript, */*; q=0.01' }
         });
         if (isLoginResponse(text, response)) throw loginError();
+        if (!response.ok) throw new Error(`作业列表加载失败：HTTP ${response.status}`);
         return parseJson(text);
       };
+      let succeeded = false;
       try {
         let data = await fetchPage(10);
         const total = Number(data?.total || 0);
         if (Number.isFinite(total) && total > 10) data = await fetchPage(total);
-        if (String(data?.STATUS) !== '0') continue;
-        const list = Array.isArray(data?.courseNoteList) ? data.courseNoteList : (Array.isArray(data?.list) ? data.list : []);
-        list.forEach((homework) => {
+        if (String(data?.STATUS) !== '0') throw new Error(data?.message || '作业列表加载失败');
+        const list = data?.courseNoteList ?? data?.list;
+        if (!Array.isArray(list) && !(data?.total != null && Number(data.total) === 0)) throw new Error('作业列表响应无效');
+        if (Array.isArray(list) && list.length < total) throw new Error('作业列表响应不完整');
+        (list || []).forEach((homework) => {
           const key = homeworkKey(homework);
           if (key && seen.has(key)) return;
           if (key) seen.add(key);
@@ -241,12 +247,14 @@
             ...(previous?.__attachmentKey ? { __attachmentKey: previous.__attachmentKey } : {})
           });
         });
+        succeeded = true;
       } catch (error) {
-        if (error?.loginRequired || error?.message === 'LOGIN_REQUIRED') throw error;
+        if (requireComplete || error?.loginRequired || error?.message === 'LOGIN_REQUIRED') throw error;
       } finally {
         if (typeof onTypeLoaded === 'function') {
           await onTypeLoaded({
             subType,
+            succeeded,
             typeList: merged.filter((homework) => Number(homework?.subType ?? homework?.sub_type) === subType),
             list: [...merged]
           });

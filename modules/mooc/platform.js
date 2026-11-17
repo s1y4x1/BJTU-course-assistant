@@ -461,6 +461,7 @@ let moocLoginAssistOpening = null;
       await checkLogin();
       const panels = await request('course-list');
       if (serial !== loadSerial) return;
+      if (!Array.isArray(panels)) throw new Error('课程列表响应无效');
       courses = (Array.isArray(panels) ? panels : []).map((panel) => normalizeCourse(panel, null));
       render();
       env.setLoaded(true);
@@ -481,6 +482,7 @@ let moocLoginAssistOpening = null;
       };
       env.setProgress?.(0, courses.length);
       let next = 0;
+      let cacheComplete = true;
       const workers = Array.from({ length: Math.min(4, courses.length) }, async () => {
         while (next < courses.length && serial === loadSerial) {
           const index = next++;
@@ -494,6 +496,7 @@ let moocLoginAssistOpening = null;
             if (detailResult.status === 'rejected') throw detailResult.reason;
             const response = detailResult.value;
             const term = response?.result?.mocTermDto || response?.mocTermDto;
+            if (!term) throw new Error('课程详情响应无效');
             courses[index] = normalizeCourse({
               id: old.id, name: old.name, termPanel: { id: old.tid },
               schoolPanel: { name: old.schoolName, shortName: old.schoolShortName },
@@ -512,6 +515,7 @@ let moocLoginAssistOpening = null;
               updateProgress();
             });
           } catch (error) {
+            cacheComplete = false;
             if (serial !== loadSerial) return;
             if (error?.code === 'not-logged-in') throw error;
             courses[index].detailLoaded = true;
@@ -531,6 +535,7 @@ let moocLoginAssistOpening = null;
       env.setState('online');
       env.setProgress?.(courses.length, courses.length);
       render();
+      if (cacheComplete) global.markFullscreenCourseCacheComplete?.('mooc');
     } catch (error) {
       if (serial !== loadSerial) return;
       courses = [];

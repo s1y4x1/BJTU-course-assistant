@@ -2051,10 +2051,21 @@ async function loadCourses({ knownUserInfo } = {}) {
     window.veDisabledCourseListCache = window.currentVeCourseList.slice();
     window.platformLoadedOnce.ve = true;
     setPlatformLoginState('ve', 'online');
+    const cacheSource = window.veCacheCourseSource = {
+      version:courseLoadVersion,
+      account:String(userInfo.loginName || userInfo.userId || window.currentAccountLoginName || '').trim(),
+      homeworkCourseIds:new Set()
+    };
     rematchExternalByVeCourses();
     renderCourseList(list, { progressGroups: directProgressGroups });
     rerenderAllHomeworkAreas();
     renderEnabledExternalStandaloneCourses();
+    void window.veHomeworkLoadPromise.then((homeworkResults) => {
+      if (window.veCacheCourseSource === cacheSource && courseLoadVersion === window.courseListLoadVersion
+          && homeworkResults.every(result => result.status === 'fulfilled' && result.value === true)) {
+        markFullscreenCourseCacheComplete('ve');
+      }
+    });
   } catch (e) {
     if (courseLoadVersion !== window.courseListLoadVersion) return;
     const errMsg = String(e?.message || '');
@@ -2797,6 +2808,7 @@ async function prefetchHomeworkAttachments(courseId, list, onItemComplete, { sig
   window.homeworkAttachmentPendingByCourse[courseId] = true;
   renderHomeworkList(courseId);
   let itemLoadingStarted = false;
+  let complete = true;
   const markItemComplete = (homework) => {
     if (isCurrent()) onItemComplete?.(homework);
   };
@@ -2827,8 +2839,8 @@ async function prefetchHomeworkAttachments(courseId, list, onItemComplete, { sig
             signal
           });
           if (!isCurrent()) return;
-          let detailData = null;
-          try { detailData = JSON.parse(String(text || '{}')); } catch { detailData = null; }
+          const detailData = JSON.parse(text);
+          if (!detailData || typeof detailData !== 'object') throw new Error('作业附件响应无效');
           const picListRaw = Array.isArray(detailData?.picList) ? detailData.picList : [];
           const picList = picListRaw.map((it) => {
             const fileNameRaw = String(it?.file_name || it?.name || '').trim();
@@ -2839,14 +2851,16 @@ async function prefetchHomeworkAttachments(courseId, list, onItemComplete, { sig
           }).filter((it) => !!it.url);
           window.homeworkNoteAttachmentCacheByKey[key] = { loading: false, loaded: true, picList };
         } catch {
+          complete = false;
           if (isCurrent()) {
-            window.homeworkNoteAttachmentCacheByKey[key] = { loading: false, loaded: true, picList: [] };
+            window.homeworkNoteAttachmentCacheByKey[key] = { loading: false, loaded: true, failed: true, picList: [] };
           }
         }
       } finally {
         markItemComplete(hw);
       }
     }));
+    return complete;
   } finally {
     if (isCurrent()) {
       if (!itemLoadingStarted) items.forEach((homework) => markItemComplete(homework));
@@ -2866,13 +2880,23 @@ async function checkHomework(courseId, progress, loadVersion = window.courseList
   const typeLabels = ['作业', '课程报告', '实验'];
   window.veHomeworkPendingTypesByCourse[courseId] = [...typeLabels];
   renderHomeworkList(courseId);
+  let allTypesLoaded = true;
+  const cacheSource = window.veCacheCourseSource;
+  const markCacheable = () => {
+    if (cacheSource && cacheSource === window.veCacheCourseSource && cacheSource.version === loadVersion) {
+      cacheSource.homeworkCourseIds.add(String(courseId));
+      scheduleFullscreenCourseCacheSave(200);
+    }
+  };
   try {
     const previousList = window.courseHomeworkData?.[courseId]?.list || [];
     const list = await globalThis.BjtuVeHomeworkCore.fetchCourseHomework(courseId, {
       previousList,
       signal: window.globalVeAbortController?.signal,
-      onTypeLoaded: ({ subType, typeList, list: partialList }) => {
+      onTypeLoaded: ({ subType, typeList, list: partialList, succeeded }) => {
         if (!isCurrent()) return;
+        if (succeeded) markCacheable();
+        else allTypesLoaded = false;
         window.courseHomeworkData[courseId] = { list: partialList, showOverdue: !!window.courseShowOverdueById[courseId], showDone: !!window.courseShowDoneById[courseId] };
         progress?.defineType?.(courseId, subType, typeList.length);
         window.veHomeworkPendingTypesByCourse[courseId] = (window.veHomeworkPendingTypesByCourse[courseId] || [])
@@ -2890,13 +2914,13 @@ async function checkHomework(courseId, progress, loadVersion = window.courseList
       signal: window.globalVeAbortController?.signal,
       isCurrent
     });
-    await Promise.all([
+    const details = await Promise.allSettled([
       attachmentPrefetchPromise,
       prefetchCourseScores(courseId, { isCurrent, signal: window.globalVeAbortController?.signal })
     ]).finally(() => {
       if (isCurrent()) recomputeCourseHomeworkState(courseId);
-    }).catch(() => {});
-    return isCurrent();
+    });
+    return isCurrent() && allTypesLoaded && details.every(result => result.status === 'fulfilled' && result.value !== false);
   } catch (e) {
     if (!isCurrent()) return false;
     delete window.veHomeworkPendingTypesByCourse[courseId];
@@ -2905,7 +2929,6 @@ async function checkHomework(courseId, progress, loadVersion = window.courseList
       return false;
     }
     console.error(`[VE] fetch error for ${courseId}: ${e.message}`);
-    window.courseHomeworkData[courseId] = { list: [], showOverdue: !!window.courseShowOverdueById[courseId], showDone: !!window.courseShowDoneById[courseId] };
     renderHomeworkList(courseId);
     return false;
   }
@@ -3113,9 +3136,10 @@ async function prefetchCourseScores(courseId, { isCurrent = () => true, signal }
       null,
       globalThis.BjtuPlatformLoginUi.loginRequiredHtml('ve')
     );
-    return;
+    return false;
   }
   renderHomeworkList(courseId);
+  return results.every(result => result.status === 'fulfilled');
 }
 
 // 供 qwen 模块（service worker）经 app 页面消息桥调用的平台页面级接口

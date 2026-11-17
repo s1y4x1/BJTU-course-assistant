@@ -1386,12 +1386,14 @@
       render();
 
       let cursor = 0;
+      let cacheComplete = true;
       const workers = Array.from({ length: Math.min(4, courses.length) }, async () => {
         while (cursor < courses.length && serial === loadSerial) {
           const index = cursor++;
           try {
             await loadCourseDetails(courses[index], serial, visibleActivityTypes, detailProgress);
           } catch (error) {
+            cacheComplete = false;
             if (error?.code === 'not-logged-in' || error?.code === 'cancelled') throw error;
             courses[index].detailLoaded = true;
             courses[index].loadError = String(error?.message || error);
@@ -1410,6 +1412,9 @@
       env?.setLoaded?.(true);
       env?.setState?.('online');
       render();
+      if (cacheComplete && courses.every(course => course.tasks.every(task => !task.exerciseDetailError))) {
+        global.markFullscreenCourseCacheComplete?.('xuetangx');
+      }
     } catch (error) {
       if (serial !== loadSerial || error?.code === 'cancelled') return;
       courses = [];

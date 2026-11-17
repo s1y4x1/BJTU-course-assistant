@@ -748,7 +748,7 @@ async function loadMrjzyCoursesAndHomework(courses, loadVersion = 0) {
     renderMrjzyNeedLoginMessage();
     return;
   }
-  if (!listResp.data || Number(listResp.data.code) !== 200) {
+  if (!listResp.data || Number(listResp.data.code) !== 200 || !Array.isArray(listResp.data.data)) {
     if (!mrjzyAutoLoginAttempted) {
       mrjzyAutoLoginAttempted = true;
       if (await tryMrjzyConfiguredAutoLogin().catch(() => false)) {
@@ -778,7 +778,7 @@ async function loadMrjzyCoursesAndHomework(courses, loadVersion = 0) {
     setPlatformContentLoadProgress('mrjzy', 0, 0);
     await finishMrjzyRuntime();
     renderMrjzyStandaloneCourses();
-    scheduleFullscreenCourseCacheSave();
+    markFullscreenCourseCacheComplete('mrjzy');
     return;
   }
 
@@ -790,10 +790,11 @@ async function loadMrjzyCoursesAndHomework(courses, loadVersion = 0) {
   const detailTasks = works.map(async (w) => {
     const dr = await postMrjzyForm(MRJZY_WORK_DETAIL_API, { workId: w.workId }, mrjzyRuntimeCtx);
     if (shouldAbort()) return;
-    detailsByWorkId.set(w.workId, dr?.data?.data ?? null);
+    if (Number(dr?.data?.code) !== 200 || !dr?.data?.data) throw new Error('作业详情获取失败');
+    detailsByWorkId.set(w.workId, dr.data.data);
     applyMrjzyCourseGroups(buildMrjzyCourseGroups(works, detailsByWorkId, true));
   });
-  await Promise.allSettled(detailTasks.map((task) => task.finally(() => {
+  const detailResults = await Promise.allSettled(detailTasks.map((task) => task.finally(() => {
     if (shouldAbort()) return;
     completedDetailLoads += 1;
     setPlatformContentLoadProgress('mrjzy', completedDetailLoads, works.length);
@@ -804,6 +805,7 @@ async function loadMrjzyCoursesAndHomework(courses, loadVersion = 0) {
   }
   applyMrjzyCourseGroups(buildMrjzyCourseGroups(works, detailsByWorkId));
   scheduleFullscreenCourseCacheSave();
+  if (detailResults.every(result => result.status === 'fulfilled')) markFullscreenCourseCacheComplete('mrjzy');
   await finishMrjzyRuntime();
 }
 

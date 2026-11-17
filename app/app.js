@@ -1228,6 +1228,7 @@ function isAutoLoadCourseResourcesEnabled() {
 
 function bumpPlatformLoadVersion(platform) {
   const p = normalizePlatformId(platform);
+  invalidateFullscreenCourseCacheCompletion(p);
   const next = Number(window.platformLoadVersion?.[p] || 0) + 1;
   window.platformLoadVersion[p] = next;
   return next;
@@ -1236,6 +1237,7 @@ function bumpPlatformLoadVersion(platform) {
 // 更新检查由可选 updater 模块提供；模块未安装时版本按钮自动隐藏。
 
 function clearPlatformData(platform) {
+  invalidateFullscreenCourseCacheCompletion(platform);
   delete window.platformContentLoadProgress?.[normalizePlatformId(platform)];
   if (platform === 've') {
     window.veHomeworkPendingTypesByCourse = {};
@@ -4794,6 +4796,7 @@ function setPlatformLoginState(platform, state) {
   const p = normalizePlatformId(platform);
   const prev = String(window.platformLoginState?.[p] || '').trim();
   const s = (state === 'online' || state === 'offline') ? state : 'checking';
+  if (s !== 'online') invalidateFullscreenCourseCacheCompletion(p);
   window.platformLoginState[p] = s;
   if (p === 've') renderLoginAccountHistorySelect();
   if (p === 've' && s === 'online') window.platformInteractiveLoginPending.ve = false;

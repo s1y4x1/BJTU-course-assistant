@@ -1156,6 +1156,9 @@ async function deleteAccountHomework(loginName) {
     if (cache?.currentAccountLoginName === loginName) {
       for (const key of ['courseHomeworkData', 'homeworkScoreCacheByKey', 'homeworkNoteAttachmentCacheByKey', 'courseCardStateById', 'videoReplayCacheByCourseId', 'coursewareCacheByCourseId', 'veTeacherMetaByCourseId', 'veCourseTeachersMetaByCourseId']) cache[key] = {};
       cache.currentVeCourseList = [];
+      if (Array.isArray(cache.searchIndex)) {
+        cache.searchIndex = cache.searchIndex.filter(item => !['ve', reminders.labels.ve].includes(item.platform));
+      }
       cache.currentAccountLoginName = '';
       cache.isTeacherAccount = false;
       cache.courseListHtml = '';

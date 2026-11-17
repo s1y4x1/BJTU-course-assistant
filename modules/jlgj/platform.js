@@ -314,7 +314,11 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
     return;
   }
 
-  const groups = pickArr(listResp?.data);
+  const listData = extractJlgjData(listResp?.data);
+  if (!listResp?.ok || (!Array.isArray(listData) && !Array.isArray(listData?.Data))) {
+    throw new Error(listResp?.message || '接龙管家课程列表获取失败');
+  }
+  const groups = pickArr(listResp.data);
 
     const placeholderGroups = groups.map((group) => {
       const groupId = String(group?.Id || '').trim();
@@ -367,20 +371,15 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
       rebuildJlgjRender();
     }
 
-    if (!listResp?.ok && !groups.length) {
-      window.platformLoadedOnce.jlgj = true;
-      setPlatformLoginState('jlgj', 'online');
-      clearPlatformData('jlgj');
-      rerenderAllHomeworkAreas();
-      return;
-    }
-
     if (!placeholderGroups.length) {
       window.jlgjMatchedHomeworkByCourseId = {};
       window.jlgjStandaloneCourses = [];
       window.jlgjCourseGroupsSnapshot = [];
+      window.platformLoadedOnce.jlgj = true;
+      setPlatformLoginState('jlgj', 'online');
     }
 
+    let cacheComplete = true;
     const detailGroups = [];
     for (const group of groups) {
       if (isStale()) return;
@@ -412,7 +411,9 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
       }
       if (threadsResp?.ok) {
         threads = pickArr(threadsResp.data);
-      }
+        const data = extractJlgjData(threadsResp.data);
+        if (!Array.isArray(data) && !Array.isArray(data?.Data)) cacheComplete = false;
+      } else cacheComplete = false;
       if (!threads.length) {
         courseGroup.loadingMeta = false;
         rebuildJlgjRender();
@@ -481,7 +482,8 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
             detail = detailPayload?.Data?.Data || detailPayload?.Data || null;
           }
           if (!detail) {
-            if (homeworks[i]) homeworks[i].loadingMeta = false;
+            cacheComplete = false;
+            if (homeworks[i]) Object.assign(homeworks[i], {loadingMeta:false, detailUnavailable:true});
             return;
           }
 
@@ -515,9 +517,10 @@ async function loadJlgjCoursesAndHomework(courses = [], loadVersion = 0) {
         }
       })
     ));
-    await Promise.allSettled(detailTasks);
+    const detailResults = await Promise.allSettled(detailTasks);
     if (isStale() || detailUnauthorized) return;
     setPlatformContentLoadProgress('jlgj', totalDetailLoads, totalDetailLoads);
+    if (cacheComplete && detailResults.every(result => result.status === 'fulfilled')) markFullscreenCourseCacheComplete('jlgj');
 }
 
 function scheduleJlgjLoad(courses, loadVersion = 0) {

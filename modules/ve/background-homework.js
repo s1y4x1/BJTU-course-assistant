@@ -169,7 +169,8 @@
         if (!courseId) continue;
         const list = await core.fetchCourseHomework(courseId, {
           previousList: previousHomework?.[courseId]?.list || [],
-          signal: controller.signal
+          signal: controller.signal,
+          requireComplete: true
         });
         courseHomeworkData[courseId] = { list, showOverdue: false, showDone: false };
         Object.assign(attachmentCache, await core.fetchHomeworkAttachments(course, list, { signal: controller.signal }));
@@ -183,19 +184,13 @@
     const xqSelectHtml = terms.map((term) => (
       `<option value="${String(term.xqCode).replace(/[&"<>]/g, '')}"${term.xqCode === xqCode ? ' selected' : ''}>${String(term.xqName || term.xqCode).replace(/[&<>]/g, '')}</option>`
     )).join('');
-    const cache = {
-      ...previousCache,
+    const veCache = {
       version: 1,
       savedAt,
       backgroundStructuredVe: true,
       courseListHtml: '',
       resourceSpaceItems: [],
       resourceSpaceHtml: '',
-      platformEnabled: { ...(previousCache.platformEnabled || {}), ve: true },
-      platformLoginState: { ...(previousCache.platformLoginState || {}), ve: 'online' },
-      platformLoginChecked: { ...(previousCache.platformLoginChecked || {}), ve: true },
-      platformLoadedOnce: { ...(previousCache.platformLoadedOnce || {}), ve: true },
-      platformNeedLogin: { ...(previousCache.platformNeedLogin || {}), ve: false },
       currentVeCourseList: courses,
       courseHomeworkData,
       homeworkNoteAttachmentCacheByKey: attachmentCache,
@@ -206,6 +201,14 @@
     };
     await globalThis.BjtuHomeworkReminders.update(async (state) => {
       if (!await globalThis.BjtuAccountStore.get(account)) throw new Error('后台维护账号已被删除');
+      const current = (await chrome.storage.local.get(CACHE_KEY))[CACHE_KEY] || {};
+      const cache = { ...current, ...veCache,
+        platformEnabled: { ...current.platformEnabled, ve: true },
+        platformLoginState: { ...current.platformLoginState, ve: 'online' },
+        platformLoginChecked: { ...current.platformLoginChecked, ve: true },
+        platformLoadedOnce: { ...current.platformLoadedOnce, ve: true },
+        platformNeedLogin: { ...current.platformNeedLogin, ve: false }
+      };
       globalThis.BjtuHomeworkReminders.replaceSnapshot(state.snapshot, 've', account, reminderItems, savedAt);
       await chrome.storage.local.set({ [CACHE_KEY]: cache, [XQ_CODE_KEY]: xqCode });
       await notifyNewHomework({ account, assignments });

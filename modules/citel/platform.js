@@ -366,6 +366,9 @@
         report(course, 1); render();
       });
       assertCurrent(version); env?.setLoaded?.(true); render();
+      if (courses.every(course => !course.loadError && course.tasks.every(task => !task.loadError))) {
+        global.markFullscreenCourseCacheComplete?.('citel');
+      }
     } catch (e) {
       if (e.code === 'cancelled' || version !== serial) return;
       if (e.code === 'LOGIN_REQUIRED') {
