@@ -311,7 +311,7 @@
     const name = p.remark || p.nickname || p.ip || p.id;
     return {type: 'public-presence', joined, message: {
       id: crypto.randomUUID(), senderId: p.id, conversationId: 'public', system: true,
-      text: `${name} ${joined ? '进入了公共群聊' : '离开了公共群聊'}`, createdAt: Date.now()
+      text: `「${name}」${joined ? '进入了公共群聊' : '离开了公共群聊'}`, createdAt: Date.now()
     }};
   }
   function publishPublicPresence(event) {

@@ -91,9 +91,10 @@
       void takeFileNotification(id).then(() => chrome.notifications.clear(id)).catch(report);
       return false;
     }
-    if (message?.type !== 'BJTU_CHATROOM_BACKGROUND_INVITATION') return false;
-    if (sender.url?.split('?')[0] !== chatUrl || new URL(sender.url).searchParams.get('background') !== '1') return false;
-    void (message.pending && message.media === 'file' ? notifyFileInvitation(message) : notifyRejectedMedia(message))
+    const fileInvitation = message?.type === 'BJTU_CHATROOM_FILE_INVITATION';
+    if (!fileInvitation && message?.type !== 'BJTU_CHATROOM_BACKGROUND_INVITATION') return false;
+    if (sender.url?.split('?')[0] !== chatUrl || (!fileInvitation && new URL(sender.url).searchParams.get('background') !== '1')) return false;
+    void (fileInvitation || (message.pending && message.media === 'file') ? notifyFileInvitation(message) : notifyRejectedMedia(message))
       .then(() => respond({ok:true}),error => { report(error); respond({ok:false,error:error.message}); });
     return true;
   });
@@ -163,8 +164,8 @@
     const id = fileNotificationId(message);
     await editFileNotifications(entries => { entries[id] = {engineId,peerId,sid,conversationId,createdAt:Date.now()}; });
     const create = global.BjtuSystemNotifications?.create || ((id,options) => chrome.notifications.create(id,options));
-    await create(id,{type:'basic',iconUrl:chrome.runtime.getURL('icons/128.png'),title:'聊天室 · 文件接收确认',
-      message:`${who} 希望发送「${String(name || '未命名文件').slice(0,120)}」（${size.toLocaleString()} B）。未满足自动接收条件，请选择接收或拒绝。`,
+    await create(id,{type:'basic',iconUrl:chrome.runtime.getURL('icons/128.png'),title:'聊天室 · 邀请与确认',
+      message:`「${who}」希望发送「${String(name || '未命名文件').slice(0,120)}」（${size.toLocaleString()} B）。未满足自动接收条件，请选择接收或拒绝。`,
       buttons:[{title:'接收'},{title:'拒绝'}]},'chatroom-file',true);
   }
   chrome.notifications.onButtonClicked.addListener((id,index) => {
@@ -218,7 +219,7 @@
     const who = peer?.remark || peer?.nickname || peer?.ip || '对方';
     await requestNotification(inviteKey(id), '聊天室 · 邀请与确认',
       request.type === 'friend' ? `「${who}」请求添加好友` : `「${who}」邀请你加入「${request.room?.name || '群聊'}」`,
-      [{title:request.type === 'group' ? '接受' : '接收'},{title:'拒绝'}]);
+      [{title:'接受'},{title:'拒绝'}]);
   }
   async function notifyPresence({peerId,joined}) {
     if (!/^[a-f0-9]{64}$/.test(peerId) || typeof joined !== 'boolean') return;
@@ -228,7 +229,7 @@
     const who = peer.remark || peer.nickname || peer.ip || '成员';
     const create = global.BjtuSystemNotifications?.create || ((id,options) => chrome.notifications.create(id,options));
     await create(presencePrefix+peerId,{type:'basic',iconUrl:chrome.runtime.getURL('icons/128.png'),
-      title:view?.remark || '公共群聊',message:`${who} ${joined ? '进入了公共群聊' : '离开了公共群聊'}`},'chatroom-presence',true);
+      title:view?.remark || '公共群聊',message:`「${who}」${joined ? '进入了公共群聊' : '离开了公共群聊'}`},'chatroom-presence',true);
   }
   const rejectedMedia = new Set();
   async function notifyRejectedMedia(message) {

@@ -36,17 +36,17 @@
         if (now - lastSent >= 150) { clearTimeout(pending); flush(); }
         else if (!pending) pending = setTimeout(flush,150 - (now - lastSent));
       },
-      finish() {
+      finish({ completed = false } = {}) {
         clearTimeout(pending);
         cancels.delete(id);
-        if (tasks.delete(id)) channel.postMessage({type:'progress-ended',id,loaded:task.loaded});
+        if (tasks.delete(id)) channel.postMessage({type:'progress-ended',id,loaded:task.loaded,completed});
       }
     };
   }
   globalThis.BjtuDownloadProgress = {begin};
   addEventListener('pagehide', event => {
     if (event.persisted) return;
-    for (const {id,loaded} of tasks.values()) channel.postMessage({type:'progress-ended',id,loaded});
+    for (const {id,loaded} of tasks.values()) channel.postMessage({type:'progress-ended',id,loaded,completed:false});
     tasks.clear();
     cancels.clear();
     channel.close();

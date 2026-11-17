@@ -34,16 +34,18 @@
       name,source:'智慧课程平台作业包',total,path,cancel:() => abort.abort()
     });
     let loaded = 0;
+    let completed = false;
     try {
       const track = new TransformStream({transform(chunk, controller) {
         loaded += chunk.byteLength; progress.update(loaded);
         controller.enqueue(chunk);
       }});
       await response.body.pipeThrough(track).pipeTo(await handle.createWritable(),{signal:abort.signal});
+      completed = true;
     } catch (error) {
       await directory.removeEntry(name).catch(() => {});
       throw error;
-    } finally { progress.finish(); }
+    } finally { progress.finish({completed}); }
     return {ok:true, destination:'extension-downloads', filename:name, path, bytes:loaded};
   }
   globalThis.BjtuExtensionDownloads = {writableRoot, saveResponse};
@@ -491,7 +493,14 @@
     list.replaceChildren(...saved.map(renderFile));
     syncSavedRows();
     syncVisibility();
-    status.textContent = entries.length ? `共 ${entries.length} 个文件` : readError ? `无法读取下载文件：${readError.message}` : '暂无下载文件';
+    if (entries.length) {
+      const bytes = entries.reduce((sum, entry) => sum + entry.size, 0);
+      const size = span('file-size-emphasis', BjtuFileSizeEmphasis.formatBytes(bytes));
+      BjtuFileSizeEmphasis.applyBytes(size, bytes);
+      status.replaceChildren(`共 ${entries.length} 个文件：`, size);
+    } else {
+      status.textContent = readError ? `无法读取下载文件：${readError.message}` : '暂无下载文件';
+    }
   }
   const update = () => void refresh().catch(report);
   invert.onclick = () => {
@@ -521,7 +530,7 @@
     } else if (data?.type === 'progress-ended') {
       const task = transfers.get(data.id);
       if (task) {
-        completedBytes += Math.max(0,Number(data.loaded ?? task.loaded) || 0);
+        if (data.completed === true) completedBytes += Math.max(0,Number(data.loaded ?? task.loaded) || 0);
         transfers.delete(data.id);
         scheduleTransferRender(true); update();
       }

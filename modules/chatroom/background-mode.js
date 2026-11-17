@@ -133,7 +133,7 @@
   let ready = false, fileDecisionHandler;
   chrome.runtime.onMessage.addListener((message,sender,respond) => {
     if (sender.id !== chrome.runtime.id) return false;
-    if (enabled && message?.type === 'BJTU_CHATROOM_FILE_DECISION' && message.engineId === engineId && fileDecisionHandler) {
+    if (message?.type === 'BJTU_CHATROOM_FILE_DECISION' && message.engineId === engineId && fileDecisionHandler) {
       void Promise.resolve().then(() => fileDecisionHandler(message)).then(respond,
         error => respond({ok:false,error:error.message}));
       return true;
@@ -168,12 +168,13 @@
     } catch { return false; }
   }
   async function notifyInvitation({peerId,media,name,reason,sid,size,conversationId,pending = false} = {}) {
-    if (!enabled) return;
-    await chrome.runtime.sendMessage({type:'BJTU_CHATROOM_BACKGROUND_INVITATION',
-      engineId,peerId,media,name,reason,sid,size,conversationId,pending}).catch(error => console.warn('[bjtu] background invitation:',error));
+    const file = pending && media === 'file';
+    if (!enabled && !file) return;
+    return chrome.runtime.sendMessage({type:file ? 'BJTU_CHATROOM_FILE_INVITATION' : 'BJTU_CHATROOM_BACKGROUND_INVITATION',
+      engineId,peerId,media,name,reason,sid,size,conversationId,pending});
   }
   function closeInvitation(peerId,sid) {
-    if (enabled) void chrome.runtime.sendMessage({type:'BJTU_CHATROOM_FILE_INVITATION_CLOSED',engineId,peerId,sid}).catch(() => {});
+    return chrome.runtime.sendMessage({type:'BJTU_CHATROOM_FILE_INVITATION_CLOSED',engineId,peerId,sid}).catch(() => {});
   }
   function publishStatus(detail) {
     if (!enabled) return;

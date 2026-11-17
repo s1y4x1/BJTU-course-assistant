@@ -349,6 +349,12 @@
     sidebar.render(); updateConversation(); renderMessages();
     void markConversationRead();
   }
+  function isChatroomActive() {
+    if (background || stopped || !embeddedVisible || document.visibilityState !== 'visible') return false;
+    if (document.hasFocus()) return true;
+    if (embedded) { try { return parent.document.hasFocus(); } catch {} }
+    return false;
+  }
   async function markConversationRead({interactive = false} = {}) {
     if (background) return;
     const view = state.conversations?.[selected];
@@ -773,8 +779,26 @@
     });
     controls.append(accept, button('拒绝', () => endSession(s, '已拒绝', true)));
     card.append(controls); s.inviteCard = card;
+    if (s.type === 'file') s.waitingDecision = true;
     createMediaMessage(s); s.card.append(card);
     s.controls = node('div', undefined, 'actions'); s.card.append(s.controls);
+    notifyInactiveFileInvitation(s);
+  }
+  function notifyInactiveFileInvitation(s) {
+    if (!backgroundMode || !s.waitingDecision || s.ended || s.accepting || s.accepted || s.invitationNotification || isChatroomActive()) return;
+    s.invitationNotification = backgroundMode.notifyInvitation({
+      peerId:s.peerId, media:'file', name:s.name, size:s.size, conversationId:s.conversationId, sid:s.id, pending:true
+    }).then(result => {
+      if (result?.ok === false) throw new Error(result.error || '无法显示文件接收确认');
+    }).catch(report);
+  }
+  function closeFileInvitation(s) {
+    s.waitingDecision = false;
+    // A very fast local decision may arrive before the worker creates the toast.
+    if (s.invitationNotification) void s.invitationNotification.then(() => backgroundMode.closeInvitation(s.peerId,s.id));
+  }
+  function notifyPendingFileInvitations() {
+    for (const s of sessions.values()) notifyInactiveFileInvitation(s);
   }
   async function acceptInvitation(s, automatic = false) {
     if (s.ended || s.accepted || s.accepting) return;
@@ -801,6 +825,7 @@
       renderTransfer(s);
     }
     s.accepted = true; s.status = '等待直连'; s.inviteCard?.remove();
+    closeFileInvitation(s);
     if (s.type === 'screen') renderScreenMessage(s);
     createPC(s); await signal(s, 'accept'); touch(s);
   }
@@ -911,10 +936,9 @@
         if (background) {
           if (globalThis.BjtuChatroomEngineLease?.draining) { endSession(s,'正在切换至前台，请重新发送',true); return; }
           if (s.type !== 'file' || !await backgroundMode.canReceiveFile(s.size)) {
+            if (s.ended) return;
             if (s.type === 'file') {
-              s.waitingDecision = true; showInvitation(s);
-              void backgroundMode.notifyInvitation({peerId,media:s.type,name:s.name,size:s.size,conversationId,sid,
-                pending:true,reason:'文件超过自动接收限制，或未满足后台自动保存条件'}).catch(report);
+              showInvitation(s);
             } else {
               endSession(s,'后台不接受屏幕共享，请打开聊天室处理',true);
               void backgroundMode.notifyInvitation({peerId,media:s.type,name:s.name,reason:'请打开聊天室观看',sid}).catch(report);
@@ -1083,6 +1107,7 @@
     s.completed = true;
     s.completionText = s.savedPath ? `已保存到 ${s.savedPath}` : '已保存到聊天室，可从会话中打开';
     s.status = s.completionText; updateTransfer(s);
+    s.downloadProgress?.finish({completed:true});
     void previewFile(s, file).catch(report);
     try { s.channel.send(JSON.stringify({ type: 'complete' })); } catch {}
     // Do not close immediately after send(): the completion frame may still be
@@ -1238,7 +1263,7 @@
     s.ended = true; s.status = reason; clearTimeout(s.timer);
     clearTimeout(s.transferRenderTimer);
     s.receiveChunks = null;
-    if (s.waitingDecision) backgroundMode?.closeInvitation(s.peerId,s.id);
+    closeFileInvitation(s);
     closedSessions.set(s.id, Date.now());
     while (closedSessions.size > 128) closedSessions.delete(closedSessions.keys().next().value);
     s.rejectWait?.(); s.wake = null; s.file = null; s.candidates.length = 0;
@@ -1249,7 +1274,7 @@
     if (s.pc) { s.pc.onicecandidate = s.pc.onconnectionstatechange = s.pc.ontrack = s.pc.ondatachannel = null; s.pc.close(); }
     s.channel = s.pc = s.remoteStream = null;
     s.downloadProgress?.update(s.done,s.size);
-    void discardPartialDownload(s).catch(report).finally(() => s.downloadProgress?.finish());
+    void discardPartialDownload(s).catch(report).finally(() => s.downloadProgress?.finish({completed:s.completed === true}));
     if (!s.completed) releaseResources(s);
     sessions.delete(s.id); updateTransfer(s, reason);
     if (s.card) {
@@ -1451,12 +1476,18 @@
       return;
     }
     if (event.data?.type !== 'BJTU_CHATROOM_WINDOW_VISIBILITY') return;
-    if (event.data.visible === false) { embeddedVisible = false; stopCapture(); clearSharedDraft(); }
+    if (event.data.visible === false) { embeddedVisible = false; stopCapture(); clearSharedDraft(); notifyPendingFileInvitations(); }
     else if (event.data.visible === true) { embeddedVisible = true; scheduleState(); if (online) {void action('scan').catch(report); publishDraft();} void markConversationRead(); }
   }, { signal: uiAbort.signal });
   window.addEventListener('bjtu-chatroom-transport-ready', () => attachTransport().catch(report), { signal: uiAbort.signal });
   window.addEventListener('focus', () => { void markConversationRead(); }, {signal:uiAbort.signal});
-  document.addEventListener('visibilitychange', () => { void markConversationRead(); }, {signal:uiAbort.signal});
+  const checkAfterBlur = () => setTimeout(() => { if (!stopped) notifyPendingFileInvitations(); }, 0);
+  window.addEventListener('blur', checkAfterBlur, {signal:uiAbort.signal});
+  if (embedded) { try { parent.addEventListener('blur', checkAfterBlur, {signal:uiAbort.signal}); } catch {} }
+  document.addEventListener('visibilitychange', () => {
+    void markConversationRead();
+    if (document.visibilityState !== 'visible') notifyPendingFileInvitations();
+  }, {signal:uiAbort.signal});
   window.addEventListener('beforeunload', (event) => {
     if (background) return;
     if (sessions.size || capture) { event.preventDefault(); event.returnValue = ''; }
@@ -1495,16 +1526,16 @@
       return {ok:false,error:'文件邀请已失效，请让对方重新发送。'};
     if (!accept) { endSession(s,'已拒绝',true); return {ok:true}; }
     if (globalThis.BjtuChatroomEngineLease?.draining) return {ok:false,error:'邀请正在移交前台，请在聊天室内接收。',openChat:true,conversationId:s.conversationId};
-    if (!await backgroundMode.canReceiveFile(s.size,true)) {
+    if (background && !await backgroundMode.canReceiveFile(s.size,true)) {
       await handoffInvitations([s]);
       return {ok:true,openChat:true,conversationId:s.conversationId};
     }
-    try { await acceptInvitation(s,true); }
+    try { await acceptInvitation(s,background); }
     catch (error) {
       endSession(s,error.message || '接收未开始',true);
       return {ok:false,error:error.message || '接收未开始',openChat:true,conversationId:s.conversationId};
     }
-    return s.accepted ? {ok:true} : {ok:false,error:'后台保存失败，请打开聊天室后重新发送。',openChat:true,conversationId:s.conversationId};
+    return s.accepted ? {ok:true} : {ok:false,error:'保存文件失败，请打开聊天室后重新发送。',openChat:true,conversationId:s.conversationId};
   });
   // In proxy mode the background engine keeps pending invitations itself; the
   // handoff list is only meaningful when this page owns the engine.
