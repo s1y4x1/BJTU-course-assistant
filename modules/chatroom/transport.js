@@ -554,10 +554,25 @@
     setMember(r, publicIdentity.id, true, {inviter, requestId, actorName:p?.nickname || p?.ip || '成员',
       targetName:publicIdentity.nickname || localIP || '成员'});
     data.rooms = data.rooms.filter(room => room.id !== r.id); data.rooms.push(r);
+    const view = conversationView(r.id);
+    delete view.leftGroupName;
+    view.hidden = false;
     data.departedRooms = data.departedRooms.filter(room => room.roomId !== r.id);
     if (proof) data.groupJoinProofs[r.id] = proof;
     else delete data.groupJoinProofs[r.id];
     return r;
+  }
+  function archiveGroup(r) {
+    const view = conversationView(r.id);
+    view.leftGroupName = r.name;
+    data.rooms = data.rooms.filter(room => room !== r);
+    delete data.groupJoinProofs[r.id];
+    for (const message of data.messages) if (message.conversationId === r.id) {
+      for (const delivery of Object.values(message.delivery || {})) if (['queued', 'sending'].includes(delivery.status)) {
+        Object.assign(delivery, {status:'withdrawn', error:'', errorCode:'', nextRetryAt:0});
+      }
+      if (message.delivery) messageStatus(message);
+    }
   }
   async function invite(effects, r, peerIds) {
     if (!Array.isArray(peerIds) || !peerIds.length || peerIds.length > MAX.members) fail('请选择有效邀请成员。');
@@ -826,12 +841,20 @@
         if (typeof args.muted !== 'boolean') fail('无效免打扰状态。');
         conversationView(token(args.conversationId)).muted = args.muted; return {};
       }
+      case 'conversation-pin': {
+        if (typeof args.pinned !== 'boolean') fail('无效置顶状态。');
+        conversationView(token(args.conversationId)).pinnedAt = args.pinned ? Date.now() : 0;
+        return {};
+      }
+      case 'conversation-hide':
+        conversationView(token(args.conversationId)).hidden = true;
+        return {};
       case 'conversation-clear':
       case 'conversation-delete': {
         const id = token(args.conversationId), view = conversationView(id);
         data.messages = data.messages.filter(message => message.conversationId !== id);
         Object.assign(view, {unread: 0, lastText: '', lastAt: 0, lastMessageId: '', lastSenderId: ''});
-        if (name === 'conversation-delete') view.hidden = true;
+        if (name === 'conversation-delete') { view.hidden = true; delete view.pinnedAt; }
         return {};
       }
       case 'media-message': {
@@ -973,11 +996,9 @@
         fanout(effects, r.members, 'group-leave', {roomId:r.id,leaveId});
         const pending = r.members.filter(member => member !== publicIdentity.id && !peer(member)?.online);
         if (pending.length) data.departedRooms = [...data.departedRooms.filter(item => item.roomId !== r.id), {roomId:r.id,leaveId,pending}].slice(-MAX.rooms);
-        data.rooms = data.rooms.filter((v) => v.id !== r.id);
-        delete data.groupJoinProofs[r.id];
+        archiveGroup(r);
         data.outgoing = data.outgoing.filter((v) => v.roomId !== r.id);
         data.requests = data.requests.filter((v) => v.room?.id !== r.id);
-        if (data.conversations) delete data.conversations[r.id];
         return {};
       }
       case 'send-message': {
@@ -999,6 +1020,7 @@
       case 'withdraw': {
         const m = data.messages.find(m => m.id === token(args.messageId) && m.senderId === publicIdentity.id && m.delivery && !m.media && !m.system);
         if (!m) fail('找不到可重试的文本消息。');
+        if (name === 'retry' && m.conversationId.startsWith('group:')) room(m.conversationId);
         if (['delivered', 'withdrawn', 'local'].includes(m.status)) fail('消息已确认、仅本地保存或已取消重试。');
         for (const d of Object.values(m.delivery)) {
           if (['delivered', 'withdrawn'].includes(d.status)) continue;
@@ -1210,10 +1232,7 @@
         old.version = Math.max(old.version, r.version);
         old.members = Object.keys(old.memberStates).filter(member => old.memberStates[member].present);
         if (old.members.length > MAX.members) fail('群成员数量已达到上限。');
-        if (!old.members.includes(publicIdentity.id)) {
-          data.rooms = data.rooms.filter(room => room !== old);
-          delete data.groupJoinProofs[old.id];
-        }
+        if (!old.members.includes(publicIdentity.id)) archiveGroup(old);
         else if (changed) groupBroadcast(effects, old);
         break;
       }

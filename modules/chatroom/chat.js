@@ -122,7 +122,7 @@
       counter.textContent = `${size} B / 16 kB`;
       counter.classList.toggle('over-limit', size > MESSAGE_FILE_LIMIT);
     }
-    $('send').disabled = !online || !selected || sendInFlight || !value.trim();
+    $('send').disabled = !online || !selected || isLeftGroup() || sendInFlight || !value.trim();
   }
   function updateDraftPreview() {
     if (!$('message').value.length) {draftStartedAt = Date.now(); clearSharedDraft();}
@@ -179,6 +179,7 @@
   function uuid() { return crypto.randomUUID(); }
   function bytes(value) { return globalThis.BjtuFileSizeEmphasis?.formatBytes(value) || `${value} B`; }
   function currentRoom() { return state.rooms.find((r) => r.id === selected); }
+  function isLeftGroup(id = selected) { return !!state.conversations?.[id]?.leftGroupName; }
   function recipients() {
     const ids = selected === 'public' ? state.peers.filter((p) => p.online).map((p) => p.id)
       : selected.startsWith('peer:') ? [selected.slice(5)] : (currentRoom()?.members || []);
@@ -229,7 +230,10 @@
     }
     const retained = new Set(state.messages.map(m => m.id));
     for (const message of previousMessages) if (!retained.has(message.id) && mediaMessages.has(message.id)) removeLocalMedia(mediaMessages.get(message.id));
-    for (const s of [...sessions.values()]) if (!permitted(s.peerId)) endSession(s, '对方已被屏蔽或不符合好友策略', true);
+    for (const s of [...sessions.values()]) {
+      if (isLeftGroup(s.conversationId) && !s.completed) endSession(s, '已退出群聊', true);
+      else if (!permitted(s.peerId)) endSession(s, '对方已被屏蔽或不符合好友策略', true);
+    }
     renderState();
   }
   function scheduleState() {
@@ -374,9 +378,12 @@
     catch(error) { report(error); }
     finally { markingRead = false; scheduleState(); }
   }
-  function chooseConversation(id, {interactive = false} = {}) {
+  function chooseConversation(id, {interactive = false, focusComposer = true} = {}) {
     if (id === selected) {
-      if (interactive) { $('message').focus(); void markConversationRead({interactive:true}); }
+      if (interactive) {
+        if (focusComposer && !isLeftGroup()) $('message').focus();
+        void markConversationRead({interactive:true});
+      }
       return;
     }
     clearSharedDraft(); $('share-draft').checked = false;
@@ -389,11 +396,14 @@
     draftStartedAt = Date.now();
     sidebar?.render();
     updateConversation(); renderMessages();
-    $('message').focus();
+    if (focusComposer && !isLeftGroup()) $('message').focus();
     void markConversationRead({interactive});
   }
   function updateConversation() {
     const room = currentRoom(), peerId = selected.startsWith('peer:') ? selected.slice(5) : null;
+    const left = isLeftGroup();
+    $('message-form').hidden = left;
+    $('left-group-status').hidden = !left;
     $('share-draft-label').textContent = peerId ? '允许对方实时观看' : '允许他人实时观看';
     $('share-draft').disabled = !online || !selected || !screenRecipients().length;
     if ($('share-draft').disabled && $('share-draft').checked) {
@@ -402,7 +412,7 @@
     }
     const title = $('conversation-title');
     const displayName = !selected ? '' : peerId ? nameOf(peerId)
-      : state.conversations?.[selected]?.remark || (selected === 'public' ? '公共群聊' : room?.name || '群聊已结束');
+      : state.conversations?.[selected]?.remark || (selected === 'public' ? '公共群聊' : room?.name || state.conversations?.[selected]?.leftGroupName || '群聊已结束');
     if (title.dataset.conversationId !== selected || document.activeElement !== title) {
       title.value = pendingTitle?.id === selected ? pendingTitle.value : displayName;
       title.dataset.conversationId = selected; title.dataset.initialValue = title.value;
@@ -509,7 +519,7 @@
     if (changed) { container.replaceChildren(); messageNodes.clear(); messageConversation = selected; }
     const items = [...state.messages.filter(message => !mediaMessages.has(message.id)).map(message => ({...message, displayName: nameOf(message.senderId)})), ...[...mediaMessages.values()].map(s => ({
       id: s.id, conversationId: s.conversationId, senderId: s.senderId, createdAt: s.createdAt, media: true
-    })), ...(selected === 'public' ? presenceMessages : []), ...liveDrafts.values(), ...($('draft-preview').checked && $('message').value.length ? [{id:'draft:self',draft:true,senderId:state.self.id,text:$('message').value,conversationId:selected,createdAt:draftStartedAt}] : [])]
+    })), ...(selected === 'public' ? presenceMessages : []), ...liveDrafts.values(), ...(!isLeftGroup() && $('draft-preview').checked && $('message').value.length ? [{id:'draft:self',draft:true,senderId:state.self.id,text:$('message').value,conversationId:selected,createdAt:draftStartedAt}] : [])]
       .filter((m) => m.conversationId === selected).sort((a,b) => Number(!!a.draft)-Number(!!b.draft) || a.createdAt-b.createdAt);
     container.querySelector('[data-empty-message]')?.remove();
     reconcile(container, messageNodes, items, (m) => m.id, (message) => {
@@ -1396,7 +1406,7 @@
   }
   listen('message-form', 'submit', async (event) => {
     event.preventDefault(); const input = $('message'), text = input.value, conversationId = selected;
-    if (!text.trim() || !online || !selected || sendInFlight) return;
+    if (!text.trim() || !online || !selected || isLeftGroup() || sendInFlight) return;
     if (messageBytes() > MESSAGE_FILE_LIMIT) { enforceMessageLimit(); updateSendButton(); return; }
     const snapshot = text;
     sendInFlight = true; updateSendButton();

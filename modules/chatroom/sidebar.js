@@ -7,8 +7,8 @@
 (function(global) {
   'use strict';
   const instances = new WeakMap();
-  function bindHold(element, {onConfirm,signal} = {}) {
-    let hold;
+  function bindHold(element, {onConfirm,onStart,onEnd,signal} = {}) {
+    let hold, suppressClick = false;
     element.classList.add('hold-confirm');
     if (!element.querySelector('.hold-confirm-progress')) {
       const progress = document.createElement('span'); progress.className = 'hold-confirm-progress';
@@ -17,29 +17,34 @@
     function cancel() {
       if (!hold) return;
       cancelAnimationFrame(hold.frame); hold = null;
+      element.classList.remove('is-holding');
       element.style.removeProperty('--hold-confirm-progress');
       global.removeEventListener('pointerup',cancel); global.removeEventListener('pointercancel',cancel);
       signal?.removeEventListener('abort',cancel);
+      onEnd?.();
     }
     element.addEventListener('pointerdown',event => {
       if (event.button !== 0 || element.disabled) return;
+      suppressClick = false;
       cancel(); hold = {start:performance.now(),x:event.clientX,y:event.clientY};
+      element.classList.add('is-holding');
       global.addEventListener('pointerup',cancel); global.addEventListener('pointercancel',cancel);
       signal?.addEventListener('abort',cancel,{once:true});
+      onStart?.();
       const tick = now => {
         if (!hold) return;
         if (!element.isConnected || element.disabled) { cancel(); return; }
-        const progress = Math.min(1,(now-hold.start)/2000);
+        const progress = Math.min(1,(now-hold.start)/1000);
         element.style.setProperty('--hold-confirm-progress',String(progress));
         if (progress < 1) hold.frame = requestAnimationFrame(tick);
-        else { element.suppressClickUntil = now+800; cancel(); onConfirm(); }
+        else { suppressClick = true; cancel(); onConfirm(); }
       };
       hold.frame = requestAnimationFrame(tick);
     },{signal});
     element.addEventListener('pointermove',event => { if (hold && Math.hypot(event.clientX-hold.x,event.clientY-hold.y)>8) cancel(); },{signal});
     element.addEventListener('pointerleave',cancel,{signal});
     element.addEventListener('contextmenu',event => event.preventDefault(),{signal});
-    return {cancel};
+    return {consumeClick() { const result = suppressClick; suppressClick = false; return result; }};
   }
   function mount({root, getState, getSelected, mutate: hostMutate, onSelect, onDisconnect, report: hostReport} = {}) {
     if (!root) throw new Error('缺少聊天室 sidebar 容器。');
@@ -50,6 +55,8 @@
     let state = {self:{},settings:{},peers:[],rooms:[],requests:[],messages:[],conversations:{}}, selected = 'public';
     let online = false, pairingBusy = false, destroyed = false, transport, unsubscribe;
     let refreshPromise, refreshAgain = false, saveQueue = Promise.resolve(), revision = 0, settings;
+    let conversationMenu, menuAnchor;
+    let heldConversation;
     function node(tag, text, cls) {
       const el = document.createElement(tag);
       if (text !== undefined) el.textContent = String(text);
@@ -183,16 +190,51 @@
       }
       await refresh();
     }
-    function chooseConversation(id) {
+    function chooseConversation(id, {focusComposer = true} = {}) {
+      closeConversationMenu();
       selected = id;
-      try { onSelect?.(id,{interactive:true}); } finally { render(); }
+      try { onSelect?.(id,{interactive:true,focusComposer}); } finally { render(); }
     }
     function leaveGroup() {
       const roomId = selected;
       openEditor('退出群聊', fields => {
         fields.append(node('p', '确定退出当前群聊？'));
-        return async () => { await mutate('group-leave', {roomId}); if (selected === roomId) chooseConversation('public'); };
+        return () => mutate('group-leave', {roomId});
       });
+    }
+    function closeConversationMenu() {
+      if (!conversationMenu) return;
+      conversationMenu.remove(); conversationMenu = null;
+      menuAnchor?.setAttribute('aria-expanded','false'); menuAnchor = null;
+    }
+    function openConversationMenu(entry, anchor, event) {
+      closeConversationMenu();
+      const menu = conversationMenu = node('div', undefined, 'conversation-context-menu');
+      menuAnchor = anchor;
+      anchor.setAttribute('aria-expanded','true');
+      menu.setAttribute('popover','manual');
+      menu.setAttribute('role','group');
+      menu.setAttribute('aria-label',`${entry.name}的会话操作`);
+      const perform = async (action, args = {}) => {
+        closeConversationMenu();
+        await mutate(action, {conversationId:entry.id, ...args});
+      };
+      const pin = button(entry.view.pinnedAt ? '取消置顶' : '置顶',
+        () => perform('conversation-pin',{pinned:!entry.view.pinnedAt}), 'conversation-menu-pin');
+      const hide = button('隐藏', () => perform('conversation-hide'), 'conversation-menu-hide');
+      const del = button('删除', () => {
+        if (!hold.consumeClick()) toast('请长按「删除」1 秒确认删除会话及本地记录');
+      }, 'conversation-menu-delete');
+      const hold = bindHold(del,{signal:uiAbort.signal,onConfirm:() => void perform('conversation-delete').catch(report)});
+      menu.append(pin,hide,del);
+      root.append(menu);
+      menu.showPopover();
+      const rect = anchor.getBoundingClientRect();
+      const x = event && (event.clientX || event.clientY) ? event.clientX : rect.left;
+      const y = event && (event.clientX || event.clientY) ? event.clientY : rect.bottom;
+      menu.style.left = Math.max(4,Math.min(x, innerWidth-menu.offsetWidth-4)) + 'px';
+      menu.style.top = Math.max(4,Math.min(y, innerHeight-menu.offsetHeight-4)) + 'px';
+      if (event && !(event.clientX || event.clientY)) pin.focus({preventScroll:true});
     }
   function reconcile(parent, cache, items, keyOf, build) {
     const keep = new Set();
@@ -226,37 +268,64 @@
       const name = entry.kind === 'private' ? nameOf(entry.peerId) : entry.view.remark || (isPublic ? '公共群聊' : entry.name);
       return {...entry, name, members,
         onlineCount: members?.filter(id => id === state.self.id || state.peers.some(peer => peer.id === id && peer.online)).length || 0};
-    }).sort((a,b) => (b.view.lastAt || 0) - (a.view.lastAt || 0));
-    reconcile($('conversations'), roomNodes, entries, r => r.id, entry => {
+    });
+    // Selecting a row may mark its messages read immediately. Don't replace
+    // or move the pressed button until its pointer gesture has finished.
+    if (!heldConversation) reconcile($('conversations'), roomNodes, entries, r => r.id, entry => {
       const el = node('div', undefined, 'conversation-entry');
-      const link = button('', () => { if (performance.now() >= (link.suppressClickUntil || 0)) chooseConversation(entry.id); }, 'conversation-link');
+      const link = button('', () => { if (!hold.consumeClick()) chooseConversation(entry.id); }, 'conversation-link');
       link.dataset.conversation = entry.id;
-      link.title = '长按 2 秒删除会话及本地记录';
+      link.title = '长按 1 秒或右键打开会话菜单';
+      link.setAttribute('aria-expanded','false');
       const avatar = node('span', entry.kind === 'group' ? '👥' : '👤', 'conversation-avatar');
       avatar.setAttribute('aria-hidden', 'true');
       if (entry.kind === 'private') {
         const dot = node('span',undefined,`conversation-online-dot${entry.online ? ' online' + (entry.background ? ' background' : '') : ''}`);
         dot.title = entry.online ? entry.background ? '后台在线' : '在线' : '离线'; avatar.append(dot);
       }
-      else avatar.append(node('span', `${entry.onlineCount}/${entry.members?.length || 0}`, 'conversation-group-count'));
+      else if (!entry.left) avatar.append(node('span', `${entry.onlineCount}/${entry.members?.length || 0}`, 'conversation-group-count'));
       const content = node('span', undefined, 'conversation-preview'), name = node('span', entry.name, 'conversation-name');
       name.title = '修改备注';
       name.addEventListener('click', event => {
         event.stopPropagation();
-        if (performance.now() < (link.suppressClickUntil || 0)) return;
+        if (hold.consumeClick()) return;
         if (entry.kind === 'private') editPerson(entry.peerId);
         else editText('修改群聊备注','备注',entry.view.remark || '',remark => mutate('conversation-remark',{conversationId:entry.id,remark}),80);
       }, {signal:uiAbort.signal});
       const summary = String(entry.view.lastText || '').replace(/```[\s\S]*?```/g,' [代码] ').replace(/[*_`>#]/g,'').replace(/\s+/g,' ').slice(0,160);
-      content.append(name, node('span', summary, 'muted conversation-kind'));
+      content.append(name, node('span', summary || (entry.left ? '已退出群聊' : ''), 'muted conversation-kind'));
       link.append(avatar, content);
+      if (entry.view.pinnedAt) link.append(node('span', '📌', 'conversation-muted-icon'));
       if (entry.view.muted) link.append(node('span', '🔕', 'conversation-muted-icon'));
       const unread = unreadCount(entry.view);
       if (unread) link.append(node('span', unread > 99 ? '99+' : unread, 'conversation-unread-badge'));
-      bindHold(link,{signal:uiAbort.signal,onConfirm:() => mutate('conversation-delete',{conversationId:entry.id}).catch(report)});
+      const hold = bindHold(link,{
+        signal:uiAbort.signal,
+        onStart:() => {
+          heldConversation = link;
+          chooseConversation(entry.id,{focusComposer:false});
+        },
+        onEnd:() => {
+          if (heldConversation !== link) return;
+          heldConversation = null;
+          setTimeout(render,0);
+        },
+        onConfirm:() => openConversationMenu(entry,link)
+      });
+      link.addEventListener('contextmenu',event => {
+        event.preventDefault();
+        if (event.pointerType !== 'touch') openConversationMenu(entry,link,event);
+      }, {signal:uiAbort.signal});
       el.append(link);
       return el;
     });
+    if (menuAnchor && !menuAnchor.isConnected) {
+      const replacement = roomNodes.get(menuAnchor.dataset.conversation)?.el.querySelector('.conversation-link');
+      if (replacement) {
+        menuAnchor = replacement;
+        menuAnchor.setAttribute('aria-expanded','true');
+      } else closeConversationMenu();
+    }
     if (!entries.some(entry => entry.id === selected)) {
       selected = entries[0]?.id || ''; onSelect?.(selected);
     }
@@ -505,12 +574,21 @@
     function destroy() {
       if (destroyed) return;
       for (const id of dirty.keys()) saveSetting(id);
-      destroyed = true; uiAbort.abort(); unsubscribe?.();
+      destroyed = true; closeConversationMenu(); uiAbort.abort(); unsubscribe?.();
       settings?.destroy();
       if ($('editor').open) $('editor').close();
       instances.delete(root);
     }
     global.addEventListener('pagehide', destroy, {once:true,signal:uiAbort.signal});
+    document.addEventListener('pointerdown',event => {
+      if (conversationMenu && !conversationMenu.contains(event.target)) closeConversationMenu();
+    },{capture:true,signal:uiAbort.signal});
+    document.addEventListener('keydown',event => {
+      if (event.key !== 'Escape' || !conversationMenu) return;
+      event.preventDefault();
+      const anchor = menuAnchor;
+      closeConversationMenu(); anchor?.focus({preventScroll:true});
+    },{signal:uiAbort.signal});
     setReady(false); render();
     setServerStatus(global.BjtuChatroomLink?.discoveryStatus || 'disconnected');
     const confirmClear = submit => openEditor('清空记录', fields => {

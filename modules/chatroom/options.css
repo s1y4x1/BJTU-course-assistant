@@ -33,6 +33,24 @@ html[data-color-scheme="dark"] .chatroom-options-card .option-action-link { colo
 .conversation-muted-icon { font-size:var(--bjtu-font-size-auxiliary,11px); }
 .hold-confirm { position:relative; overflow:hidden; }
 .hold-confirm-progress { position:absolute; left:0; right:0; bottom:0; height:3px; background:#dc2626; transform:scaleX(var(--hold-confirm-progress,0)); transform-origin:left; pointer-events:none; }
+.conversation-link.hold-confirm { isolation:isolate; }
+.conversation-link > .hold-confirm-progress {
+  inset:0; height:auto; z-index:-1; background:#81ade5;
+}
+.conversation-link.is-holding .conversation-kind { color:inherit; }
+html[data-color-scheme="dark"] .conversation-link > .hold-confirm-progress { background:#255286; }
+.conversation-context-menu:popover-open {
+  position:fixed; inset:auto; margin:0; padding:6px; display:flex; gap:5px;
+  max-width:calc(100vw - 8px); flex-wrap:wrap; border:1px solid var(--chat-line);
+  border-radius:8px; background:var(--bjtu-card-background,#fff); box-shadow:0 5px 20px #0003;
+}
+:is(.chatroom-options-card,#sidebar-host) .conversation-context-menu button {
+  border:0; border-radius:6px; padding:4px 9px; color:white; cursor:pointer; white-space:nowrap;
+}
+.conversation-menu-pin { background:#1976d2; }
+.conversation-menu-hide { background:#5c6878; }
+.conversation-menu-delete { background:#b91c1c; touch-action:manipulation; user-select:none; }
+.conversation-menu-delete .hold-confirm-progress { background:#ffd5d5; }
 :is(.chatroom-options-card,#sidebar-host) #chatroomStartServer { color:var(--chat-accent); text-decoration:none; font-size:var(--bjtu-font-size-body,13px); }
 :is(.chatroom-options-card,#sidebar-host) * { box-sizing:border-box; }
 :is(.chatroom-options-card,#sidebar-host) [hidden] { display:none !important; }

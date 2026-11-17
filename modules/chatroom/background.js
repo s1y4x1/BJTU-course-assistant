@@ -53,7 +53,7 @@
     }
     if (message?.type === 'BJTU_CHATROOM_OPTIONS_ACTION') {
       const actions = new Set(['settings','remark','conversation-remark','block','friend-request','friend-response','friend-delete',
-        'conversation-mute','conversation-clear','conversation-delete','group-create','group-invite','group-response','group-leave',
+        'conversation-mute','conversation-pin','conversation-hide','conversation-clear','conversation-delete','group-create','group-invite','group-response','group-leave',
         'scan','connect','pair-create','pair-accept','pair-complete','close','profile-request']);
       if (!actions.has(message.name)) { respond({ok:false,error:'不支持的选项页操作。'}); return false; }
       void (async () => {
