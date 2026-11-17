@@ -154,14 +154,15 @@
     if (!enabled || globalThis.BjtuChatroomEngineLease?.draining) return false;
     if (!Number.isSafeInteger(size) || size < 0) return false;
     try {
+      const {defaults,shouldAutoReceiveFile} = globalThis.BjtuChatroomSettings;
       const settings = await chrome.storage.local.get({
-        chatroomBackgroundEnabled:true,chatroomBackgroundReceiveFiles:true,
-        chatroomAutoSaveEnabled:true,chatroomAutoSaveMaxBytes:100000000
+        chatroomBackgroundEnabled:defaults.chatroomBackgroundEnabled,
+        chatroomBackgroundReceiveFiles:defaults.chatroomBackgroundReceiveFiles,
+        chatroomAutoSaveEnabled:defaults.chatroomAutoSaveEnabled,
+        chatroomAutoSaveMaxBytes:defaults.chatroomAutoSaveMaxBytes
       });
       if (settings.chatroomBackgroundEnabled === false) return false;
-      if (!approved && (settings.chatroomBackgroundReceiveFiles === false ||
-          settings.chatroomAutoSaveEnabled === false ||
-          !(settings.chatroomAutoSaveMaxBytes === null || size < settings.chatroomAutoSaveMaxBytes))) return false;
+      if (!approved && (settings.chatroomBackgroundReceiveFiles === false || !shouldAutoReceiveFile(size, settings))) return false;
       // The file sink picks between the granted directory and browser-private storage.
       return !globalThis.BjtuChatroomEngineLease?.draining;
     } catch { return false; }

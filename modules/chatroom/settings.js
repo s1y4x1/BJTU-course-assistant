@@ -4,7 +4,7 @@
     chatroomSignalingUrl: 'ws://127.0.0.1:1897/chatroom',
     chatroomAutoSaveEnabled: true,
     chatroomManageDownloadsEnabled: true,
-    chatroomAutoSaveMaxBytes: 100000000,
+    chatroomAutoSaveMaxBytes: 20 * 1024 ** 2,
     chatroomNotifyNewMessages: true,
     chatroomBackgroundEnabled: true,
     chatroomBackgroundReceiveFiles: true,
@@ -104,17 +104,23 @@
     channel.postMessage('changed'); channel.close();
   }
   const units = ['B', 'KB', 'MB', 'GB'];
+  const unitBytes = units.map((_, index) => 1024 ** index);
+  function shouldAutoReceiveFile(size, settings = defaults) {
+    const limit = settings.chatroomAutoSaveMaxBytes;
+    return Number.isSafeInteger(size) && size >= 0 && settings.chatroomAutoSaveEnabled !== false
+      && (limit === null || size < limit);
+  }
   function normalizeLimit(text, unit) {
     if (String(text).trim() === '') return null;
-    const bytes = Number(text) * 1000 ** units.indexOf(unit);
+    const bytes = Number(text) * unitBytes[units.indexOf(unit)];
     if (!units.includes(unit) || !Number.isFinite(bytes) || bytes < 1 || bytes > Number.MAX_SAFE_INTEGER)
       throw new Error('文件大小必须至少为 1 B，或留空表示不设限制。');
     return Math.round(bytes);
   }
   function displayLimit(bytes) {
     if (bytes === null) return {value: '', unit: 'MB'};
-    const index = Math.max(0, Math.min(3, Math.floor(Math.log10(Math.max(1, bytes)) / 3)));
-    return {value: String(Number((bytes / 1000 ** index).toPrecision(12))), unit: units[index]};
+    const index = Math.max(0, unitBytes.findLastIndex(multiplier => bytes >= multiplier));
+    return {value: String(bytes / unitBytes[index]), unit: units[index]};
   }
   async function directory() {
     const db = await new Promise((resolve, reject) => {
@@ -327,7 +333,7 @@
     await refreshAuthorization();
     return {flush:() => saveQueue,destroy() { abort.abort(); chrome.storage.onChanged.removeListener(changed); }};
   }
-  global.BjtuChatroomSettings = {defaults, normalizeLimit, displayLimit, mount, createDownload, discardDownload, notifyDownloadsChanged,
+  global.BjtuChatroomSettings = {defaults, shouldAutoReceiveFile, normalizeLimit, displayLimit, mount, createDownload, discardDownload, notifyDownloadsChanged,
     saveReceivedFile, saveSentHandle, loadReceivedFile, deleteReceivedFile,
     removeReceivedFile: key => fileHandleEntry(key, 'delete')};
 })(globalThis);

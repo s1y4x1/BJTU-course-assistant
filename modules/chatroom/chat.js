@@ -926,9 +926,10 @@
         if (s.type === 'screen') {
           await acceptInvitation(s);
         } else {
-          const settings = await chrome.storage.local.get(globalThis.BjtuChatroomSettings.defaults);
+          const {defaults,shouldAutoReceiveFile} = globalThis.BjtuChatroomSettings;
+          const settings = await chrome.storage.local.get(defaults);
           if (s.ended) return;
-          if (settings.chatroomAutoSaveEnabled !== false && (settings.chatroomAutoSaveMaxBytes === null || s.size < settings.chatroomAutoSaveMaxBytes))
+          if (shouldAutoReceiveFile(s.size, settings))
             await acceptInvitation(s, true);
           else showInvitation(s);
         }

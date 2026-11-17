@@ -37,10 +37,9 @@
         <div class="chatroom-auto-save-option">
           <label class="check"><input id="chatroomAutoSaveEnabled" type="checkbox" checked><span>自动保存小于</span></label>
           <input id="chatroomAutoSaveValue" type="number" min="0" step="any" placeholder="∞" aria-label="自动保存的文件大小上限，留空表示不设限制">
-          <select id="chatroomAutoSaveUnit" aria-label="文件大小单位"><option>B</option><option>KB</option><option selected>MB</option><option>GB</option></select>
-          <span>的文件到扩展目录/downloads/</span>
+          <select id="chatroomAutoSaveUnit" aria-label="文件大小单位（按 1024 换算）" title="按 1024 换算；此处 1 MB = 1 MiB"><option>B</option><option>KB</option><option selected>MB</option><option>GB</option></select>
+          <span>的文件到扩展目录/downloads/<span class="tip">未授予扩展目录写入权限时，符合文件大小限制的文件仍会自动接收，保存到浏览器为聊天室提供的私有存储，可从会话中打开。</span></span>
         </div>
-        <div class="tip">未授予扩展目录写入权限时，符合文件大小限制的文件仍会自动接收，保存到浏览器为聊天室提供的私有存储，可从会话中打开。</div>
         <button id="chatroomAuthorizeDownloads" type="button" class="secondary">授权扩展目录</button>
         <label id="chatroomManageDownloadsOption" class="check"><input id="chatroomManageDownloadsEnabled" type="checkbox" checked><span>在扩展页面管理收到的文件</span></label>
       </form><p class="muted">局域网发现不等于身份认证，请核对对方身份。直连会向对方暴露网络地址。</p></details>
