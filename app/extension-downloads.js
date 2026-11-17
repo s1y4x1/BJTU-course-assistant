@@ -350,13 +350,13 @@
       group.push(entry); sizes.set(entry.size,group);
     }
     const candidates = [...sizes.values()].filter(entries => entries.length > 1).flat();
-    const total = candidates.reduce((sum, entry) => sum + Math.max(1,entry.size),0);
+    const total = candidates.reduce((sum, entry) => sum + entry.size,0);
     let completed = 0, processed = 0;
     const reportProgress = () => onProgress(completed,candidates.length,processed,total);
     reportProgress();
     for (const entry of candidates) {
       const {size} = entry;
-      const end = processed + Math.max(1,size);
+      const end = processed + size;
       const file = await entry.handle.getFile();
       if (file.size === size && file.lastModified === entry.savedAt) {
         const signature = (entry.private ? 'private:' : 'directory:') + size + ':' + await fileSignature(file, bytes => {
@@ -447,15 +447,22 @@
     try {
       const progressText = dedupProgress.querySelector('[role="status"]');
       const progressBar = dedupProgress.querySelector('[role="progressbar"]');
-      let lastLabel;
+      let lastLabel, lastBytes;
       const duplicates = await findDuplicates((completed,count,processed,total) => {
         if (!count) return;
-        const percent = Math.min(100,Math.floor(100 * processed / total));
-        const label = `正在计算重复文件… ${completed} / ${count} 个 · ${percent}%`;
-        if (label === lastLabel) return;
-        lastLabel = label;
-        progressText.textContent = label;
-        progressBar.setAttribute('aria-valuenow',String(percent));
+        const percent = total ? 100 * (processed / total) : completed === count ? 100 : 0;
+        const size = BjtuFileSizeEmphasis.formatBytes;
+        const bytes = `${size(processed)} / ${size(total)} · ${Math.floor(percent)}%`;
+        const label = `正在计算重复文件… ${completed} / ${count} 个 · ${bytes}`;
+        if (lastLabel !== label) {
+          progressText.textContent = label;
+          lastLabel = label;
+        }
+        if (lastBytes !== bytes) {
+          progressBar.setAttribute('aria-valuenow',String(Math.floor(percent)));
+          progressBar.setAttribute('aria-valuetext',bytes);
+          lastBytes = bytes;
+        }
         progressBar.firstElementChild.style.width = `${percent}%`;
         dedupProgress.hidden = false;
       });
