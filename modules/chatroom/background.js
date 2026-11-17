@@ -218,7 +218,7 @@
     const who = peer?.remark || peer?.nickname || peer?.ip || '对方';
     await requestNotification(inviteKey(id), '聊天室 · 邀请与确认',
       request.type === 'friend' ? `「${who}」请求添加好友` : `「${who}」邀请你加入「${request.room?.name || '群聊'}」`,
-      [{title:'接收'},{title:'拒绝'}]);
+      [{title:request.type === 'group' ? '接受' : '接收'},{title:'拒绝'}]);
   }
   async function notifyPresence({peerId,joined}) {
     if (!/^[a-f0-9]{64}$/.test(peerId) || typeof joined !== 'boolean') return;

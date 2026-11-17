@@ -134,7 +134,7 @@
   async function authorizedDirectory() {
     const root = await directory();
     if (!root || await root.queryPermission({mode: 'readwrite'}) !== 'granted')
-      throw new Error('自动保存需要扩展目录写入权限，请在聊天室设置中授权，或手动接收文件。');
+      throw new Error('尚未授予扩展安装目录的写入权限。');
     return root;
   }
   let permissionScript;
@@ -150,8 +150,7 @@
     }
     return global.BjtuDirectoryPermission.request({audit:true});
   }
-  async function createDownload(name) {
-    const root = await authorizedDirectory();
+  async function createExtensionDownload(root, name) {
     const downloads = await root.getDirectoryHandle('downloads', {create: true});
     // Never overwrite an existing file, including simultaneous transfers.
     return navigator.locks.request('bjtu-extension-download-name', async () => {
@@ -175,8 +174,14 @@
       }
     });
   }
-  async function createManualDownload(name) {
-    if (await authorizedDirectory().catch(() => null)) return createDownload(name);
+  async function createDownload(name) {
+    const root = await authorizedDirectory().catch(() => null);
+    if (root) {
+      try { return await createExtensionDownload(root, name); }
+      catch (error) {
+        if (error?.name !== 'NotAllowedError' && error?.name !== 'SecurityError') throw error;
+      }
+    }
     const downloads = await (await navigator.storage.getDirectory()).getDirectoryHandle('chatroom-inbox', {create:true});
     const filename = crypto.randomUUID();
     const handle = await downloads.getFileHandle(filename, {create:true});
@@ -323,7 +328,7 @@
     await refreshAuthorization();
     return {flush:() => saveQueue,destroy() { abort.abort(); chrome.storage.onChanged.removeListener(changed); }};
   }
-  global.BjtuChatroomSettings = {defaults, normalizeLimit, displayLimit, mount, createDownload, createManualDownload, discardDownload,
+  global.BjtuChatroomSettings = {defaults, normalizeLimit, displayLimit, mount, createDownload, discardDownload,
     saveReceivedFile, saveSentHandle, loadReceivedFile, deleteReceivedFile,
     removeReceivedFile: key => fileHandleEntry(key, 'delete')};
 })(globalThis);

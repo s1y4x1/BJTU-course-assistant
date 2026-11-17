@@ -780,7 +780,7 @@
     s.accepting = true;
     if (s.type === 'file') {
       const settings = globalThis.BjtuChatroomSettings;
-      s.downloadSetup = (automatic ? settings.createDownload(s.name) : settings.createManualDownload(s.name))
+      s.downloadSetup = settings.createDownload(s.name)
         .then(download => Object.assign(s,download));
       try {
         await s.downloadSetup;
@@ -1078,7 +1078,7 @@
     }
     if (!background) file = await s.handle.getFile().catch(error => { report(error); return null; });
     s.completed = true;
-    s.completionText = s.savedPath ? `已保存到 ${s.savedPath}` : file ? '已保存到聊天室，可打开或另存文件' : '未能保存到聊天室';
+    s.completionText = s.savedPath ? `已保存到 ${s.savedPath}` : '已保存到聊天室，可从会话中打开';
     s.status = s.completionText; updateTransfer(s);
     void previewFile(s, file).catch(report);
     try { s.channel.send(JSON.stringify({ type: 'complete' })); } catch {}

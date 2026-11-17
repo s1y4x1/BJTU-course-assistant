@@ -40,6 +40,7 @@
           <select id="chatroomAutoSaveUnit" aria-label="文件大小单位"><option>B</option><option>KB</option><option selected>MB</option><option>GB</option></select>
           <span>的文件到扩展目录/downloads/</span>
         </div>
+        <div class="tip">未授予扩展目录写入权限时，符合文件大小限制的文件仍会自动接收，保存到浏览器为聊天室提供的私有存储，可从会话中打开。</div>
         <button id="chatroomAuthorizeDownloads" type="button" class="secondary">授权扩展目录</button>
         <label id="chatroomManageDownloadsOption" class="check" hidden><input id="chatroomManageDownloadsEnabled" type="checkbox" checked><span>在扩展页面管理收到的文件</span></label>
       </form><p class="muted">局域网发现不等于身份认证，请核对对方身份。直连会向对方暴露网络地址。</p></details>
@@ -52,7 +53,7 @@
   <label class="chatroom-option-check" style="margin-left: 24px"><span>扫描间隔</span><input id="chatroomAutoScanLanIntervalSeconds" type="number" min="10" max="3600" step="10" value="300" style="width: 6em"><span>秒</span><span class="tip">从本次扫描结束到下次扫描开始的等待时间。</span></label>
   <label class="chatroom-option-check"><input id="chatroomNotifyNewMessages" type="checkbox" checked><span>新消息提醒</span><span class="tip">通知未查看的会话消息、邀请和公共群聊进出；会话开启免打扰后不发送该会话的通知。</span></label>
   <label class="chatroom-option-check"><input id="chatroomBackgroundEnabled" type="checkbox" checked><span>后台保持在线并接收消息</span><span class="tip">关闭聊天室页面后仍保持在线并接收文字消息。打开聊天室页面时，连接仍由后台持有；屏幕共享与发送文件需要在前台页面进行。</span></label>
-  <label class="chatroom-option-check" style="margin-left: 24px"><input id="chatroomBackgroundReceiveFiles" type="checkbox" checked><span>后台同时接收文件</span><span class="tip">符合自动保存设置且扩展目录已有读写授权时自动接收。否则通过通知询问是否接收；没有扩展目录权限时，可在聊天室内手动接收。关闭后台在线时此选项不生效。</span></label>
+  <label class="chatroom-option-check" style="margin-left: 24px"><input id="chatroomBackgroundReceiveFiles" type="checkbox" checked><span>后台同时接收文件</span><span class="tip">符合自动保存设置时自动接收，否则通过通知询问是否接收。未授权扩展目录时改用浏览器私有存储。关闭后台在线时此选项不生效。</span></label>
   <label class="chatroom-option-check" style="margin-left: 24px"><input id="chatroomForegroundProxyEnabled" type="checkbox" checked><span>打开聊天室时由后台保持连接</span><span class="tip">聊天室页面只负责界面、文件和屏幕共享；文字消息与连接由后台接收，关闭页面不会中断在线状态。关闭此项可回退为页面自行连接。</span></label>
   <template data-chatroom-sidebar-end></template>
   <a id="chatroomOpen" class="option-action-link" href="/modules/chatroom/chat.html">打开局域网聊天室</a>

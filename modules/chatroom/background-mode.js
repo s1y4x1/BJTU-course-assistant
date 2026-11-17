@@ -162,26 +162,9 @@
       if (!approved && (settings.chatroomBackgroundReceiveFiles === false ||
           settings.chatroomAutoSaveEnabled === false ||
           !(settings.chatroomAutoSaveMaxBytes === null || size < settings.chatroomAutoSaveMaxBytes))) return false;
-      // This only queries an already persisted grant. No requestPermission and
-      // no picker, including when the saved handle is absent or revoked.
-      const root = await directory();
-      return !!root && await root.queryPermission({mode:'readwrite'}) === 'granted' &&
-        !globalThis.BjtuChatroomEngineLease?.draining;
+      // The file sink picks between the granted directory and browser-private storage.
+      return !globalThis.BjtuChatroomEngineLease?.draining;
     } catch { return false; }
-  }
-  async function directory() {
-    const db = await new Promise((resolve,reject) => {
-      const request = indexedDB.open('BJTUCA-FileSystem',1);
-      request.onupgradeneeded = () => request.transaction.abort();
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-    try {
-      return await new Promise((resolve,reject) => {
-        const request = db.transaction('handles').objectStore('handles').get('update-directory');
-        request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
-      });
-    } finally { db.close(); }
   }
   async function notifyInvitation({peerId,media,name,reason,sid,size,conversationId,pending = false} = {}) {
     if (!enabled) return;
