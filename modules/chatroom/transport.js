@@ -431,26 +431,37 @@
     }
     const members = Object.keys(memberStates).filter(member => memberStates[member].present);
     if (members.length > MAX.members || members.length !== value.members.length || members.some(member => !value.members.includes(member))) fail('群成员状态不一致。');
-    return {id:value.id, name:value.name, version:Math.max(value.version, ...Object.values(memberStates).map(state => state.version)), members, memberStates:copy(memberStates)};
+    const states = Object.fromEntries(Object.entries(memberStates).map(([member, state]) => {
+      const {version, actor, present} = state;
+      const invitation = present ? readGroupInvitation(state.invitation) : null;
+      return [member, {version, actor, present, ...(invitation ? {invitation} : {})}];
+    }));
+    return {id:value.id, name:value.name, version:Math.max(value.version, ...Object.values(memberStates).map(state => state.version)), members, memberStates:states};
   }
-  function setMember(r, member, present) {
+  function readGroupInvitation(value) {
+    if (!/^[a-f0-9]{64}$/.test(value?.inviter || '') || typeof value.requestId !== 'string' ||
+        !value.requestId.trim() || value.requestId.length > 100) return null;
+    const name = text => typeof text === 'string' ? text.slice(0, 80) : '';
+    return {inviter:value.inviter, requestId:value.requestId, actorName:name(value.actorName), targetName:name(value.targetName)};
+  }
+  function setMember(r, member, present, invitation = null) {
     // Independent membership clocks preserve departures during concurrent joins.
     if (present && !r.members.includes(member) && r.members.length >= MAX.members) fail('群成员数量已达到上限。');
     r.memberStates ||= Object.fromEntries(r.members.map(member => [member, {version:r.version, actor:member, present:true}]));
     if (!r.memberStates[member] && Object.keys(r.memberStates).length >= MAX.peers) fail('群成员历史已达上限。');
-    r.memberStates[member] = {version:++r.version, actor:publicIdentity.id, present};
+    r.memberStates[member] = {version:++r.version, actor:publicIdentity.id, present, ...(invitation ? {invitation} : {})};
     r.members = Object.keys(r.memberStates).filter(key => r.memberStates[key].present);
   }
   // A reconnecting invitee may be unknown to members who missed the initial
   // broadcast. The inviter signs only the grant, not a third party's roster.
-  const joinGrant = (roomId, member, inviter, version) =>
-    encoder.encode(canonical(['bjtu-chatroom-group-join', roomId, member, inviter, version]));
-  async function createJoinProof(r, member) {
+  const joinGrant = (roomId, member, inviter, version, requestId) =>
+    encoder.encode(canonical(['bjtu-chatroom-group-join', roomId, member, inviter, version, ...(requestId ? [requestId] : [])]));
+  async function createJoinProof(r, member, requestId) {
     const {id: inviter, publicKey: {x, y}} = publicIdentity;
     const version = r.version + 1;
     const signature = b64(await crypto.subtle.sign({name:'ECDSA', hash:'SHA-256'},
-      privateKey, joinGrant(r.id, member, inviter, version)));
-    return {inviter, x, y, version, signature};
+      privateKey, joinGrant(r.id, member, inviter, version, requestId)));
+    return {inviter, x, y, version, signature, requestId};
   }
   async function acceptJoinProof(r, member, proof) {
     if (!proof || !r.members.includes(proof.inviter) ||
@@ -460,7 +471,8 @@
       const key = await importIdentity({id:proof.inviter, nickname:'',
         publicKey:{kty:'EC', crv:'P-256', x:proof.x, y:proof.y}});
       if (!await crypto.subtle.verify({name:'ECDSA', hash:'SHA-256'}, key,
-        unb64(proof.signature), joinGrant(r.id, member, proof.inviter, proof.version))) return false;
+        unb64(proof.signature), joinGrant(r.id, member, proof.inviter, proof.version,
+          proof.requestId == null ? null : token(proof.requestId)))) return false;
     } catch { return false; }
     if (r.members.length >= MAX.members || (!r.memberStates[member] &&
         Object.keys(r.memberStates).length >= MAX.peers)) return false;
@@ -487,7 +499,11 @@
       return p?.remark || p?.nickname || (supplied && supplied !== who ? supplied : '') || p?.ip || '成员';
     };
     history({id:eventId, senderId:actor, conversationId:r.id, system:true, code:'GROUP_INVITE',
-      text:`「${name(actor,actorName)}」邀请「${name(target,targetName)}」加入群聊`, createdAt:Date.now()});
+      text:`「${name(actor,actorName)}」已邀请「${name(target,targetName)}」加入群聊`, createdAt:Date.now()});
+  }
+  function recordGroupJoin(r, member, invitation) {
+    if (!invitation) return;
+    groupEvent(r, invitation.inviter, invitation.requestId, member, invitation.targetName, invitation.actorName);
   }
   function groupLeaveMessage(r, member, leaveId) {
     const eventId = `${member}:leave:${leaveId}`;
@@ -504,26 +520,21 @@
   function groupBroadcast(effects, r, oldMembers = []) {
     fanout(effects, [...oldMembers, ...r.members], 'group-state', groupStatePayload(r));
   }
-  function announceJoin(effects, r, inviter, requestId, target) {
+  function announceJoin(effects, r) {
     // The invitee is the authority for "I joined": broadcast the updated member
     // list first so every recipient knows the new member before the event arrives.
     groupBroadcast(effects, r);
-    const inviterPeer = peer(inviter);
-    const event = {
-      roomId: r.id,
-      requestId,
-      actor: inviter,
-      target,
-      targetName: publicIdentity.nickname || localIP || '成员',
-      actorName: inviterPeer?.nickname || inviterPeer?.ip || '成员'
-    };
-    groupEvent(r, inviter, requestId, target, event.targetName, event.actorName);
-    fanout(effects, r.members, 'group-event', event);
+    const target = publicIdentity.id;
+    const {inviter, requestId, actorName, targetName} = r.memberStates[target].invitation;
+    recordGroupJoin(r, target, r.memberStates[target].invitation);
+    fanout(effects, r.members, 'group-event', {roomId:r.id, actor:inviter, requestId, target, actorName, targetName});
   }
-  function joinRoom(value, proof) {
+  function joinRoom(value, proof, inviter, requestId) {
     const r = validRoom(value);
     if (!data.rooms.some(room => room.id === r.id) && data.rooms.length >= MAX.rooms) fail('群聊数量已达到上限。');
-    setMember(r, publicIdentity.id, true);
+    const p = peer(inviter);
+    setMember(r, publicIdentity.id, true, {inviter, requestId, actorName:p?.nickname || p?.ip || '成员',
+      targetName:publicIdentity.nickname || localIP || '成员'});
     data.rooms = data.rooms.filter(room => room.id !== r.id); data.rooms.push(r);
     data.departedRooms = data.departedRooms.filter(room => room.roomId !== r.id);
     if (proof) data.groupJoinProofs[r.id] = proof;
@@ -540,7 +551,7 @@
       const requestId = crypto.randomUUID();
       pushRequest({ id: requestId, type: 'group', to: peerId, roomId: r.id, createdAt: Date.now() }, true);
       const event = {roomId:r.id, requestId, target:peerId, targetName:peer(peerId)?.nickname || peer(peerId)?.ip || peerId, actorName:publicIdentity.nickname || localIP || '我'};
-      enqueue(effects, peerId, 'group-invite', { requestId, room: r, event, joinProof:await createJoinProof(r, peerId) });
+      enqueue(effects, peerId, 'group-invite', { requestId, room: r, event, joinProof:await createJoinProof(r, peerId, requestId) });
     }
   }
   async function initialize() {
@@ -915,9 +926,9 @@
           }
           systemMessage(request.from, args.allow ? 'FRIEND_ACCEPTED_LOCAL' : 'FRIEND_REJECTED_LOCAL', args.allow ? '你已同意好友申请，现在已成为好友。' : '你已拒绝好友申请。');
         }
-        const joinedRoom = type === 'group' && args.allow ? joinRoom(request.room, request.joinProof) : null;
+        const joinedRoom = type === 'group' && args.allow ? joinRoom(request.room, request.joinProof, request.from, request.id) : null;
         enqueue(effects, request.from, name, { requestId: request.id, allow: args.allow, ...(type === 'group' ? { roomId: request.room.id } : {}) });
-        if (joinedRoom) announceJoin(effects, joinedRoom, request.from, request.id, publicIdentity.id);
+        if (joinedRoom) announceJoin(effects, joinedRoom);
         data.requests = data.requests.filter((r) => r.id !== request.id);
         if (args.blockSender) {
           const p = peer(request.from); p.blocked = true;
@@ -1100,15 +1111,17 @@
         if (data.requests.some((v) => v.type === 'group' && v.room.id === r.id)) break;
         const proof = payload.joinProof;
         const joinProof = proof?.inviter === from && proof.version === r.version + 1 &&
+          (proof.requestId == null || proof.requestId === payload.requestId) &&
           proof.x === packet.identity.publicKey.x && proof.y === packet.identity.publicKey.y &&
           typeof proof.signature === 'string' && /^[A-Za-z0-9_-]{86}$/.test(proof.signature)
-          ? {inviter:from, x:proof.x, y:proof.y, version:proof.version, signature:proof.signature} : null;
+          ? {inviter:from, x:proof.x, y:proof.y, version:proof.version, signature:proof.signature,
+            ...(proof.requestId ? {requestId:proof.requestId} : {})} : null;
         const policy = peer(from)?.friend ? data.settings.invitePolicyFriend : data.settings.invitePolicyStranger;
         if (policy === 'deny') enqueue(effects, from, 'group-response', { requestId: payload.requestId, roomId: r.id, allow: false });
         else if (policy === 'allow') {
-          const joinedRoom = joinRoom(r, joinProof);
+          const joinedRoom = joinRoom(r, joinProof, from, payload.requestId);
           enqueue(effects, from, 'group-response', { requestId: payload.requestId, roomId: r.id, allow: true });
-          announceJoin(effects, joinedRoom, from, payload.requestId, publicIdentity.id);
+          announceJoin(effects, joinedRoom);
         } else pushRequest({ id: payload.requestId, from, type: 'group', room: r, joinProof, createdAt: packet.createdAt });
         break;
       }
@@ -1119,7 +1132,12 @@
         const r = room(pending.roomId);
         if (payload.allow && !r.members.includes(from)) {
           if (r.members.length >= MAX.members) fail('群成员数量已达到上限。');
-          setMember(r, from, true); groupBroadcast(effects, r);
+          const p = peer(from);
+          const invitation = {inviter:publicIdentity.id, requestId:pending.id, actorName:publicIdentity.nickname || localIP || '我',
+            targetName:p?.nickname || p?.ip || '成员'};
+          setMember(r, from, true, invitation);
+          recordGroupJoin(r, from, invitation);
+          groupBroadcast(effects, r);
         }
         data.outgoing = data.outgoing.filter((v) => v !== pending); break;
       }
@@ -1139,13 +1157,35 @@
           // they might have included in their snapshot.
           if (!r.members.includes(from) || !r.members.includes(publicIdentity.id) ||
               !await acceptJoinProof(old, from, payload.joinProof)) fail('未经批准的群状态更新。');
+          const proof = payload.joinProof;
+          if (proof.requestId) {
+            const reported = r.memberStates[from].invitation;
+            const invitation = {inviter:proof.inviter, requestId:proof.requestId,
+              actorName:reported?.actorName || '', targetName:reported?.targetName || ''};
+            old.memberStates[from].invitation = invitation;
+            recordGroupJoin(old, from, invitation);
+          }
           groupBroadcast(effects, old);
           break;
         }
         let changed = false;
         for (const [member, state] of Object.entries(r.memberStates)) {
           const previous = old.memberStates[member];
-          if (!previous || state.version > previous.version || (state.version === previous.version && state.actor > previous.actor)) {old.memberStates[member] = state; changed = true;}
+          const previousRequest = previous?.invitation?.requestId;
+          const wins = !previous || state.version > previous.version || (state.version === previous.version && state.actor > previous.actor);
+          const sameJoin = previous?.present && state.present && previous.version === state.version;
+          if (wins) {
+            if (sameJoin && !state.invitation && previous.invitation) state.invitation = previous.invitation;
+            old.memberStates[member] = state;
+            changed = true;
+          } else if (sameJoin && !previous.invitation && state.invitation) {
+            previous.invitation = state.invitation;
+            changed = true;
+          } else continue;
+          const invitation = old.memberStates[member].invitation;
+          if (member !== publicIdentity.id && invitation?.requestId !== previousRequest) {
+            recordGroupJoin(old, member, invitation);
+          }
         }
         if (Object.keys(old.memberStates).length > MAX.peers) fail('群成员历史已达上限。');
         old.version = Math.max(old.version, r.version);
