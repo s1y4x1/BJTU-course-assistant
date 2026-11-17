@@ -169,6 +169,7 @@
     if (!value || value.schema !== 1 || value.identity?.publicKey?.x !== data.identity.publicKey.x
         || value.identity?.publicKey?.y !== data.identity.publicKey.y) fail('聊天室身份存储已更改，请重新打开聊天室。');
     data = copy(value);
+    data.groupJoinProofs ||= {};
     removeStoredPresenceMessages();
     publicIdentity.nickname = data.settings.nickname;
   }
@@ -440,6 +441,34 @@
     r.memberStates[member] = {version:++r.version, actor:publicIdentity.id, present};
     r.members = Object.keys(r.memberStates).filter(key => r.memberStates[key].present);
   }
+  // A reconnecting invitee may be unknown to members who missed the initial
+  // broadcast. The inviter signs only the grant, not a third party's roster.
+  const joinGrant = (roomId, member, inviter, version) =>
+    encoder.encode(canonical(['bjtu-chatroom-group-join', roomId, member, inviter, version]));
+  async function createJoinProof(r, member) {
+    const {id: inviter, publicKey: {x, y}} = publicIdentity;
+    const version = r.version + 1;
+    const signature = b64(await crypto.subtle.sign({name:'ECDSA', hash:'SHA-256'},
+      privateKey, joinGrant(r.id, member, inviter, version)));
+    return {inviter, x, y, version, signature};
+  }
+  async function acceptJoinProof(r, member, proof) {
+    if (!proof || !r.members.includes(proof.inviter) ||
+        !Number.isSafeInteger(proof.version) || proof.version < 2 ||
+        proof.version <= (r.memberStates[member]?.version || 0)) return false;
+    try {
+      const key = await importIdentity({id:proof.inviter, nickname:'',
+        publicKey:{kty:'EC', crv:'P-256', x:proof.x, y:proof.y}});
+      if (!await crypto.subtle.verify({name:'ECDSA', hash:'SHA-256'}, key,
+        unb64(proof.signature), joinGrant(r.id, member, proof.inviter, proof.version))) return false;
+    } catch { return false; }
+    if (r.members.length >= MAX.members || (!r.memberStates[member] &&
+        Object.keys(r.memberStates).length >= MAX.peers)) return false;
+    r.memberStates[member] = {version:proof.version, actor:member, present:true};
+    r.members.push(member);
+    r.version = Math.max(r.version, proof.version);
+    return true;
+  }
   function removeMember(effects, r, member) {
     if (!r.members.includes(member)) return;
     const oldMembers = [...r.members]; setMember(r, member, false);
@@ -468,7 +497,13 @@
     history({id:eventId,senderId:member,conversationId:r.id,system:true,code:'GROUP_LEAVE',
       text:`${name}退出了群聊`,createdAt:Date.now()});
   }
-  function groupBroadcast(effects, r, oldMembers = []) { fanout(effects, [...oldMembers, ...r.members], 'group-state', { room: r }); }
+  function groupStatePayload(r) {
+    const joinProof = data.groupJoinProofs[r.id];
+    return joinProof ? {room:r, joinProof} : {room:r};
+  }
+  function groupBroadcast(effects, r, oldMembers = []) {
+    fanout(effects, [...oldMembers, ...r.members], 'group-state', groupStatePayload(r));
+  }
   function announceJoin(effects, r, inviter, requestId, target) {
     // The invitee is the authority for "I joined": broadcast the updated member
     // list first so every recipient knows the new member before the event arrives.
@@ -485,14 +520,17 @@
     groupEvent(r, inviter, requestId, target, event.targetName, event.actorName);
     fanout(effects, r.members, 'group-event', event);
   }
-  function joinRoom(value) {
+  function joinRoom(value, proof) {
     const r = validRoom(value);
     if (!data.rooms.some(room => room.id === r.id) && data.rooms.length >= MAX.rooms) fail('群聊数量已达到上限。');
     setMember(r, publicIdentity.id, true);
     data.rooms = data.rooms.filter(room => room.id !== r.id); data.rooms.push(r);
     data.departedRooms = data.departedRooms.filter(room => room.roomId !== r.id);
+    if (proof) data.groupJoinProofs[r.id] = proof;
+    else delete data.groupJoinProofs[r.id];
+    return r;
   }
-  function invite(effects, r, peerIds) {
+  async function invite(effects, r, peerIds) {
     if (!Array.isArray(peerIds) || !peerIds.length || peerIds.length > MAX.members) fail('请选择有效邀请成员。');
     for (const peerId of new Set(peerIds)) {
       id(peerId);
@@ -502,7 +540,7 @@
       const requestId = crypto.randomUUID();
       pushRequest({ id: requestId, type: 'group', to: peerId, roomId: r.id, createdAt: Date.now() }, true);
       const event = {roomId:r.id, requestId, target:peerId, targetName:peer(peerId)?.nickname || peer(peerId)?.ip || peerId, actorName:publicIdentity.nickname || localIP || '我'};
-      enqueue(effects, peerId, 'group-invite', { requestId, room: r, event });
+      enqueue(effects, peerId, 'group-invite', { requestId, room: r, event, joinProof:await createJoinProof(r, peerId) });
     }
   }
   async function initialize() {
@@ -525,6 +563,7 @@
     }
     data.rooms = data.rooms.map(validRoom);
     data.departedRooms ||= [];
+    data.groupJoinProofs ||= {};
     const validInvitePolicy = (value, fallback) => ['ask', 'allow', 'deny'].includes(value) ? value : fallback;
     data.settings = {
       nickname: str(data.settings?.nickname || '', 40, true),
@@ -649,7 +688,10 @@
       p.online = true; p.lastSeen = Date.now();
       const event = wasOnline ? undefined : publicPresenceEvent(p, true);
       p.reconnectable = value.reconnectable === true;
-      for (const r of data.rooms) if (r.members.includes(p.id)) groupBroadcast(effects, r);
+      if (!wasOnline && !p.blocked) for (const r of data.rooms) {
+        if (!r.members.includes(publicIdentity.id) || !r.members.includes(p.id)) continue;
+        enqueue(effects, p.id, 'group-state', groupStatePayload(r));
+      }
       for (const departed of data.departedRooms) if (departed.pending.includes(p.id)) {
         enqueue(effects, p.id, 'group-leave', {roomId:departed.roomId, leaveId:departed.leaveId});
         departed.pending = departed.pending.filter(member => member !== p.id);
@@ -714,7 +756,7 @@
     }
     return { ...result, ...delivery, ok: delivery.failed === 0, ...(delivery.failed ? { error: delivery.sent ? '部分接收者未能送达，请检查连接。' : '数据未送达，请重新连接。' } : {}) };
   }
-  function localAction(name, args, effects) {
+  async function localAction(name, args, effects) {
     switch (name) {
       case 'set-background': {
         const background = args.background === true;
@@ -872,11 +914,10 @@
             enqueue(effects, p.id, 'peer-policy', {blocked: !!p.blocked, friendRequired: false});
           }
           systemMessage(request.from, args.allow ? 'FRIEND_ACCEPTED_LOCAL' : 'FRIEND_REJECTED_LOCAL', args.allow ? '你已同意好友申请，现在已成为好友。' : '你已拒绝好友申请。');
-        } else if (args.allow) {
-          joinRoom(request.room);
         }
+        const joinedRoom = type === 'group' && args.allow ? joinRoom(request.room, request.joinProof) : null;
         enqueue(effects, request.from, name, { requestId: request.id, allow: args.allow, ...(type === 'group' ? { roomId: request.room.id } : {}) });
-        if (type === 'group' && args.allow) announceJoin(effects, request.room, request.from, request.id, publicIdentity.id);
+        if (joinedRoom) announceJoin(effects, joinedRoom, request.from, request.id, publicIdentity.id);
         data.requests = data.requests.filter((r) => r.id !== request.id);
         if (args.blockSender) {
           const p = peer(request.from); p.blocked = true;
@@ -889,11 +930,11 @@
       case 'group-create': {
         if (data.rooms.length >= MAX.rooms) fail('群聊数量已达到上限。');
         const r = validRoom({id:'group:' + crypto.randomUUID(), name:str(args.name, 60).trim(), version:1, members:[publicIdentity.id]});
-        data.rooms.push(r); invite(effects, r, args.peerIds); return { roomId: r.id };
+        data.rooms.push(r); await invite(effects, r, args.peerIds); return { roomId: r.id };
       }
       case 'group-invite': {
         const r = room(args.roomId);
-        invite(effects, r, args.peerIds);
+        await invite(effects, r, args.peerIds);
         return {};
       }
       case 'group-leave': {
@@ -903,6 +944,7 @@
         const pending = r.members.filter(member => member !== publicIdentity.id && !peer(member)?.online);
         if (pending.length) data.departedRooms = [...data.departedRooms.filter(item => item.roomId !== r.id), {roomId:r.id,leaveId,pending}].slice(-MAX.rooms);
         data.rooms = data.rooms.filter((v) => v.id !== r.id);
+        delete data.groupJoinProofs[r.id];
         data.outgoing = data.outgoing.filter((v) => v.roomId !== r.id);
         data.requests = data.requests.filter((v) => v.room?.id !== r.id);
         if (data.conversations) delete data.conversations[r.id];
@@ -940,7 +982,7 @@
       default: fail('不支持的聊天室操作：' + String(name).slice(0, 64));
     }
   }
-  function receive(packet, effects) {
+  async function receive(packet, effects) {
     const from = packet.from, payload = packet.payload;
     if (packet.type === 'message-result') {
       token(payload.messageId);
@@ -1056,13 +1098,18 @@
         token(payload.requestId); const r = validRoom(payload.room);
         if (!r.members.includes(from) || r.members.includes(publicIdentity.id)) fail('群邀请必须由现有成员签发。');
         if (data.requests.some((v) => v.type === 'group' && v.room.id === r.id)) break;
+        const proof = payload.joinProof;
+        const joinProof = proof?.inviter === from && proof.version === r.version + 1 &&
+          proof.x === packet.identity.publicKey.x && proof.y === packet.identity.publicKey.y &&
+          typeof proof.signature === 'string' && /^[A-Za-z0-9_-]{86}$/.test(proof.signature)
+          ? {inviter:from, x:proof.x, y:proof.y, version:proof.version, signature:proof.signature} : null;
         const policy = peer(from)?.friend ? data.settings.invitePolicyFriend : data.settings.invitePolicyStranger;
         if (policy === 'deny') enqueue(effects, from, 'group-response', { requestId: payload.requestId, roomId: r.id, allow: false });
         else if (policy === 'allow') {
-          joinRoom(r);
+          const joinedRoom = joinRoom(r, joinProof);
           enqueue(effects, from, 'group-response', { requestId: payload.requestId, roomId: r.id, allow: true });
-          announceJoin(effects, r, from, payload.requestId, publicIdentity.id);
-        } else pushRequest({ id: payload.requestId, from, type: 'group', room: r, createdAt: packet.createdAt });
+          announceJoin(effects, joinedRoom, from, payload.requestId, publicIdentity.id);
+        } else pushRequest({ id: payload.requestId, from, type: 'group', room: r, joinProof, createdAt: packet.createdAt });
         break;
       }
       case 'group-response': {
@@ -1087,7 +1134,14 @@
       case 'group-state': {
         const r = validRoom(payload.room), old = data.rooms.find((v) => v.id === r.id);
         if (!old) break;
-        if (!old.members.includes(from)) fail('未经批准的群状态更新。');
+        if (!old.members.includes(from)) {
+          // The proof authorizes only this sender, never additional entries
+          // they might have included in their snapshot.
+          if (!r.members.includes(from) || !r.members.includes(publicIdentity.id) ||
+              !await acceptJoinProof(old, from, payload.joinProof)) fail('未经批准的群状态更新。');
+          groupBroadcast(effects, old);
+          break;
+        }
         let changed = false;
         for (const [member, state] of Object.entries(r.memberStates)) {
           const previous = old.memberStates[member];
@@ -1097,7 +1151,10 @@
         old.version = Math.max(old.version, r.version);
         old.members = Object.keys(old.memberStates).filter(member => old.memberStates[member].present);
         if (old.members.length > MAX.members) fail('群成员数量已达到上限。');
-        if (!old.members.includes(publicIdentity.id)) data.rooms = data.rooms.filter(room => room !== old);
+        if (!old.members.includes(publicIdentity.id)) {
+          data.rooms = data.rooms.filter(room => room !== old);
+          delete data.groupJoinProofs[old.id];
+        }
         else if (changed) groupBroadcast(effects, old);
         break;
       }
@@ -1155,12 +1212,12 @@
       } catch (error) {return {ok:false,error:error.message};}
     }
     try {
-      const { result, effects } = await commit((effects) => {
+      const { result, effects } = await commit(async (effects) => {
         if (packet.from === publicIdentity.id) fail('拒绝自身回环协议包。');
         const seenId = packet.from + ':' + packet.id;
         if (data.seen.includes(seenId) && packet.type !== 'message') return { duplicate: true };
         const p = peer(peerId); if (!p) fail('请先完成经过认证的连接握手。');
-        const event = receive(packet, effects);
+        const event = await receive(packet, effects);
         data.seen.push(seenId);
         if (data.seen.length > MAX.seen) data.seen.splice(0, data.seen.length - MAX.seen);
         p.lastSeen = Date.now();
