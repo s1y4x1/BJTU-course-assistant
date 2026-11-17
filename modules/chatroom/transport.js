@@ -197,25 +197,36 @@
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => reject(request.error);
       });
-      const privateNames = [];
-      await new Promise((resolve, reject) => {
-        const tx = db.transaction('handles', 'readwrite'), store = tx.objectStore('handles');
-        for (const key of removed) {
-          const read = store.get(key);
-          read.onsuccess = () => {
-            if (read.result?.privateName) privateNames.push(read.result.privateName);
-            store.delete(key);
-          };
+      await navigator.locks.request('bjtu-extension-download-name', async () => {
+        const privateNames = new Set();
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction('handles', 'readwrite'), store = tx.objectStore('handles');
+          let remaining = removed.length;
+          for (const key of removed) {
+            const read = store.get(key);
+            read.onsuccess = () => {
+              if (read.result?.privateName) privateNames.add(read.result.privateName);
+              store.delete(key);
+              if (--remaining === 0 && privateNames.size) {
+                const retained = store.getAll();
+                retained.onsuccess = () => {
+                  for (const value of retained.result) privateNames.delete(value?.privateName);
+                };
+              }
+            };
+          }
+          tx.oncomplete = resolve;
+          tx.onerror = tx.onabort = () => reject(tx.error);
+        });
+        if (privateNames.size) {
+          const inbox = await (await navigator.storage.getDirectory()).getDirectoryHandle('chatroom-inbox');
+          await Promise.all([...privateNames].map(name => inbox.removeEntry(name).catch(error => {
+            if (error?.name !== 'NotFoundError') throw error;
+          })));
+          const channel = new BroadcastChannel('bjtu-extension-downloads');
+          channel.postMessage('changed'); channel.close();
         }
-        tx.oncomplete = resolve;
-        tx.onerror = tx.onabort = () => reject(tx.error);
       });
-      if (privateNames.length) {
-        const inbox = await (await navigator.storage.getDirectory()).getDirectoryHandle('chatroom-inbox');
-        await Promise.all(privateNames.map(name => inbox.removeEntry(name).catch(error => {
-          if (error?.name !== 'NotFoundError') throw error;
-        })));
-      }
     } catch (error) { emit({type:'error', error:'清理本地文件引用失败：' + (error?.message || '存储不可用')}); }
     finally { db?.close(); }
   }

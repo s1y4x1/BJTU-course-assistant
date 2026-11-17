@@ -69,11 +69,55 @@
   const transfers = new Map(), transferRows = new Map(), renderedTransfers = new Map();
   const selected = new Set();
   let saved = [], revision = 0, working = false, completedBytes = 0;
+  let managementEnabled = false, hasWritableRoot = false;
+  function syncVisibility() {
+    section.hidden = !managementEnabled || (!hasWritableRoot && !saved.length && !transfers.size);
+  }
   async function* files(directory, prefix = '') {
     for await (const [name, handle] of directory.entries()) {
       if (handle.kind === 'directory') yield* files(handle, prefix + name + '/');
       else yield {directory, handle, name, path:prefix + name};
     }
+  }
+  function openHandleDatabase() {
+    return new Promise((resolve,reject) => {
+      const request = indexedDB.open('BJTUCA-FileSystem',1);
+      request.onupgradeneeded = () => request.result.createObjectStore('handles');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+  async function privateDownloads(messages) {
+    const refs = (messages || []).filter(item => item.privateFile && item.file?.name
+      && item.fileHandleRef === 'chatroom-file:' + item.id);
+    if (!refs.length) return [];
+    const directory = await (await navigator.storage.getDirectory()).getDirectoryHandle('chatroom-inbox');
+    const db = await openHandleDatabase();
+    try {
+      const records = await new Promise((resolve,reject) => {
+        const tx = db.transaction('handles'), store = tx.objectStore('handles');
+        const requests = refs.map(item => store.get(item.fileHandleRef));
+        tx.oncomplete = () => resolve(requests.map(request => request.result));
+        tx.onerror = tx.onabort = () => reject(tx.error);
+      });
+      const entries = new Map();
+      records.forEach((record,i) => {
+        const filename = record?.privateName;
+        if (!filename || filename !== record.handle?.name || (record.deduplicated && entries.has(filename))) return;
+        const {name} = refs[i].file;
+        entries.set(filename,{directory, handle:record.handle, name, filename, path:`chatroom-inbox/${filename}`, private:true});
+      });
+      return [...entries.values()];
+    } finally { db.close(); }
+  }
+  async function directoryDownloads(root) {
+    if (!root) return [];
+    const directory = await root.getDirectoryHandle('downloads');
+    const entries = [];
+    for await (const entry of files(directory)) {
+      entries.push({...entry, filename:entry.name, label:entry.path, path:`downloads/${entry.path}`});
+    }
+    return entries;
   }
   function span(className, text = '') {
     const node = document.createElement('span');
@@ -86,7 +130,9 @@
     return title;
   }
   async function exportFile(handle,name,saveAs) {
-    const url = URL.createObjectURL(await handle.getFile());
+    const file = await handle.getFile();
+    // Keep Chromium's save dialog from suggesting a suffix based on the file's MIME type.
+    const url = URL.createObjectURL(file.slice(0,file.size,'application/octet-stream'));
     try { await chrome.downloads.download({url,filename:name,conflictAction:'uniquify',saveAs}); }
     finally { setTimeout(() => URL.revokeObjectURL(url),60000); }
   }
@@ -98,11 +144,14 @@
     return button;
   }
   async function uploadFiles(entries) {
-    await globalThis.processFilesForUpload(await Promise.all(entries.map(entry => entry.handle.getFile())));
+    await globalThis.processFilesForUpload(await Promise.all(entries.map(async entry => {
+      const file = await entry.handle.getFile();
+      return entry.private ? new File([file],entry.name,{type:file.type,lastModified:file.lastModified}) : file;
+    })));
   }
   function availableFiles() {
     const reserved = new Set([...transfers.values()].map(task => task.path));
-    return saved.filter(entry => !reserved.has(`downloads/${entry.path}`));
+    return saved.filter(entry => !reserved.has(entry.path));
   }
   function syncSelection() {
     const entries = availableFiles();
@@ -118,8 +167,8 @@
   function renderFile(entry) {
     const {handle, name, path, size, savedAt} = entry;
     const row = document.createElement('div');
-    row.className = 'file-item extension-download-row'; row.dataset.path = `downloads/${path}`;
-    const title = rowTitle(row,path);
+    row.className = 'file-item extension-download-row'; row.dataset.path = path;
+    const title = rowTitle(row,entry.label || name);
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox'; checkbox.value = path;
     checkbox.setAttribute('aria-label',`选择 ${name}`);
@@ -142,15 +191,37 @@
     const controls = document.createElement('div'); controls.className = 'resource-link-row extension-download-actions';
     const link = document.createElement('a');
     link.className = 'resource-url';
-    link.href = link.textContent = chrome.runtime.getURL(`downloads/${path.split('/').map(encodeURIComponent).join('/')}`);
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
+    if (entry.private) {
+      link.href = '#';
+      link.textContent = '打开（聊天室私有存储）';
+      link.onclick = event => { event.preventDefault(); void openPrivateFile(entry).catch(report); };
+    } else {
+      link.href = link.textContent = chrome.runtime.getURL(path.split('/').map(encodeURIComponent).join('/'));
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+    }
     controls.append(link);
     actionButton(controls,'上传','resource-copy-btn',() => uploadFiles([entry]));
     actionButton(controls,'另存','resource-download-btn',() => exportFile(handle,name,true));
     actionButton(controls,'删除','resource-download-btn is-cancel',() => deleteFiles([entry]));
     row.append(controls);
     return row;
+  }
+  async function openPrivateFile({handle,name}) {
+    const extension = name.split('.').pop().toLowerCase();
+    const safeTypes = {
+      png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', webp:'image/webp', gif:'image/gif', bmp:'image/bmp',
+      pdf:'application/pdf', mp3:'audio/mpeg', wav:'audio/wav', ogg:'audio/ogg', mp4:'video/mp4', webm:'video/webm',
+      txt:'text/plain', md:'text/plain', csv:'text/plain', html:'text/plain', htm:'text/plain', svg:'text/plain',
+      js:'text/plain', css:'text/plain', json:'text/plain', xml:'text/plain'
+    };
+    const type = Object.hasOwn(safeTypes,extension) ? safeTypes[extension] : '';
+    if (!type) return exportFile(handle,name,false);
+    // A blob in the extension origin must never render untrusted HTML or SVG as a document.
+    const file = await handle.getFile();
+    const url = URL.createObjectURL(file.slice(0,file.size,type));
+    try { await chrome.tabs.create({url}); }
+    finally { setTimeout(() => URL.revokeObjectURL(url),60000); }
   }
   function remaining(loaded,total,speed) {
     if (total > 0 && loaded >= total) return '0 秒';
@@ -214,27 +285,27 @@
     updateProgress(totalBar,totals,{...total,total:indeterminate ? 0 : total.total},'',{aggregate:true,idle:!transfers.size});
     updateTotalEta(transfers.size > 0,total.loaded,indeterminate ? 0 : total.total,total.speed);
     if (selectionDirty) { selectionDirty = false; syncSavedRows(); }
+    syncVisibility();
   }
   async function relinkFiles(from, to) {
-    const db = await new Promise((resolve,reject) => {
-      const request = indexedDB.open('BJTUCA-FileSystem',1);
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
+    const db = await openHandleDatabase();
     try {
       await new Promise((resolve,reject) => {
         const tx = db.transaction('handles','readwrite'), store = tx.objectStore('handles');
-        const source = `downloads/${from.path}`, target = to && `downloads/${to.path}`;
+        const source = from.path, target = to?.path;
         const cursor = store.openCursor();
         cursor.onsuccess = () => {
           const entry = cursor.result;
           if (!entry) {
-            if (to) store.put({handle:to.handle,downloadPath:target},`download-alias:${source}`);
+            if (to && !from.private) store.put({handle:to.handle,downloadPath:target},`download-alias:${source}`);
             return;
           }
           const key = String(entry.key), value = entry.value;
-          if (value?.downloadPath === source) {
-            if (to) entry.update({...value,handle:to.handle,downloadPath:target,deduplicated:true});
+          if (from.private ? value?.privateName === from.filename : value?.downloadPath === source) {
+            if (to) {
+              const location = to.private ? {privateName:to.filename} : {downloadPath:target};
+              entry.update({...value,...location,handle:to.handle,deduplicated:true});
+            }
             else if (key.startsWith('download-alias:')) entry.delete();
           }
           entry.continue();
@@ -251,8 +322,8 @@
     try {
       await navigator.locks.request('bjtu-extension-download-name',async () => {
         for (const entry of entries) {
-          if ([...transfers.values()].some(task => task.path === `downloads/${entry.path}`) || !await isUnchanged(entry)) continue;
-          await entry.directory.removeEntry(entry.name);
+          if ([...transfers.values()].some(task => task.path === entry.path) || !await isUnchanged(entry)) continue;
+          await entry.directory.removeEntry(entry.filename);
           await relinkFiles(entry,null);
           selected.delete(entry.path);
         }
@@ -279,7 +350,7 @@
       for (const entry of entries) {
         const file = await entry.handle.getFile();
         if (file.size !== size || file.lastModified !== entry.savedAt) continue;
-        const signature = size + ':' + await fileSignature(file);
+        const signature = (entry.private ? 'private:' : 'directory:') + size + ':' + await fileSignature(file);
         const group = groups.get(signature) || [];
         group.push(entry); groups.set(signature,group);
       }
@@ -303,7 +374,7 @@
         const label = document.createElement('label'), input = document.createElement('input');
         input.type = 'checkbox';
         input.checked = i === 0;
-        const detail = span('extension-download-dedup-file',entry.path);
+        const detail = span('extension-download-dedup-file',entry.label || entry.name);
         const date = span('extension-download-dedup-date');
         BjtuDateTime.set(date,entry.savedAt);
         detail.append(' · ',date);
@@ -379,7 +450,7 @@
             if (transfers.size) throw new Error('有文件开始传输，已停止继续去重');
             if (!await isUnchanged(copy)) { skipped++; continue; }
             await relinkFiles(copy,keep);
-            await copy.directory.removeEntry(copy.name);
+            await copy.directory.removeEntry(copy.filename);
             selected.delete(copy.path); removed++;
           }
         }
@@ -390,32 +461,37 @@
   async function refresh() {
     const current = ++revision;
     const [settings, root] = await Promise.all([
-      chrome.storage.local.get({chatroomManageDownloadsEnabled:true}), writableRoot()
+      chrome.storage.local.get({chatroomManageDownloadsEnabled:true,chatroomState:null}),
+      writableRoot().catch(() => null)
     ]);
     if (current !== revision) return;
-    section.hidden = !settings.chatroomManageDownloadsEnabled || !root;
-    if (section.hidden) return;
-    try {
-      const directory = await root.getDirectoryHandle('downloads');
-      const entries = [];
-      for await (const entry of files(directory)) {
-        try {
-          const file = await entry.handle.getFile();
-          entries.push({...entry,size:file.size,savedAt:file.lastModified});
-        } catch (error) { if (error.name !== 'NotFoundError') throw error; }
-      }
-      if (current !== revision) return;
-      saved = entries.sort((a,b) => b.savedAt - a.savedAt || a.path.localeCompare(b.path,'zh-CN',{numeric:true}));
-      const paths = new Set(saved.map(entry => entry.path));
-      for (const path of selected) if (!paths.has(path)) selected.delete(path);
-      list.replaceChildren(...saved.map(renderFile));
-      syncSavedRows();
-      status.textContent = entries.length ? `共 ${entries.length} 个文件` : '暂无下载文件';
-    } catch (error) {
-      if (current !== revision) return;
-      saved = []; list.replaceChildren(); syncSelection();
-      status.textContent = error.name === 'NotFoundError' ? '暂无下载文件' : `无法读取下载文件：${error.message}`;
+    managementEnabled = settings.chatroomManageDownloadsEnabled;
+    hasWritableRoot = !!root;
+    if (!managementEnabled) { syncVisibility(); return; }
+    let readError;
+    const readSource = promise => promise.catch(error => {
+      if (error?.name !== 'NotFoundError') readError = error;
+      return [];
+    });
+    const sources = await Promise.all([
+      readSource(directoryDownloads(root)),
+      readSource(privateDownloads(settings.chatroomState?.messages))
+    ]);
+    const entries = [];
+    for (const entry of sources.flat()) {
+      try {
+        const file = await entry.handle.getFile();
+        entries.push({...entry,size:file.size,savedAt:file.lastModified});
+      } catch (error) { if (error?.name !== 'NotFoundError') readError = error; }
     }
+    if (current !== revision) return;
+    saved = entries.sort((a,b) => b.savedAt - a.savedAt || (a.label || a.name).localeCompare(b.label || b.name,'zh-CN',{numeric:true}));
+    const paths = new Set(saved.map(entry => entry.path));
+    for (const path of selected) if (!paths.has(path)) selected.delete(path);
+    list.replaceChildren(...saved.map(renderFile));
+    syncSavedRows();
+    syncVisibility();
+    status.textContent = entries.length ? `共 ${entries.length} 个文件` : readError ? `无法读取下载文件：${readError.message}` : '暂无下载文件';
   }
   const update = () => void refresh().catch(report);
   invert.onclick = () => {

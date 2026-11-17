@@ -741,7 +741,8 @@
     if (s.type === 'file' && !s.outgoing && s.startedAt && !s.ended) {
       s.downloadProgress ||= globalThis.BjtuDownloadProgress.begin({
         name:s.name, source:'聊天室接收',
-        total:s.size, path:s.savedPath || '', cancel:() => endSession(s,'已取消传输',true)
+        total:s.size, path:s.savedPath || (s.privateName ? `chatroom-inbox/${s.privateName}` : ''),
+        cancel:() => endSession(s,'已取消传输',true)
       });
       s.downloadProgress.update(s.done,s.size,{status:text || s.status});
     }
@@ -1068,6 +1069,7 @@
       const metadata = {id:s.message.id, file:{name:s.name, size:s.size}, fileHandleRef:ref, downloadPath, privateFile:!!s.privateName};
       await mutate('media-file-saved', metadata);
       Object.assign(s.message, metadata);
+      if (s.privateName) globalThis.BjtuChatroomSettings.notifyDownloadsChanged();
     } catch (error) {
       if (ref) await globalThis.BjtuChatroomSettings.removeReceivedFile(ref).catch(report);
       if (s.privateName) {

@@ -97,7 +97,7 @@
       if (error?.name !== 'NotFoundError') throw error;
     });
     await fileHandleEntry(key, 'delete');
-    if (downloadPath) notifyDownloadsChanged();
+    notifyDownloadsChanged();
   }
   function notifyDownloadsChanged() {
     const channel = new BroadcastChannel('bjtu-extension-downloads');
@@ -216,7 +216,6 @@
       const granted = await authorizedDirectory().then(() => true, () => false);
       if (!abort.signal.aborted && version === permissionRevision) {
         $('chatroomAuthorizeDownloads').hidden = granted;
-        $('chatroomManageDownloadsOption').hidden = !granted;
       }
     }
     let values = await chrome.storage.local.get(defaults), saveQueue = Promise.resolve();
@@ -328,7 +327,7 @@
     await refreshAuthorization();
     return {flush:() => saveQueue,destroy() { abort.abort(); chrome.storage.onChanged.removeListener(changed); }};
   }
-  global.BjtuChatroomSettings = {defaults, normalizeLimit, displayLimit, mount, createDownload, discardDownload,
+  global.BjtuChatroomSettings = {defaults, normalizeLimit, displayLimit, mount, createDownload, discardDownload, notifyDownloadsChanged,
     saveReceivedFile, saveSentHandle, loadReceivedFile, deleteReceivedFile,
     removeReceivedFile: key => fileHandleEntry(key, 'delete')};
 })(globalThis);
