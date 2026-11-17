@@ -83,6 +83,24 @@
   }
   const accountKeys = ['popupFullscreenCourseCache', 'username', 'casLoginName', 'academicSystemStudentId',
     'loginAccountHistory'];
+  const profileVersion = value => typeof value === 'string' ? value.trim().slice(0, 32) : '';
+  async function readLocalVersion() {
+    const runtime = G.chrome?.runtime;
+    try {
+      const version = profileVersion(runtime?.getManifest?.()?.version);
+      if (version) return version;
+    } catch {}
+    // The background chat engine can run without runtime.getManifest().
+    try {
+      const response = await fetch(runtime.getURL('manifest.json'));
+      if (response.ok) return profileVersion((await response.json()).version);
+    } catch {}
+    return '';
+  }
+  function updatePeerVersion(peer, identity) {
+    const version = profileVersion(identity.version);
+    if (version) peer.version = version;
+  }
   async function readLocalAccounts() {
     const store = G.browser?.storage?.local || G.chrome?.storage?.local;
     if (!store) return null;
@@ -511,7 +529,7 @@
     const p = peer(member);
     const name = member === publicIdentity.id ? publicIdentity.nickname || localIP || '我' : p?.remark || p?.nickname || p?.ip || '成员';
     history({id:eventId,senderId:member,conversationId:r.id,system:true,code:'GROUP_LEAVE',
-      text:`${name}退出了群聊`,createdAt:Date.now()});
+      text:`「${name}」退出了群聊`,createdAt:Date.now()});
   }
   function groupStatePayload(r) {
     const joinProof = data.groupJoinProofs[r.id];
@@ -586,7 +604,7 @@
     const fingerprint = hex(await crypto.subtle.digest('SHA-256', await crypto.subtle.exportKey('raw', pub)));
     if (data.settings.nickname === '设备-' + fingerprint.slice(0, 6)) data.settings.nickname = '';
     publicIdentity = { id: fingerprint, fingerprint, nickname: data.settings.nickname, publicKey: data.identity.publicKey,
-      version: G.chrome?.runtime?.getManifest?.()?.version || '',
+      version: await readLocalVersion(),
       background: G.BjtuChatroomBackgroundMode?.enabled === true, device: detectDevice(), accounts: await readLocalAccounts() };
     removeStoredPresenceMessages();
     await importIdentity(publicIdentity);
@@ -607,6 +625,7 @@
   function refreshAccounts() {
     return serial(async () => {
       const accounts = await readLocalAccounts();
+      if (!publicIdentity.version) publicIdentity.version = await readLocalVersion();
       if (accounts) publicIdentity.accounts = accounts;
       else delete publicIdentity.accounts;
       return accounts;
@@ -691,7 +710,7 @@
       if (device) p.device = device; else delete p.device;
       const accounts = publicAccounts(identity);
       if (accounts) p.accounts = accounts; else delete p.accounts;
-      p.version = typeof identity.version === 'string' ? identity.version.slice(0, 32) : '';
+      updatePeerVersion(p, identity);
       if (typeof value?.ip === 'string') p.ip = str(value.ip, 64, true);
       p.publicKey = { kty: 'EC', crv: 'P-256', x: identity.publicKey.x, y: identity.publicKey.y, ext: true, key_ops: ['verify'] };
       p.fingerprint = identity.id;
@@ -1064,7 +1083,7 @@
         if (device) peer(from).device = device;
         const accounts = publicAccounts(packet.identity);
         if (accounts) peer(from).accounts = accounts; else delete peer(from).accounts;
-        peer(from).version = typeof packet.identity.version === 'string' ? packet.identity.version.slice(0, 32) : '';
+        updatePeerVersion(peer(from), packet.identity);
         break;
       }
       case 'message': {

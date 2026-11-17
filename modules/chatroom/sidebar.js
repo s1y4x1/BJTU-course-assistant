@@ -343,7 +343,7 @@
       if (actions.childElementCount) fields.append(actions);
       return value => mutate('remark', {peerId, remark: value.trim()});
     }, {autoSave:true});
-    if (peer.online && !peer.accounts && !peer.blocked && !peer.blockedByPeer) {
+    if (peer.online && (!peer.accounts || !peer.version) && !peer.blocked && !peer.blockedByPeer) {
       void action('profile-request', {peerId}).catch(() => {});
     }
   }
