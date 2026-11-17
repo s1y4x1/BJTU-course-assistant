@@ -64,6 +64,7 @@
   }, formatEta);
   const invert = document.getElementById('extension-download-invert');
   const dedup = document.getElementById('extension-download-dedup');
+  const dedupProgress = document.getElementById('extension-download-dedup-progress');
   const dedupDialog = document.getElementById('extension-download-dedup-dialog');
   const uploadSelected = document.getElementById('extension-download-upload-selected');
   const deleteSelected = document.getElementById('extension-download-delete-selected');
@@ -332,30 +333,42 @@
       });
     } finally { working = false; changed(); await refresh(); }
   }
-  async function fileSignature(file) {
+  async function fileSignature(file, onProgress) {
     const parts = [];
     for (let offset = 0; offset < file.size; offset += 4 * 1024 * 1024) {
       const buffer = await file.slice(offset,offset + 4 * 1024 * 1024).arrayBuffer();
       const digest = new Uint8Array(await crypto.subtle.digest('SHA-256',buffer));
       parts.push(btoa(String.fromCharCode(...digest)));
+      onProgress(buffer.byteLength);
     }
     return parts.join('');
   }
-  async function findDuplicates() {
+  async function findDuplicates(onProgress) {
     const sizes = new Map(), groups = new Map();
     for (const entry of availableFiles()) {
       const group = sizes.get(entry.size) || [];
       group.push(entry); sizes.set(entry.size,group);
     }
-    for (const [size, entries] of sizes) {
-      if (entries.length < 2) continue;
-      for (const entry of entries) {
-        const file = await entry.handle.getFile();
-        if (file.size !== size || file.lastModified !== entry.savedAt) continue;
-        const signature = (entry.private ? 'private:' : 'directory:') + size + ':' + await fileSignature(file);
+    const candidates = [...sizes.values()].filter(entries => entries.length > 1).flat();
+    const total = candidates.reduce((sum, entry) => sum + Math.max(1,entry.size),0);
+    let completed = 0, processed = 0;
+    const reportProgress = () => onProgress(completed,candidates.length,processed,total);
+    reportProgress();
+    for (const entry of candidates) {
+      const {size} = entry;
+      const end = processed + Math.max(1,size);
+      const file = await entry.handle.getFile();
+      if (file.size === size && file.lastModified === entry.savedAt) {
+        const signature = (entry.private ? 'private:' : 'directory:') + size + ':' + await fileSignature(file, bytes => {
+          processed += bytes;
+          if (processed < end) reportProgress();
+        });
         const group = groups.get(signature) || [];
         group.push(entry); groups.set(signature,group);
       }
+      processed = end;
+      completed++;
+      reportProgress();
     }
     return [...groups.values()].filter(group => group.length > 1)
       .map(group => group.sort((a,b) => a.savedAt - b.savedAt || a.path.localeCompare(b.path)));
@@ -432,7 +445,21 @@
     if (working || transfers.size || saved.length < 2) return;
     working = true; syncSelection();
     try {
-      const duplicates = await findDuplicates();
+      const progressText = dedupProgress.querySelector('[role="status"]');
+      const progressBar = dedupProgress.querySelector('[role="progressbar"]');
+      let lastLabel;
+      const duplicates = await findDuplicates((completed,count,processed,total) => {
+        if (!count) return;
+        const percent = Math.min(100,Math.floor(100 * processed / total));
+        const label = `正在计算重复文件… ${completed} / ${count} 个 · ${percent}%`;
+        if (label === lastLabel) return;
+        lastLabel = label;
+        progressText.textContent = label;
+        progressBar.setAttribute('aria-valuenow',String(percent));
+        progressBar.firstElementChild.style.width = `${percent}%`;
+        dedupProgress.hidden = false;
+      });
+      dedupProgress.hidden = true;
       if (!duplicates.length) { showToast('没有发现重复文件','success'); return; }
       if (transfers.size) throw new Error('有文件正在传输，请在传输结束后重新去重');
       const kept = await chooseDuplicateFiles(duplicates);
@@ -458,7 +485,7 @@
         }
         showToast(`已删除 ${removed} 个重复文件${skipped ? `，跳过 ${skipped} 个已变动的文件` : ''}`,skipped ? 'warning' : 'success');
       });
-    } finally { working = false; changed(); await refresh(); }
+    } finally { dedupProgress.hidden = true; working = false; changed(); await refresh(); }
   }
   async function refresh() {
     const current = ++revision;
