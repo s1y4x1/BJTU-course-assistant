@@ -14,7 +14,7 @@
 .citel-error { color:#b45309; font-size:var(--bjtu-font-size-body, 13px); }
 .citel-login-dialog { width:min(420px,calc(100vw - 32px)); max-height:calc(100vh - 32px); box-sizing:border-box; padding:16px; }
 .citel-login-dialog::backdrop { background:rgba(15,23,42,.45); }
-.citel-login-title { color:#F98012; font-size:var(--bjtu-font-size-primaryTitle, 20px); font-weight:700; }
+.citel-login-title { color:var(--bjtu-color-platformCitel,#F98012); font-size:var(--bjtu-font-size-primaryTitle, 20px); font-weight:700; }
 .citel-login-body { display:flex; flex-direction:column; gap:10px; padding-top:8px; overflow:auto; }
 .citel-login-form { display:flex; flex-direction:column; gap:10px; }
 .citel-login-form label { display:flex; flex-direction:column; gap:6px; color:#334155; font-size:13px; }
@@ -25,8 +25,7 @@
 .citel-login-actions > button { flex:1; min-width:0; height:34px; }
 .citel-login-actions > .citel-login-cancel { background:#64748b; color:#fff; }
 .citel-login-submit { height:34px; padding:6px 16px; background:var(--bjtu-color-platformCitel,#F98012); color:#fff; }
-.citel-login-submit:hover { background:#d96a00; }
-html[data-color-scheme="dark"] .citel-login-title { color:#fb923c; }
+.citel-login-submit:hover { background:color-mix(in srgb,var(--bjtu-color-platformCitel,#F98012),black 15%); }
 html[data-color-scheme="dark"] .citel-login-form label { color:#cbd5e1; }
 html[data-color-scheme="dark"] .citel-login-form input { border-color:#475569; background:#0f172a; color:#f8fafc; }
 html[data-color-scheme="dark"] .citel-login-form input::placeholder { color:#94a3b8; }

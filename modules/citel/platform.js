@@ -188,7 +188,14 @@
     try { home = await page(BASE, version); } catch (e) {
       const autoLoginUsername = stored.citelLoginUsername || stored.citelUsername;
       if (e.code !== 'LOGIN_REQUIRED' || !autoLoginUsername || stored.citelAutoLoginOnExpiry === false) throw e;
-      await authenticate(autoLoginUsername, '', version);
+      const pending = env?.toast?.('CITEL 正在登录…', 'info', 0);
+      try {
+        await authenticate(autoLoginUsername, '', version);
+        env?.toast?.('CITEL 登录成功', 'success');
+      } catch (error) {
+        if (error.code !== 'cancelled') env?.toast?.('CITEL 登录失败：' + error.message, 'error', 4500);
+        throw error;
+      } finally { pending?.remove?.(); }
       home = await page(BASE, version);
     }
     const sesskey = readSesskey(home.html);
@@ -458,7 +465,7 @@
                 if (!authenticated && version === serial && global.platformLoginState?.citel === 'checking') {
                   env?.setState?.('offline');
                 }
-                env?.toast?.(e.message || 'CITEL 登录失败', 'error', 4500);
+                env?.toast?.('CITEL 登录失败：' + (e.message || '登录失败'), 'error', 4500);
               }
             } finally {
               pendingToast?.remove?.();

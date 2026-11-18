@@ -377,13 +377,13 @@ html[data-color-scheme="dark"] .option-action-link { color:#60a5fa; }
   opacity:.24;
 }
 .option-divider--footer { width:min(100%, 1480px); margin:10px auto 0; }
-#vePlatformDetail { --platform-theme:#2563eb; --platform-bg:#eff6ff; }
-#yktPlatformDetail { --platform-theme:#5096f5; --platform-bg:#eff6ff; }
-#mrjzyPlatformDetail { --platform-theme:#29a9fc; --platform-bg:#ecfeff; }
-#jlgjPlatformDetail { --platform-theme:#ffd243; --platform-bg:#fffbeb; }
-#moocPlatformDetail { --platform-theme:#00cc7e; --platform-bg:#ecfdf5; }
-#xuetangxPlatformDetail { --platform-theme:#1769fe; --platform-bg:#eff6ff; }
-#citelPlatformDetail { --platform-theme:#F98012; --platform-bg:#fff4e8; }
+#vePlatformDetail { --platform-theme:var(--bjtu-color-platformVe,#1565c0); --platform-bg:#eff6ff; }
+#yktPlatformDetail { --platform-theme:var(--bjtu-color-platformYkt,#5096f5); --platform-bg:#eff6ff; }
+#mrjzyPlatformDetail { --platform-theme:var(--bjtu-color-platformMrjzy,#29a9fc); --platform-bg:#ecfeff; }
+#jlgjPlatformDetail { --platform-theme:var(--bjtu-color-platformJlgj,#ffd243); --platform-bg:#fffbeb; }
+#moocPlatformDetail { --platform-theme:var(--bjtu-color-platformMooc,#00cc7e); --platform-bg:#ecfdf5; }
+#xuetangxPlatformDetail { --platform-theme:var(--bjtu-color-platformXuetangx,#1769fe); --platform-bg:#eff6ff; }
+#citelPlatformDetail { --platform-theme:var(--bjtu-color-platformCitel,#f98012); --platform-bg:#fff4e8; }
 .citel-auto-login-row { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:4px 0; }
 .citel-auto-login-row > label { display:flex; align-items:center; gap:8px; margin:0; }
 .citel-auto-login-row > #citelUsername { flex:1 1 180px; width:auto; max-width:100%; min-width:140px; box-sizing:border-box; }

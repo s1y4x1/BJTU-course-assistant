@@ -255,13 +255,15 @@ async function tryMrjzyConfiguredAutoLogin() {
     const phone = String(response?.account?.phone || '').trim();
     const password = String(response?.account?.password || '');
     if (!response?.ok || !phone || !password) return false;
+    const pending = showToast('每日交作业 正在登录…', 'info', 0);
+    try {
     const loginData = await requestMrjzyAccountApi(MRJZY_PASSWORD_LOGIN_API, {
       method: 'POST', body: { phone, password }
     });
     const accounts = Array.isArray(loginData?.data?.accounts) ? loginData.data.accounts : [];
     const loginAccount = accounts.find((account) => String(account?.token || '').trim()) || null;
     const token = String(loginAccount?.token || '').trim();
-    if (!token) return false;
+    if (!token) throw new Error('登录接口未返回 Token');
     const usersData = await requestMrjzyAccountApi(MRJZY_ALL_USERS_API, { token });
     const users = Array.isArray(usersData?.data?.users) ? usersData.data.users : [];
     chrome.runtime.sendMessage({
@@ -277,17 +279,22 @@ async function tryMrjzyConfiguredAutoLogin() {
     const preferredOpenId = String(configuredClass[0] || response?.account?.selectedOpenId || '').trim();
     const preferredClassId = String(configuredClass[1] || response?.account?.selectedClassId || '').trim();
     const user = users.find((item) => preferredOpenId && String(item?.openId || '').trim() === preferredOpenId);
-    if (!user) return false;
+    if (!user) throw new Error('未找到所选登录身份');
     const switched = await requestMrjzyAccountApi(MRJZY_SWITCH_USER_API, {
       method: 'POST', token, body: { openId: String(user.openId).trim() }
     });
     const teacherToken = String(switched?.data?.token || '').trim();
-    if (!teacherToken || !await persistMrjzyTeacherTokenCookie(teacherToken)) return false;
+    if (!teacherToken || !await persistMrjzyTeacherTokenCookie(teacherToken)) throw new Error('保存登录凭据失败');
     chrome.runtime.sendMessage({
       type: 'MRJZY_SELECTED_IDENTITY',
       payload: { phone, openId: String(user.openId).trim(), classId: preferredClassId }
     }).catch(() => {});
+    showToast('每日交作业 登录成功', 'success', 1800);
     return true;
+    } catch (error) {
+      showToast('每日交作业 登录失败：' + String(error?.message || error), 'error', 4000);
+      throw error;
+    } finally { pending?.remove?.(); }
   })().finally(() => { mrjzyAutoLoginPromise = null; });
   return mrjzyAutoLoginPromise;
 }

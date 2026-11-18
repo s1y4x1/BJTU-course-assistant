@@ -3048,6 +3048,14 @@ function dismissToastAfterCopy(toast) {
 }
 
 function showToast(message, type = 'success', duration = 3000, allowHtml = false, options = {}) {
+  if (!allowHtml) {
+    const match = String(message || '').match(/^(智慧课程平台|CITEL|每日交作业)([\s\S]*(?:登录|验证)[\s\S]*)$/);
+    if (match) {
+      const platform = { '智慧课程平台':'ve', CITEL:'citel', '每日交作业':'mrjzy' }[match[1]];
+      message = globalThis.BjtuPlatformLoginUi.loginLinkHtml(platform) + ' ' + escapeHtml(match[2].trim());
+      allowHtml = true;
+    }
+  }
   if (String(message || '') === globalThis.BjtuPlatformLoginUi.loginRequiredHtml('ve')) {
     void (async () => {
       if (activeLoginFlowPromise) return;
@@ -3094,7 +3102,8 @@ function renderAppToast(message, type = 'success', duration = 3000, allowHtml = 
   }
 
   // Click to copy the visible message and dismiss.
-  toast.addEventListener('click', () => {
+  toast.addEventListener('click', (event) => {
+    if (event.target.closest('a')) return;
     dismissToastAfterCopy(toast);
   });
   return toast;
@@ -4256,7 +4265,7 @@ async function handleLoginSuccess(username, { reloadPlatform = true, userInfo } 
   updateJsessionidState();
 
   if (reloadPlatform) runPendingLoginCallbacks();
-  showToast('登录成功', 'success');
+  showToast('智慧课程平台 登录成功', 'success');
 
   if (reloadPlatform) {
     await loadAutoLoadCourseResourcesSetting().catch(() => { });
@@ -4357,7 +4366,7 @@ async function runLoginFlow({ reloadPlatform = true } = {}) {
       manualPassword = '';
       manualPasswordPlain = '';
       manualPasscode = '';
-      showToast('正在登录…', 'info', 0);
+      showToast('智慧课程平台 正在登录…', 'info', 0);
       await enforceJsessionidBeforeLoginRequest();
       const result = await globalThis.BjtuAccountLogin.login(username, {
         signal,
@@ -4420,13 +4429,13 @@ async function runLoginFlow({ reloadPlatform = true } = {}) {
             .catch(() => { });
         }
         await restoreAfterFailure();
-        showToast(result.message || '登录失败', 'error', 4000);
+        showToast('智慧课程平台 ' + (result.message || '登录失败'), 'error', 4000);
         return { ...result, account: username };
       }
       if (!['credential', 'account-not-found', 'needs-password', 'captcha-required',
         'captcha-module-missing', 'captcha-resources-missing'].includes(result?.reason)) {
         await restoreAfterFailure();
-        showToast(result?.message || '登录失败', 'error', 3000);
+        showToast('智慧课程平台 ' + (result?.message || '登录失败'), 'error', 3000);
         return { ...result, account: username };
       }
 
@@ -4492,7 +4501,7 @@ async function runLoginFlow({ reloadPlatform = true } = {}) {
     if (signal.aborted || loginCancelRequested) return { ok: false, reason: 'cancelled', account: username, message: '登录已取消' };
     console.error('Login error:', error);
     await restoreAfterFailure();
-    showToast('登录过程中出现异常：' + String(error?.message || error), 'error', 3500);
+    showToast('智慧课程平台 登录过程中出现异常：' + String(error?.message || error), 'error', 3500);
     return { ok: false, reason: 'error', account: username, message: String(error?.message || error) };
   } finally {
     const switchModalClosed = !loginModal || loginModal.style.display === 'none';
