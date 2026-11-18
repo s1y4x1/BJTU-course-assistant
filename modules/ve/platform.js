@@ -322,15 +322,15 @@ function renderVeTeacherMetaPopHtml(meta, teachers) {
     const loginName = escapeHtml(String(t?.loginName || '')).trim() || '-';
     const userType = String(t?.userType || '').trim();
     const role = userType === '1' ? '任课教师' : (userType === '2' ? '助教' : '其他');
-    const action = loginName !== '-' && loginName
-      ? `<button type="button" class="ve-switch-teacher-btn" data-action="switch-teacher-account" data-teacher-id="${loginName}">切换至此账号</button>`
+    const accountCell = loginName !== '-' && loginName
+      ? `<button type="button" class="ve-account-switch" data-action="switch-teacher-account" data-teacher-id="${loginName}" title="切换至此账号">${loginName}</button>`
       : '<span style="font-size:11px;color:#999;">-</span>';
-    return `<tr><td>${userName}</td><td>${loginName}</td><td>${role}</td><td>${action}</td></tr>`;
+    return `<tr><td>${userName}</td><td>${accountCell}</td><td>${role}</td></tr>`;
   }).join('');
 
   return `
     <table class="ve-popover-table" style="font-size:12px;">
-      <thead><tr><th>姓名</th><th>教职工号/助教号</th><th>角色</th><th>操作</th></tr></thead>
+      <thead><tr><th>姓名</th><th>教职工号/助教号</th><th>角色</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
   `;
@@ -775,7 +775,7 @@ function renderVeCourseTeachersPopHtml(meta) {
       const body = renderVeCourseTeacherRowsHtml(rows);
       return `
         <table class="ve-popover-table">
-          <thead><tr><th>教师姓名</th><th>工号</th><th>操作</th><th>教室</th><th>课程号</th></tr></thead>
+          <thead><tr><th>教师姓名</th><th>工号</th><th>教室</th><th>课程号</th></tr></thead>
           <tbody>${body}</tbody>
         </table>
       `;
@@ -861,10 +861,11 @@ function renderVeCourseTeacherRowsHtml(rows) {
     rooms.forEach((room) => room.courses.sort(compareText));
     const teacherRowspan = rooms.reduce((sum, room) => sum + Math.max(1, room.courses.length), 0);
     const teacherName = escapeHtml(teacherGroup.teacherName) || '-';
-    const teacherId = escapeHtml(teacherGroup.teacherId) || '-';
-    const action = teacherGroup.teacherId
-      ? `<button type="button" class="ve-switch-teacher-btn" data-action="switch-teacher-account" data-teacher-id="${escapeHtml(teacherGroup.teacherId)}">切换至此账号</button>`
-      : '<button type="button" class="ve-switch-teacher-btn" disabled style="opacity:.6;">切换至此账号</button>';
+    const teacherIdText = String(teacherGroup.teacherId || '').trim();
+    const teacherId = escapeHtml(teacherIdText) || '-';
+    const teacherAccountCell = teacherIdText
+      ? `<button type="button" class="ve-account-switch" data-action="switch-teacher-account" data-teacher-id="${escapeHtml(teacherIdText)}" title="切换至此账号">${teacherId}</button>`
+      : '<span style="font-size:11px;color:#999;">-</span>';
     let teacherCellsRendered = false;
 
     return rooms.map((room) => {
@@ -873,7 +874,7 @@ function renderVeCourseTeacherRowsHtml(rows) {
       return courses.map((xkhId, courseIndex) => {
         const xkhSuffix = xkhId.length >= 10 ? xkhId.slice(-10) : (xkhId || '-');
         const teacherCells = !teacherCellsRendered
-          ? `<td rowspan="${teacherRowspan}">${teacherName}</td><td rowspan="${teacherRowspan}">${teacherId}</td><td rowspan="${teacherRowspan}">${action}</td>`
+          ? `<td rowspan="${teacherRowspan}">${teacherName}</td><td rowspan="${teacherRowspan}">${teacherAccountCell}</td>`
           : '';
         teacherCellsRendered = true;
         const roomCell = courseIndex === 0
@@ -925,7 +926,7 @@ function updateVeCourseTeachersPopUi(courseId) {
         const tbody = renderVeCourseTeacherRowsHtml(rows);
         tableWrap.innerHTML = `
           <table class="ve-popover-table">
-            <thead><tr><th>教师姓名</th><th>工号</th><th>操作</th><th>教室</th><th>课程号</th></tr></thead>
+            <thead><tr><th>教师姓名</th><th>工号</th><th>教室</th><th>课程号</th></tr></thead>
             <tbody>${tbody}</tbody>
           </table>
         `;
@@ -975,6 +976,7 @@ function normalizeVeStudentItem(item) {
   return {
     groupName: String(raw.groupName || '').trim(),
     stuNo: String(raw.STU_NO || raw.stuNo || raw.stu_no || '').trim(),
+    stuId: String(raw.stu_id ?? raw.stuId ?? raw.STU_ID ?? '').trim(),
     stuName: String(raw.STU_NAME || raw.stuName || raw.stu_name || '').trim(),
     className: String(raw.CLASS_NAME || raw.className || raw.class_name || '').trim()
   };
@@ -1035,10 +1037,10 @@ function renderVeStudentRowsHtml(students) {
         groupRendered = true;
         const classCell = index === 0 ? `<td rowspan="${sortedRows.length}">${escapeHtml(className)}</td>` : '';
         const stuNo = String(item.stuNo || '').trim();
-        const action = stuNo
-          ? `<button type="button" class="ve-switch-teacher-btn" data-action="switch-teacher-account" data-teacher-id="${escapeHtml(stuNo)}">切换至此账号</button>`
-          : '<button type="button" class="ve-switch-teacher-btn" disabled style="opacity:.6;">切换至此账号</button>';
-        return `<tr>${groupCell}${classCell}<td>${escapeHtml(stuNo || '-')}</td><td>${escapeHtml(item.stuName || '-')}</td><td>${action}</td></tr>`;
+        const accountCell = stuNo
+          ? `<button type="button" class="ve-account-switch" data-action="switch-teacher-account" data-teacher-id="${escapeHtml(stuNo)}" title="切换至此账号">${escapeHtml(stuNo)}</button>`
+          : '<span style="font-size:11px;color:#999;">-</span>';
+        return `<tr>${groupCell}${classCell}<td>${accountCell}</td><td>${escapeHtml(item.stuName || '-')}</td></tr>`;
       }).join('');
     }).join('');
   }).join('');
@@ -1057,7 +1059,7 @@ function renderVeStudentsPopHtml(meta) {
   }
   return `
     <table class="ve-popover-table">
-      <thead><tr><th>所属分组</th><th>班级</th><th>学号</th><th>姓名</th><th>操作</th></tr></thead>
+      <thead><tr><th>所属分组</th><th>班级</th><th>学号</th><th>姓名</th></tr></thead>
       <tbody>${renderVeStudentRowsHtml(students)}</tbody>
     </table>
   `;

@@ -3476,9 +3476,12 @@ function getSelectedUploadedFileList() {
   return files;
 }
 
-async function submitNativeHomework(courseId, hw, content, fileList) {
+async function submitNativeHomework(courseId, hw, content, fileList, options = {}) {
   const upId = hw?.id ?? hw?.upId ?? hw?.upid ?? hw?.UPID ?? hw?.up_id ?? '';
   if (!upId) return { ok: false, message: '作业ID缺失，无法提交' };
+
+  const asTeacher = options.asTeacher === true;
+  const stuId = String(options.stuId ?? '').trim();
 
   const body = new URLSearchParams({
     method: 'sendStuHomeWorks',
@@ -3492,8 +3495,9 @@ async function submitNativeHomework(courseId, hw, content, fileList) {
     fileList: JSON.stringify(fileList || []),
     upId: String(upId),
     return_num: '0',
-    isTeacher: '0'
+    isTeacher: asTeacher ? '1' : '0'
   });
+  if (asTeacher && stuId) body.set('stuId', stuId);
 
   const { text, res } = await fetchText(`${BASE_VE}back/course/courseWorkInfo.shtml`, {
     method: 'POST',
@@ -3513,6 +3517,81 @@ async function submitNativeHomework(courseId, hw, content, fileList) {
   return result.ok
     ? { ok: true, data: result.data }
     : { ok: false, message: result.message };
+}
+
+// 从 getStudentCourse 学生列表中，按当前登录账号（学号）匹配 stu_id（以教师身份提交时使用）
+async function resolveCurrentStudentStuId(courseId) {
+  const cid = String(courseId || '').trim();
+  if (!cid) return { ok: false, message: '课程信息缺失，无法获取stu_id' };
+
+  const account = String(
+    window.currentAccountLoginName
+    || (usernameInput instanceof HTMLInputElement ? usernameInput.value : '')
+    || ''
+  ).trim();
+  if (!account) return { ok: false, message: '无法确定当前账号，无法获取stu_id' };
+
+  const key = `${cid}|${account}`;
+  window.veStudentStuIdCache = window.veStudentStuIdCache instanceof Map ? window.veStudentStuIdCache : new Map();
+  if (window.veStudentStuIdCache.has(key)) {
+    return { ok: true, stuId: window.veStudentStuIdCache.get(key), account };
+  }
+
+  const readStudents = () => {
+    const students = window.veStudentsMetaByCourseId?.[cid]?.students;
+    return Array.isArray(students) ? students : [];
+  };
+
+  let students = readStudents();
+  if (!students.length) {
+    const meta = window.veStudentsMetaByCourseId?.[cid];
+    const needsFetch = !meta?.loaded || meta?.error;
+    if (needsFetch) {
+      if (typeof hydrateVeStudentsMeta === 'function') {
+        await hydrateVeStudentsMeta(cid);
+      } else if (typeof fetchVeCourseStudents === 'function') {
+        const { students: fetched, total } = await fetchVeCourseStudents(cid);
+        window.veStudentsMetaByCourseId = window.veStudentsMetaByCourseId || {};
+        window.veStudentsMetaByCourseId[cid] = {
+          students: fetched,
+          total,
+          loading: false,
+          loaded: true,
+          error: false,
+          promise: null
+        };
+      }
+    }
+    students = readStudents();
+  }
+
+  if (!students.length) {
+    const failed = !!window.veStudentsMetaByCourseId?.[cid]?.error;
+    return {
+      ok: false,
+      message: failed ? '获取学生列表失败，无法确定stu_id' : '未获取到学生列表，无法确定stu_id'
+    };
+  }
+
+  const matched = students.find((item) => String(item?.stuNo || '').trim() === account);
+  const stuId = String(matched?.stuId ?? '').trim();
+  if (!stuId) return { ok: false, message: `未在学生列表中找到账号 ${account} 对应的stu_id` };
+
+  window.veStudentStuIdCache.set(key, stuId);
+  return { ok: true, stuId, account };
+}
+
+function getCurrentStudentStuIdCache(courseId) {
+  const cid = String(courseId || '').trim();
+  const account = String(
+    window.currentAccountLoginName
+    || (usernameInput instanceof HTMLInputElement ? usernameInput.value : '')
+    || ''
+  ).trim();
+  if (!cid || !account) return '';
+  const cache = window.veStudentStuIdCache;
+  if (!(cache instanceof Map)) return '';
+  return String(cache.get(`${cid}|${account}`) || '').trim();
 }
 
 function updateTotalProgress() {
@@ -6154,11 +6233,20 @@ function renderHomeworkList(courseId, { groupOnly, exportArea } = {}) {
         </div>`;
 
     // 提交面板（仅非教师账号显示）
+    const cachedSubmitStuId = getCurrentStudentStuIdCache(courseId);
     const submitPanelHtml = isTeacherMode ? '' : `
         <div class="submit-panel" data-submit-panel="1" style="display:none;">
           <textarea data-submit-content="1" placeholder="请输入作业内容（可为空）"></textarea>
           <div class="hint">可勾选已上传文件作为作业附件一并提交；不勾选则仅提交文本内容。</div>
           <div class="actions">
+            <label class="submit-as-teacher-option" data-submit-as-teacher-option="1" title="普通提交出错时可尝试开启此选项">
+              <input type="checkbox" data-submit-as-teacher="1"${overdue ? ' checked' : ''}${cachedSubmitStuId ? ` data-stu-id="${escapeHtml(cachedSubmitStuId)}"` : ''}>
+              <span class="submit-as-teacher-text">以教师身份提交${cachedSubmitStuId ? `（stu_id: ${escapeHtml(cachedSubmitStuId)}）` : ''}</span>
+              <span class="submit-as-teacher-loading" style="display:none;">
+                <span class="spinner"></span>
+                <span class="submit-as-teacher-loading-text">正在获取stu_id…</span>
+              </span>
+            </label>
             <button class="btn confirm-submit-btn" style="background:#2563eb; padding:4px 10px; font-size:12px;" data-action="confirm-submit" data-course-id="${escapeHtml(String(courseId))}" data-hw-index="${idx}">确定</button>
             <button class="btn cancel-submit-btn" style="background:#64748b; padding:4px 10px; font-size:12px;" data-action="cancel-submit">取消</button>
           </div>
@@ -6954,14 +7042,59 @@ courseListDiv.addEventListener('click', async (e) => {
 
     const btn = actionEl;
     const oldText = btn.textContent;
+    const asTeacherCheckbox = panel.querySelector('input[data-submit-as-teacher="1"]');
+    const asTeacherOption = panel.querySelector('[data-submit-as-teacher-option="1"]');
+    const asTeacherText = asTeacherOption?.querySelector('.submit-as-teacher-text');
+    const asTeacherLoading = asTeacherOption?.querySelector('.submit-as-teacher-loading');
+    const asTeacherLoadingText = asTeacherOption?.querySelector('.submit-as-teacher-loading-text');
+    const wantsTeacher = asTeacherCheckbox instanceof HTMLInputElement && asTeacherCheckbox.checked;
+    let submitStuId = '';
+
+    const setTeacherOptionLoading = (loading, text) => {
+      if (asTeacherText instanceof HTMLElement) asTeacherText.style.display = loading ? 'none' : '';
+      if (asTeacherLoading instanceof HTMLElement) asTeacherLoading.style.display = loading ? 'inline-flex' : 'none';
+      if (loading && asTeacherLoadingText instanceof HTMLElement) asTeacherLoadingText.textContent = text || '正在获取stu_id…';
+      if (asTeacherCheckbox instanceof HTMLInputElement) asTeacherCheckbox.disabled = loading;
+      if (asTeacherOption instanceof HTMLElement) asTeacherOption.classList.toggle('is-loading', loading);
+    };
+
+    if (wantsTeacher) {
+      const cachedStuId = String(asTeacherCheckbox.dataset.stuId || '').trim();
+      if (cachedStuId) {
+        submitStuId = cachedStuId;
+      } else {
+        setTeacherOptionLoading(true, '正在获取stu_id…');
+        btn.textContent = '正在等待…';
+        btn.setAttribute('disabled', 'disabled');
+        const resolved = await resolveCurrentStudentStuId(courseId);
+        if (!resolved.ok) {
+          setTeacherOptionLoading(false);
+          btn.removeAttribute('disabled');
+          btn.textContent = oldText || '确定';
+          showToast(resolved.message || '获取stu_id失败', 'error', 2800);
+          return;
+        }
+        submitStuId = resolved.stuId;
+        asTeacherCheckbox.dataset.stuId = submitStuId;
+        if (asTeacherText instanceof HTMLElement) {
+          asTeacherText.textContent = `以教师身份提交（stu_id: ${submitStuId}）`;
+        }
+      }
+    }
+
+    setTeacherOptionLoading(false);
     btn.textContent = '提交中…';
     btn.setAttribute('disabled', 'disabled');
     try {
-      const res = await submitNativeHomework(courseId, hw, content, fileList);
+      const res = await submitNativeHomework(courseId, hw, content, fileList, {
+        asTeacher: wantsTeacher,
+        stuId: submitStuId
+      });
       if (res.loginRequired) {
         handleLoginRequired(() => {
           btn.removeAttribute('disabled');
           btn.textContent = oldText || '确定';
+          setTeacherOptionLoading(false);
         }, null, globalThis.BjtuPlatformLoginUi.loginRequiredHtml('ve'));
         return;
       }
@@ -6983,6 +7116,7 @@ courseListDiv.addEventListener('click', async (e) => {
     } finally {
       btn.removeAttribute('disabled');
       btn.textContent = oldText || '确定';
+      setTeacherOptionLoading(false);
       refreshUploadSelectVisibility();
     }
   }
