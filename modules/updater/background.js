@@ -478,7 +478,7 @@
     ), 0);
   }
 
-  async function requestManualModuleSelection({ release, root, archiveFiles, candidates, initial }) {
+  async function requestManualModuleSelection({ release, root, archiveFiles, candidates, initial, owner }) {
     const requestId = crypto.randomUUID();
     const labels = await getArchiveModuleLabels(archiveFiles);
     const choices = [
@@ -508,10 +508,29 @@
       manualModuleSelectionRequests.set(requestId, {
         ownerId: release.ownerId,
         allowed: new Set(candidates),
+        defaults: new Set(initial),
         resolve,
         reject
       });
     });
+    let ownerCheckTimer;
+    let checkingOwner = false;
+    const checkOwner = async () => {
+      if (checkingOwner || !manualModuleSelectionRequests.has(requestId)) return;
+      checkingOwner = true;
+      try {
+        let open = false;
+        if (owner?.documentId && chrome.runtime.getContexts) {
+          open = (await chrome.runtime.getContexts({documentIds:[owner.documentId]})).length > 0;
+        } else if (owner?.tab?.id) {
+          const tab = await chrome.tabs.get(owner.tab.id).catch(() => null);
+          open = !!tab && (!owner.tab.url || tab.url === owner.tab.url);
+        }
+        if (!open) resolveManualModuleSelection({requestId,ownerId:release.ownerId,useDefault:true});
+      } catch (error) {
+        console.warn('[bjtu] unable to check update module selection owner:', error);
+      } finally { checkingOwner = false; }
+    };
     try {
       await setStatus('selecting-modules', {
         manual: true,
@@ -522,11 +541,15 @@
         directoryName: root.name,
         choices
       });
+      ownerCheckTimer = setInterval(() => void checkOwner(),1000);
+      await checkOwner();
+      return await selectionPromise;
     } catch (error) {
       manualModuleSelectionRequests.delete(requestId);
       throw error;
+    } finally {
+      clearInterval(ownerCheckTimer);
     }
-    return selectionPromise;
   }
 
   function resolveManualModuleSelection(payload) {
@@ -534,6 +557,10 @@
     const pending = manualModuleSelectionRequests.get(requestId);
     if (!pending || pending.ownerId !== payload?.ownerId) return false;
     manualModuleSelectionRequests.delete(requestId);
+    if (payload?.useDefault === true) {
+      pending.resolve(pending.defaults);
+      return true;
+    }
     if (payload?.cancelled === true) {
       pending.reject(new Error(String(payload?.error || '已取消模块选择')));
       return true;
@@ -732,7 +759,7 @@
     });
   }
 
-  async function installRelease(root, release, { manual = false, tracking = {} } = {}) {
+  async function installRelease(root, release, { manual = false, tracking = {}, owner } = {}) {
     const archive = await retryNetworkOperation(() => downloadArchive(release.url, manual || tracking.clean
       ? (transfer) => setStatus('downloading', {
           ...tracking,
@@ -766,7 +793,7 @@
         .filter((id) => !REQUIRED_MODULE_IDS.has(id));
       const initial = new Set(candidates.filter((id) => installedModuleIds.includes(id) || newModules.includes(id)));
       const chosenModules = manual
-        ? await requestManualModuleSelection({ release, root, archiveFiles, candidates, initial })
+        ? await requestManualModuleSelection({ release, root, archiveFiles, candidates, initial, owner })
         : new Set(initial);
       const selectedModules = globalThis.BjtuModuleRegistry.withDependencies(chosenModules);
       globalThis.BjtuModuleRegistry.assertDependencies(selectedModules, [
@@ -870,7 +897,7 @@
         total: 0,
         percent: null
       });
-      const fileCount = await installRelease(root, release, { manual: true });
+      const fileCount = await installRelease(root, release, { manual: true, owner: sender });
       const record = {
         ver: release.version,
         name: release.name,

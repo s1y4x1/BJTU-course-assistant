@@ -1117,8 +1117,7 @@ window.addEventListener('pagehide', () => {
     payload: {
       requestId,
       ownerId: VERSION_FOREGROUND_SESSION_ID,
-      cancelled: true,
-      error: '模块选择页面已关闭'
+      useDefault: true
     }
   }).catch(() => {});
 });
@@ -1230,7 +1229,7 @@ function renderBackgroundCleanInstallStatus(status, {readOnly = false} = {}) {
     setVersionDownloadBar({ visible: true, percent, indeterminate: status.clearing === true || total <= 0 });
     if (!status.clearing) {
       const statusEl = document.getElementById('version-download-status');
-      if (statusEl) statusEl.insertAdjacentHTML('beforeend', `<span class="version-download-size-pair"><span>已解压</span><span class="file-size-emphasis" data-file-size-bytes="${completedBytes}" style="${buildVersionDownloadEmphasisStyle(completedBytes)}">${escapeVersionHtml(formatDownloadBytes(completedBytes))}</span><span class="version-download-status-separator">/</span><span class="file-size-emphasis" data-file-size-bytes="${totalBytes}" style="${buildVersionDownloadEmphasisStyle(totalBytes)}">${escapeVersionHtml(formatDownloadBytes(totalBytes))}</span></span>`);
+      if (statusEl) statusEl.insertAdjacentHTML('beforeend', `<span class="version-download-size-pair"><span class="file-size-emphasis" data-file-size-bytes="${completedBytes}" style="${buildVersionDownloadEmphasisStyle(completedBytes)}">${escapeVersionHtml(formatDownloadBytes(completedBytes))}</span><span class="version-download-status-separator">/</span><span class="file-size-emphasis" data-file-size-bytes="${totalBytes}" style="${buildVersionDownloadEmphasisStyle(totalBytes)}">${escapeVersionHtml(formatDownloadBytes(totalBytes))}</span></span>`);
     }
     return;
   }
