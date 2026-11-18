@@ -22,7 +22,7 @@
 .citel-login-form input:focus { border-color:#F98012; outline:2px solid #F98012; outline-offset:1px; }
 .citel-login-tip { margin:0; color:#64748b; font-size:11px; line-height:1.45; }
 .citel-login-actions { display:flex; gap:8px; }
-.citel-login-actions > button { flex:1; min-width:0; height:34px; }
+.citel-login-actions > button { display:flex; align-items:center; justify-content:center; box-sizing:border-box; flex:1; min-width:0; height:34px; padding:0 16px; line-height:normal; }
 .citel-login-actions > .citel-login-cancel { background:#64748b; color:#fff; }
 .citel-login-submit { height:34px; padding:6px 16px; background:var(--bjtu-color-platformCitel,#F98012); color:#fff; }
 .citel-login-submit:hover { background:color-mix(in srgb,var(--bjtu-color-platformCitel,#F98012),black 15%); }

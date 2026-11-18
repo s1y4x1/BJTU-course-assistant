@@ -76,8 +76,6 @@
   font-size:12px;
   white-space:nowrap;
 }
-.ve-notice-content { min-width:220px; max-width:500px; overflow-wrap:anywhere; }
-.ve-notice-content img { max-width:100%; }
 .ve-switch-teacher-btn:hover { background:#1d4ed8; }
 .ve-course-num-wrap {
   position:relative;
@@ -103,6 +101,16 @@
   font-weight:700;
 }
 .ve-popover-table td:last-child { white-space:nowrap; }
+.ve-notice-pop .ve-popover-table td.ve-notice-content {
+  width:min(500px,45vw);
+  min-width:min(220px,45vw);
+  max-width:500px;
+  white-space:normal;
+  overflow-wrap:anywhere;
+}
+.ve-notice-content :is(p,div,span,a) { white-space:normal; overflow-wrap:anywhere; }
+.ve-notice-content pre { white-space:pre-wrap; overflow-wrap:anywhere; }
+.ve-notice-content :is(img,video,table) { max-width:100%; }
 .ve-course-teacher-loading {
   margin-top:6px;
   font-size:12px;
