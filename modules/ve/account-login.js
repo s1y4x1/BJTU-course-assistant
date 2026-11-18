@@ -169,9 +169,22 @@
 
   async function getCurrentUserInfo({ signal } = {}) {
     if (signal?.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError');
-    const response = await sendRuntimeMessage({ type: 'VE_LOGIN_CHECK_STATUS', payload: {} });
-    if (signal?.aborted) throw signal.reason || new DOMException('Aborted', 'AbortError');
-    return response?.userInfo || null;
+    let timer, abort;
+    try {
+      const response = await Promise.race([
+        sendRuntimeMessage({ type: 'VE_LOGIN_CHECK_STATUS', payload: {} }),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => reject(Object.assign(new Error('确认上传登录状态超时，请稍后重试'), {code:'LOGIN_STATUS_TIMEOUT'})),30000);
+          abort = () => reject(signal.reason || new DOMException('Aborted','AbortError'));
+          signal?.addEventListener('abort',abort,{once:true});
+        })
+      ]);
+      if (!response?.ok) throw new Error(response?.message || '确认智慧课程平台登录状态失败');
+      return response.userInfo || null;
+    } finally {
+      clearTimeout(timer);
+      if (abort) signal?.removeEventListener('abort',abort);
+    }
   }
 
   async function fetchCurrentAccountPersonalCenter({ signal } = {}) {

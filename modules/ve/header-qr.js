@@ -156,6 +156,26 @@
       clone.querySelectorAll('.course-card,.homework-card,.file-item').forEach((node,index) => {
         const style = getComputedStyle(originalCards[index]); node.style.backgroundColor = style.backgroundColor; node.style.color = style.color;
       });
+      // Export loaded data without exposing every hover panel at once. Native
+      // details also work before the companion script finishes loading.
+      for (const wrap of clone.querySelectorAll('.ve-teacher-wrap,.ve-course-num-wrap,.ve-student-wrap,.ve-notice-wrap')) {
+        const panel = wrap.querySelector('.ve-teacher-pop,.ve-course-teacher-pop,.ve-student-pop,.ve-notice-pop');
+        if (!panel) continue;
+        const details = out.createElement('details'), summary = out.createElement('summary');
+        details.className = 'share-meta';
+        summary.textContent = [...wrap.childNodes].filter(node => node !== panel).map(node => node.textContent).join('').trim();
+        panel.removeAttribute('style'); panel.className = 'share-pop-body';
+        wrap.replaceWith(details); details.append(summary,panel);
+      }
+      for (const area of clone.querySelectorAll('.result-area')) {
+        if (!area.textContent.trim()) continue;
+        const card = area.closest('.file-item');
+        const kind = card?.dataset.resultView;
+        const details = out.createElement('details'), summary = out.createElement('summary');
+        summary.textContent = ({courseware:'资源下载',videos:'回放下载',archive:'归档下载',assessment:'课程考核记录表下载'})[kind] || '已加载的课程资源';
+        details.className = 'share-resources';
+        area.replaceWith(details); details.append(summary,area);
+      }
       for (const row of clone.querySelectorAll('.homework-toggle-row')) {
         const toggle = row.querySelector('.homework-toggle-btn');
         if (!toggle) continue;

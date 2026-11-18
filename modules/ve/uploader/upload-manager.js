@@ -20,7 +20,7 @@ function applyVeUploadAccountInfo(userInfo) {
 async function ensureVeUploadSession() {
   if (veUploadSessionCheckPromise) return veUploadSessionCheckPromise;
   veUploadSessionCheckPromise = (async () => {
-    let userInfo = await globalThis.BjtuAccountLogin?.getCurrentUserInfo?.().catch(() => null);
+    let userInfo = await globalThis.BjtuAccountLogin?.getCurrentUserInfo?.();
     if (applyVeUploadAccountInfo(userInfo)) return userInfo;
 
     isLoginSessionValid = false;
@@ -36,7 +36,7 @@ async function ensureVeUploadSession() {
       throw Object.assign(new Error(String(result?.message || '智慧课程平台登录失败或已取消')), { code: 'LOGIN_REQUIRED' });
     }
     userInfo = result?.userInfo
-      || await globalThis.BjtuAccountLogin?.getCurrentUserInfo?.().catch(() => null);
+      || await globalThis.BjtuAccountLogin?.getCurrentUserInfo?.();
     if (!applyVeUploadAccountInfo(userInfo)) {
       throw Object.assign(new Error('智慧课程平台登录流程完成，但未能确认当前账号'), { code: 'LOGIN_REQUIRED' });
     }
