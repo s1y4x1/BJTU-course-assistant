@@ -222,6 +222,7 @@ html[data-color-scheme="dark"] .version-source-row,
 html[data-color-scheme="dark"] .account-init-progress-label,
 html[data-color-scheme="dark"] .ve-course-teacher-loading,
 html[data-color-scheme="dark"] .ve-teacher-name,
+html[data-color-scheme="dark"] .ve-notice-count,
 html[data-color-scheme="dark"] .ve-course-num-wrap,
 html[data-color-scheme="dark"] .ve-student-wrap {
   color: #cbd5e1 !important;

@@ -507,6 +507,9 @@ function bindVeCourseNotices(card, courseId) {
         });
         if (isLikelyLoginPageHtml(text,res?.url)) throw new Error('登录状态已失效');
         const data = parseVeJson(text);
+        // The platform also uses an empty string (sometimes with a nonzero
+        // STATUS) for courses without announcements.
+        if (data?.result === '') return {result:[],total:0};
         if (data?.STATUS != null && String(data.STATUS) !== '0') throw new Error(data.message || '获取课程通知失败');
         return data;
       };
@@ -514,13 +517,20 @@ function bindVeCourseNotices(card, courseId) {
       if (Number(data.total) > 10) data = await request(Number(data.total));
       if (isCourseListLoadStale(version) || !card.isConnected) return;
       const rows = Array.isArray(data.result) ? data.result : [];
+      if (!rows.length) {
+        loaded = true;
+        if (wrap.previousElementSibling?.classList.contains('ve-meta-sep')) wrap.previousElementSibling.remove();
+        wrap.remove();
+        return;
+      }
       label.textContent = `${rows.length} 通知`;
       pop.innerHTML = rows.length ? `<table class="ve-popover-table"><thead><tr><th>内容</th><th>查看次数</th><th>时间</th><th>发布人</th><th>预览</th></tr></thead><tbody>${rows.map(row => `<tr><td>${escapeHtml(row.name || '')}</td><td>${escapeHtml(String(row.read_num ?? ''))}</td><td>${globalThis.BjtuDateTime.html(row.createDate || '')}</td><td>${escapeHtml(row.user_name || '')}</td><td class="ve-notice-content">${globalThis.BjtuHomeworkUi.sanitizeRichHtml(row.content || '')}</td></tr>`).join('')}</tbody></table>` : '<div class="ve-course-teacher-loading">暂无课程通知</div>';
       loaded = true;
       scheduleVeHoverPopoverPosition(pop);
     })().catch(error => {
       if (isCourseListLoadStale(version) || !card.isConnected) return;
-      pop.textContent = `获取课程通知失败：${error.message}；重新悬停可重试`;
+      const message = String(error.message || '获取课程通知失败');
+      pop.textContent = `${message.startsWith('获取课程通知失败') ? message : '获取课程通知失败：' + message}；重新悬停可重试`;
       scheduleVeHoverPopoverPosition(pop);
     }).finally(() => { pending = null; });
     return pending;
