@@ -47,7 +47,7 @@ html[data-color-scheme="dark"] .conversation-link > .hold-confirm-progress { bac
 :is(.chatroom-options-card,#sidebar-host) .conversation-context-menu button {
   border:0; border-radius:6px; padding:4px 9px; color:white; cursor:pointer; white-space:nowrap;
 }
-.conversation-menu-pin { background:#1976d2; }
+.conversation-menu-pin { background:var(--bjtu-options-button,#1976d2); }
 .conversation-menu-hide { background:#5c6878; }
 .conversation-menu-delete { background:#b91c1c; touch-action:manipulation; user-select:none; }
 .conversation-menu-delete .hold-confirm-progress { background:#ffd5d5; }

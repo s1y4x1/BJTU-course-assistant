@@ -16,7 +16,7 @@
 .markdown-vendor-status { margin-inline-start:auto; color:#475569; }
 .markdown-vendor-actions { display:flex; gap:6px; }
 .markdown-vendor-actions button, .markdown-vendor-dialog-close {
-  border:0; border-radius:6px; padding:5px 9px; background:#1976d2; color:#fff; font:inherit; cursor:pointer;
+  border:0; border-radius:6px; padding:5px 9px; background:var(--bjtu-options-button,#1976d2); color:#fff; font:inherit; cursor:pointer;
 }
 .markdown-vendor-actions button:disabled, .markdown-vendor-dialog-close:disabled { opacity:.6; cursor:not-allowed; }
 .markdown-vendor-actions [data-delete]:not(:disabled) { background:#dc2626; }
