@@ -960,6 +960,7 @@ function ensureVersionDownloadModal() {
     closeDownloadBtn.addEventListener('click', () => {
       if (modal.dataset.locked === '1') return;
       if (modal.dataset.readOnly === '1' && observedBackgroundInstall) observedBackgroundInstall.dismissed = true;
+      if (modal.classList.contains('version-download-floating')) versionDownloadMinimized = true;
       cancelVersionRefreshCountdown();
       modal.style.display = 'none';
     });
@@ -1040,9 +1041,9 @@ function setVersionDownloadProgressUi({
   versionDownloadPhase = String(phase || 'downloading').trim() || 'downloading';
   syncVersionNoticeDownloadButton();
   const forceShow = phase !== 'downloading';
-  const shouldShow = visible && (forceShow || !versionDownloadMinimized);
+  const shouldShow = visible && (!versionDownloadMinimized || (!floating && forceShow));
   modal.style.display = shouldShow ? 'flex' : 'none';
-  if (forceShow) versionDownloadMinimized = false;
+  if (forceShow && !floating) versionDownloadMinimized = false;
   setVersionDownloadRetryVisible(false);
   if (!visible) return;
 
@@ -1054,17 +1055,17 @@ function setVersionDownloadProgressUi({
   const refreshBtn = document.getElementById('version-download-refresh');
   const closeBtn = document.getElementById('version-download-close');
 
-  if (readOnly || phase === 'downloading' || phase === 'failed') modal.dataset.locked = '0';
+  if (readOnly || floating || phase === 'downloading' || phase === 'failed') modal.dataset.locked = '0';
 
   if (minBtn instanceof HTMLButtonElement) {
-    minBtn.style.display = !readOnly && versionDownloadPhase === 'downloading' ? 'inline-block' : 'none';
+    minBtn.style.display = !readOnly && !floating && versionDownloadPhase === 'downloading' ? 'inline-block' : 'none';
   }
   if (phase !== 'finished' || readOnly) {
     if (openExtensionsBtn instanceof HTMLElement) openExtensionsBtn.style.display = 'none';
     if (refreshBtn instanceof HTMLElement) refreshBtn.style.display = 'none';
     if (closeBtn instanceof HTMLElement) closeBtn.style.display = 'none';
   }
-  if ((readOnly || phase === 'failed') && closeBtn instanceof HTMLElement) closeBtn.style.display = '';
+  if ((readOnly || floating || phase === 'failed') && closeBtn instanceof HTMLElement) closeBtn.style.display = '';
   if (phase === 'finished' || phase === 'failed') setVersionDownloadBar({ visible: false });
 
   if (titleEl) titleEl.textContent = versionDownloadSelectedSource === 'history' && title === '正在下载更新压缩包'
