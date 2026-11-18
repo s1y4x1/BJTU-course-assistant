@@ -80,6 +80,8 @@ function withVersionDirectoryPermissionAuditLock(operation) {
 let initialization;
 let requestInProgress;
 let dismissed = false;
+let permissionMessageTemplate;
+let requestForUpdate = false;
 
 function initialize() {
   return initialization ??= (async () => {
@@ -103,6 +105,7 @@ function initialize() {
     const template = document.createElement('template');
     template.innerHTML = await response.text();
     const modal = template.content.firstElementChild;
+    permissionMessageTemplate = modal.querySelector('#version-directory-permission-message').innerHTML;
     document.body.append(modal);
     return modal;
   })().catch(error => { initialization = null; throw error; });
@@ -132,9 +135,15 @@ async function check() {
   }
 }
 
-async function request({ startup = false, audit = false } = {}) {
+async function request({ startup = false, audit = false, forUpdate = false } = {}) {
   if (startup && (dismissed || (await chrome.storage.local.get('updateDirectoryStartupCheckEnabled')).updateDirectoryStartupCheckEnabled === false)) return null;
-  if (requestInProgress) return requestInProgress;
+  if (requestInProgress) {
+    if (forUpdate) {
+      requestForUpdate = true;
+    }
+    return requestInProgress;
+  }
+  requestForUpdate = forUpdate;
   requestInProgress = (async () => {
     const modal = await initialize();
     let handle = await globalThis.BjtuUpdateFileSystem.readDirectoryHandle();
@@ -146,7 +155,7 @@ async function request({ startup = false, audit = false } = {}) {
     const later = modal.querySelector('#version-directory-permission-later');
     const never = modal.querySelector('#version-directory-permission-never');
     const message = modal.querySelector('#version-directory-permission-message');
-    message.textContent = '请选择 BJTU 课程助手的安装目录，并允许扩展更改该文件夹。浏览器要求通过点击按钮发起目录选择和授权。';
+    message.innerHTML = permissionMessageTemplate;
     return new Promise(resolve => {
       const finish = result => {
         modal.classList.remove('show');
@@ -155,7 +164,19 @@ async function request({ startup = false, audit = false } = {}) {
       };
       const dismiss = () => { dismissed = true; finish(null); };
       later.onclick = dismiss;
-      never.onclick = () => { dismiss(); void chrome.storage.local.set({updateDirectoryStartupCheckEnabled:false}); };
+      never.onclick = async () => {
+        await chrome.storage.local.set({updateDirectoryStartupCheckEnabled:false});
+        dismiss();
+        const text = '已关闭提醒，可在扩展选项中重新开启';
+        if (typeof globalThis.showToast === 'function') globalThis.showToast(text,'warning',3000);
+        else {
+          const container = document.createElement('div'); container.className = 'bjtu-toast-container';
+          const toast = document.createElement('div'); toast.className = 'bjtu-toast warning'; toast.textContent = text;
+          container.append(toast); document.body.append(container);
+          toast.addEventListener('click', () => container.remove());
+          setTimeout(() => container.remove(),3000);
+        }
+      };
       choose.onclick = async () => {
         choose.disabled = later.disabled = never.disabled = true;
         try {
@@ -164,6 +185,11 @@ async function request({ startup = false, audit = false } = {}) {
           if (!selected) selected = await window.showDirectoryPicker({id:'bjtu-update-dir',mode:'readwrite'});
           const verified = await verify(selected, true);
           dismissed = false;
+          const reload = !requestForUpdate && window.confirm('目录验证成功。建议重新加载扩展。若再次提示授权，请重复完成授权，直到浏览器允许您选择「每次访问都允许」。现在重新加载吗？');
+          if (reload) {
+            const result = await chrome.runtime.sendMessage({type:'RELOAD_EXTENSION_AND_OPEN_APP',payload:{reopenApp:true}});
+            if (!result?.ok) throw new Error(result?.message || '无法安排重新加载扩展并恢复全屏页面');
+          }
           finish(verified);
         } catch (error) {
           handle = null;
@@ -172,7 +198,7 @@ async function request({ startup = false, audit = false } = {}) {
       };
       modal.classList.add('show');
     });
-  })().finally(() => { requestInProgress = null; });
+  })().finally(() => { requestInProgress = null; requestForUpdate = false; });
   return requestInProgress;
 }
 

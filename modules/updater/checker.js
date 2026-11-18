@@ -440,6 +440,7 @@ function initializeVersionReinstallCommand() {
 }
 
 function setupVersionDirectoryPermissionCheck() {
+  if (typeof popupMode !== 'undefined' && popupMode) return;
   const button = document.getElementById('checkUpdateDirectoryPermission');
   let checking = false;
   const setPermissionButton = (granted) => {
@@ -2798,7 +2799,7 @@ async function startVersionDownloadWithFallback(downloadUrl, source = '', instal
   versionDownloadInProgress = true;
   syncVersionNoticeDownloadButton();
   try {
-    const writableDirectory = await globalThis.BjtuDirectoryPermission.request({audit:versionDownloadClean});
+    const writableDirectory = await globalThis.BjtuDirectoryPermission.request({audit:versionDownloadClean,forUpdate:true});
     if (!writableDirectory) return;
     versionUpdateDirectoryHandle = writableDirectory;
     versionUpdateDirectoryHandleLoaded = true;
