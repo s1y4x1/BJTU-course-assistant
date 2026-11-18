@@ -44,7 +44,8 @@
   function loginLinkHtml(platform) {
     const config = PLATFORM_LOGIN_CONFIG[String(platform || '').trim()];
     if (!config) return '';
-    return `<a href="${config.url}" target="_blank" rel="noopener noreferrer" style="color:${config.color}; text-decoration:none; font-weight:600;">${config.name}</a>`;
+    const key = String(platform).replace(/^./, char => char.toUpperCase());
+    return `<a href="${config.url}" target="_blank" rel="noopener noreferrer" style="color:var(--bjtu-color-platform${key},${config.color}); text-decoration:none; font-weight:600;">${config.name}</a>`;
   }
 
   function loginRequiredHtml(platform) {

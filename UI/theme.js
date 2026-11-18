@@ -83,6 +83,10 @@
     document.documentElement.style.setProperty('--bjtu-page-background', custom ? color : BACKGROUND_DEFAULTS[scheme]);
     const card = backgroundColors[scheme === 'dark' ? 'cardDark' : 'cardLight'];
     document.documentElement.style.setProperty('--bjtu-card-background', /^#[0-9a-f]{6}$/i.test(String(card || '')) ? card : CARD_DEFAULTS[scheme]);
+    for (const [platform, fallback] of Object.entries({Ve:'#1565c0',Ykt:'#5096f5',Mrjzy:'#29a9fc',Jlgj:'#ffd243',Mooc:'#00cc7e',Xuetangx:'#1769fe',Citel:'#f98012'})) {
+      const color = backgroundColors['platform' + platform];
+      document.documentElement.style.setProperty('--bjtu-color-platform' + platform, /^#[0-9a-f]{6}$/i.test(String(color || '')) ? color : fallback);
+    }
   }
 
   function normalizeAnimationMode(value) {

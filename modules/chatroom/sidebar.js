@@ -7,7 +7,7 @@
 (function(global) {
   'use strict';
   const instances = new WeakMap();
-  function bindHold(element, {onConfirm,onStart,onEnd,signal} = {}) {
+  function bindHold(element, {onConfirm,onStart,onEnd,signal,duration = 1000} = {}) {
     let hold, suppressClick = false;
     element.classList.add('hold-confirm');
     if (!element.querySelector('.hold-confirm-progress')) {
@@ -34,7 +34,7 @@
       const tick = now => {
         if (!hold) return;
         if (!element.isConnected || element.disabled) { cancel(); return; }
-        const progress = Math.min(1,(now-hold.start)/1000);
+        const progress = Math.min(1,(now-hold.start)/duration);
         element.style.setProperty('--hold-confirm-progress',String(progress));
         if (progress < 1) hold.frame = requestAnimationFrame(tick);
         else { suppressClick = true; cancel(); onConfirm(); }
@@ -275,7 +275,7 @@
       const el = node('div', undefined, 'conversation-entry');
       const link = button('', () => { if (!hold.consumeClick()) chooseConversation(entry.id); }, 'conversation-link');
       link.dataset.conversation = entry.id;
-      link.title = '长按 1 秒或右键打开会话菜单';
+      link.title = '长按 0.5 秒或右键打开会话菜单';
       link.setAttribute('aria-expanded','false');
       const avatar = node('span', entry.kind === 'group' ? '👥' : '👤', 'conversation-avatar');
       avatar.setAttribute('aria-hidden', 'true');
@@ -300,6 +300,7 @@
       const unread = unreadCount(entry.view);
       if (unread) link.append(node('span', unread > 99 ? '99+' : unread, 'conversation-unread-badge'));
       const hold = bindHold(link,{
+        duration:500,
         signal:uiAbort.signal,
         onStart:() => {
           heldConversation = link;

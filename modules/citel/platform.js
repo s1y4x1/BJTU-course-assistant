@@ -78,7 +78,9 @@
     const html = await request('login/index.php', version, { method: 'POST', body });
     const doc = parse(html);
     if (isLoginPage(doc) || /登录无效|invalid login/i.test(text(doc.body))) {
-      throw error(text(doc.querySelector('.loginerrors, #loginerrormessage, .alert-danger, [role="alert"]')) || 'CITEL 登录无效，请检查用户名和密码', 'LOGIN_REQUIRED');
+      const notices = [...doc.querySelectorAll('#loginerrormessage, .alert-danger, [role="alert"]')].map(text).filter(Boolean);
+      const message = [...new Set(notices)].join('；') || text(doc.querySelector('.loginerrors')) || '登录无效，请重试';
+      throw error(/登录无效/.test(message) ? '登录无效，请重试' : message, 'LOGIN_REQUIRED');
     }
     // A successful POST may redirect; validate the authenticated home separately.
     const home = await page(BASE, version);
@@ -410,12 +412,18 @@
       loginDialog = dialog; dialog.className = 'citel-login-dialog version-modal-card platform-qr-login-card';
       dialog.setAttribute('aria-labelledby', 'citel-login-title');
       dialog.innerHTML = `<div class="version-modal-header"><div class="citel-login-title" id="citel-login-title">登录 CITEL</div><button type="button" class="btn version-close-btn" data-citel-cancel aria-label="关闭" title="关闭">×</button></div><div class="platform-qr-login-body citel-login-body"><form class="citel-login-form"><label>用户名<input name="username" autocomplete="username" required value="${escape(stored.citelLoginUsername || stored.citelUsername || '')}"></label><label>密码<input name="password" type="password" autocomplete="current-password" placeholder="留空使用 用户名@Bjtu"></label><p class="citel-login-tip">密码仅用于本次登录，不保存。</p><button type="submit" class="btn citel-login-submit">登录</button></form></div>`;
+      const submit = dialog.querySelector('.citel-login-submit');
+      const actions = document.createElement('div'); actions.className = 'citel-login-actions';
+      submit.replaceWith(actions); actions.append(submit);
+      const cancel = document.createElement('button');
+      cancel.type = 'button'; cancel.className = 'btn citel-login-cancel'; cancel.dataset.citelCancel = '';
+      cancel.textContent = '取消'; actions.append(cancel);
       document.body.appendChild(dialog); dialog.showModal();
       dialog.querySelector('input[name="username"]')?.focus();
       let submitPromise = null;
       await new Promise((resolve) => {
         dialog.addEventListener('close', resolve, { once: true });
-        dialog.querySelector('[data-citel-cancel]').addEventListener('click', () => { serial++; dialog.close(); });
+        dialog.querySelectorAll('[data-citel-cancel]').forEach(button => button.addEventListener('click', () => { serial++; dialog.close(); }));
         dialog.addEventListener('cancel', () => { serial++; });
         let backdropPressed = false;
         const isBackdrop = (event) => {

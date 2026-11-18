@@ -8,6 +8,8 @@
     backgroundLight: global.BjtuTheme.backgroundDefaults.light, backgroundDark: global.BjtuTheme.backgroundDefaults.dark,
     cardLight: global.BjtuTheme.cardDefaults.light, cardDark: global.BjtuTheme.cardDefaults.dark,
     button: '#1976d2', courseCard: '#ffffff', fileCard: '#ffffff',
+    platformVe:'#1565c0', platformYkt:'#5096f5', platformMrjzy:'#29a9fc',
+    platformJlgj:'#ffd243', platformMooc:'#00cc7e', platformXuetangx:'#1769fe', platformCitel:'#f98012',
     pendingCard: '#fff5e6', overdueCard: '#ffe6e6', doneCard: '#e6ffe6',
     resource: '#1e3a8a', replay: '#9c27b0', assessment: '#0f766e', archive: '#0369a1',
     copy: '#45a049', download: '#1e3a8a', teacherPendingCard: '#dbeafe', teacherOverdueCard: '#ede9fe'
@@ -15,6 +17,8 @@
   const labels = {
     background: '背景',
     card: '卡片',
+    platformVe:'智慧课程平台', platformYkt:'雨课堂', platformMrjzy:'每日交作业',
+    platformJlgj:'接龙管家', platformMooc:'中国大学MOOC', platformXuetangx:'学堂在线', platformCitel:'CITEL',
     button: '操作按钮', courseCard: '课程卡片', fileCard: '文件卡片',
     pendingCard: '未交作业', overdueCard: '逾期作业', doneCard: '已交作业',
     resource: '资源下载', replay: '回放下载', assessment: '课程考核记录表下载', archive: '归档下载',
@@ -317,7 +321,7 @@
         const color = settings[key] || defaults[key];
         setProperty(document.documentElement, `--bjtu-color-${key}`, color);
         setProperty(document.documentElement, `--bjtu-color-${key}-foreground`, ['button', 'resource', 'replay', 'assessment', 'archive', 'copy', 'download'].includes(key) ? '#ffffff' : foreground(color));
-      } else {
+      } else if (!key.startsWith('platform')) {
         document.documentElement.style.removeProperty(`--bjtu-color-${key}`);
         document.documentElement.style.removeProperty(`--bjtu-color-${key}-foreground`);
       }

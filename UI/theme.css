@@ -604,6 +604,23 @@ html[data-color-scheme="dark"] .platform-option-detail {
   border-left-color: var(--platform-theme, #64748b) !important;
 }
 
+#vePlatformDetail { --platform-theme:var(--bjtu-color-platformVe,#1565c0); }
+#yktPlatformDetail { --platform-theme:var(--bjtu-color-platformYkt,#5096f5); }
+#mrjzyPlatformDetail { --platform-theme:var(--bjtu-color-platformMrjzy,#29a9fc); }
+#jlgjPlatformDetail { --platform-theme:var(--bjtu-color-platformJlgj,#ffd243); }
+#moocPlatformDetail { --platform-theme:var(--bjtu-color-platformMooc,#00cc7e); }
+#xuetangxPlatformDetail { --platform-theme:var(--bjtu-color-platformXuetangx,#1769fe); }
+#citelPlatformDetail { --platform-theme:var(--bjtu-color-platformCitel,#f98012); }
+#account-recovery-submit { background:var(--bjtu-color-platformVe,#1565c0); color:#fff; }
+#account-recovery-submit:hover { background:color-mix(in srgb,var(--bjtu-color-platformVe,#1565c0),black 15%); }
+.platform-status-btn .platform-link[href*="/ve/"] { color:var(--bjtu-color-platformVe,#1565c0); }
+.platform-status-btn .platform-link[href*="yuketang"] { color:var(--bjtu-color-platformYkt,#5096f5); }
+.platform-status-btn .platform-link[href*="lulufind"] { color:var(--bjtu-color-platformMrjzy,#29a9fc); }
+.platform-status-btn .platform-link[href*="jielong"] { color:var(--bjtu-color-platformJlgj,#ffd243); }
+.platform-status-btn .platform-link[href*="icourse163"] { color:var(--bjtu-color-platformMooc,#00cc7e); }
+.platform-status-btn .platform-link[href*="www.xuetangx"] { color:var(--bjtu-color-platformXuetangx,#1769fe); }
+.platform-status-btn .platform-link[href*="citel"] { color:var(--bjtu-color-platformCitel,#f98012); }
+
 html[data-color-scheme="dark"] .option-status { color:#b6c2d1; }
 html[data-color-scheme="dark"] .option-tip-popover {
   border-color:#475569;
