@@ -285,6 +285,7 @@ html[data-color-scheme="dark"] .mooc-progress-card {
 }
 
 html[data-color-scheme="dark"] #login-modal .login-panel,
+html[data-color-scheme="dark"] .ve-notice-pop,
 html[data-color-scheme="dark"] .ve-teacher-pop,
 html[data-color-scheme="dark"] .ve-student-pop,
 html[data-color-scheme="dark"] .ve-course-teacher-pop {
@@ -293,6 +294,7 @@ html[data-color-scheme="dark"] .ve-course-teacher-pop {
   color: #e5e7eb !important;
 }
 
+html[data-color-scheme="dark"] .ve-notice-pop,
 html[data-color-scheme="dark"] .ve-teacher-pop,
 html[data-color-scheme="dark"] .ve-student-pop,
 html[data-color-scheme="dark"] .ve-course-teacher-pop {

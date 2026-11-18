@@ -4467,7 +4467,7 @@ async function runLoginFlow({ reloadPlatform = true } = {}) {
       if (signal.aborted || loginCancelRequested) return { ok: false, reason: 'cancelled', account: username, message: '登录已取消' };
       if (recovery?.action === 'cancel') {
         await restoreAfterFailure();
-        showToast('登录失败，已恢复原账号', 'warning', 2200);
+        showToast('智慧课程平台 登录失败，已恢复原账号', 'warning', 2200);
         return { ok: false, reason: 'cancelled', account: username, message: '用户已取消登录' };
       }
       if (recovery?.action === 'reinitialize') {
@@ -4483,7 +4483,7 @@ async function runLoginFlow({ reloadPlatform = true } = {}) {
             : '账号不在本地账号列表中，请重新初始化账号列表或手动输入密码。';
           allowStoredCredentials = true;
           if (account) {
-            showToast('账号列表已更新，正在重新登录…', 'info', 0);
+            showToast('智慧课程平台 账号列表已更新，正在重新登录…', 'info', 0);
           }
         } catch (error) {
           recoveryMessage = '账号列表初始化失败：' + String(error?.message || error);

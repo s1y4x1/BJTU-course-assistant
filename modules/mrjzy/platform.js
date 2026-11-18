@@ -393,6 +393,7 @@ async function submitMrjzyPasswordLogin(mask) {
   stopMrjzyLoginAssistPolling();
   const serial = ++mrjzyPasswordLoginSerial;
   setMrjzyPasswordLoginBusy(mask, true, '正在验证账号…');
+  const pending = showToast('每日交作业 正在登录…', 'info', 0);
   try {
     const authenticated = await authenticateMrjzyWithPassword(phone, password);
     if (serial !== mrjzyPasswordLoginSerial) return;
@@ -404,8 +405,9 @@ async function submitMrjzyPasswordLogin(mask) {
   } catch (error) {
     if (serial !== mrjzyPasswordLoginSerial) return;
     setMrjzyPasswordLoginBusy(mask, false, String(error?.message || error || '登录失败'));
+    showToast('每日交作业 登录失败：' + String(error?.message || error || '登录失败'), 'error', 4000);
     if (mrjzyLoginAssistCurrentCode) startMrjzyLoginAssistPolling();
-  }
+  } finally { pending?.remove?.(); }
 }
 
 async function switchMrjzyPasswordAccount(mask, openId, classId, target) {
@@ -947,6 +949,7 @@ async function startMrjzyCredentialLogin(args) {
   if (!phone) return { ok: false, message: '手机号不能为空' };
   window.platformInteractiveLoginPending.mrjzy = true;
   if (isPlatformEnabled('mrjzy')) setPlatformLoginState('mrjzy', 'checking');
+  const pending = showToast('每日交作业 正在登录…', 'info', 0);
   try {
     const [saved, settings] = await Promise.all([
       chrome.runtime.sendMessage({ type: 'MRJZY_GET_SAVED_CREDENTIAL', loginName: phone }).catch(() => null),
@@ -973,8 +976,9 @@ async function startMrjzyCredentialLogin(args) {
   } catch (error) {
     window.platformInteractiveLoginPending.mrjzy = false;
     if (isPlatformEnabled('mrjzy')) setPlatformLoginState('mrjzy', 'offline');
+    showToast('每日交作业 登录失败：' + String(error?.message || error || '登录失败'), 'error', 4000);
     return { ok: false, message: String(error?.message || error || '登录失败') };
-  }
+  } finally { pending?.remove?.(); }
 }
 
 async function mrjzyPageLogin(args = {}) {

@@ -193,7 +193,10 @@
         await authenticate(autoLoginUsername, '', version);
         env?.toast?.('CITEL 登录成功', 'success');
       } catch (error) {
-        if (error.code !== 'cancelled') env?.toast?.('CITEL 登录失败：' + error.message, 'error', 4500);
+        if (error.code !== 'cancelled') {
+          env?.toast?.('CITEL 登录失败：' + error.message, 'error', 4500);
+          error.loginToastShown = true;
+        }
         throw error;
       } finally { pending?.remove?.(); }
       home = await page(BASE, version);
@@ -384,7 +387,7 @@
         const interactive = !!global.platformInteractiveLoginPending?.citel;
         // Invalidate peer workers before the core offline handler clears data.
         serial++; courses = []; clearCards(); global.BjtuCitelParticipants?.clear(); env?.setState?.('offline');
-        if (e.message !== 'CITEL 未登录或登录已失效') env?.toast?.(e.message, 'error', 4500);
+        if (!e.loginToastShown && e.message !== 'CITEL 未登录或登录已失效') env?.toast?.(e.message, 'error', 4500);
         if (interactive) void openLogin();
       } else {
         serial++; env?.setLoaded?.(false); env?.setProgress?.(0, 0);
@@ -406,7 +409,14 @@
 
   async function login(args = {}) {
     const version = ++serial;
-    await authenticate(args.username, args.password, version);
+    const pending = env?.toast?.('CITEL 正在登录…', 'info', 0);
+    try {
+      await authenticate(args.username, args.password, version);
+      env?.toast?.('CITEL 登录成功', 'success');
+    } catch (error) {
+      if (error.code !== 'cancelled') env?.toast?.('CITEL 登录失败：' + error.message, 'error', 4500);
+      throw error;
+    } finally { pending?.remove?.(); }
     await finishLogin(version);
     return { loggedIn: global.platformLoginState?.citel === 'online', ready: !!global.platformLoadedOnce?.citel, loginState: global.platformLoginState?.citel };
   }

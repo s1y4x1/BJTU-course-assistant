@@ -147,7 +147,7 @@ function startVeStartupAccountInfoLoad() {
 async function restartVePlatformForLoginExpired(reason = '登录状态已失效，正在重新登录…') {
   if (globalThis.shouldAutoLoginAfterExpiry?.('ve') !== true) return false;
   if (window.veLoginExpiredRestartPromise) return window.veLoginExpiredRestartPromise;
-  showToast(reason, 'info', 2200);
+  showToast('智慧课程平台 ' + reason, 'info', 2200);
   window.veLoginExpiredRestartPromise = (async () => {
     try {
       const recovered = await globalThis.reauthenticateVeSessionOnly?.();
