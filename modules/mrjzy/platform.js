@@ -685,8 +685,10 @@ function renderMrjzyStandaloneCoursesNow() {
     const titleHtml = loadingMeta
       ? `正在加载…… <span class="spinner" style="display:inline-block; width:10px; height:10px; margin-left:4px; border-width:1px; border-color:#6366f1; border-top-color:transparent;${globalThis.BjtuHomeworkUi.spinnerPhaseStyle()}"></span>`
       : `<a href="${MRJZY_WEB_BASE}/" target="_blank" rel="noopener noreferrer" style="color:#29a9fc; text-decoration:none;">${escapeHtml(c.divClass || '每日交作业课程')}</a>`;
-    const teacherHtml = loadingMeta
-      ? `正在加载…… <span class="spinner" style="display:inline-block; width:9px; height:9px; margin-left:4px; border-width:1px; border-color:#64748b; border-top-color:transparent;${globalThis.BjtuHomeworkUi.spinnerPhaseStyle()}"></span>`
+    const teacherLoading = !String(c.teacherName || '').trim()
+      && (loadingMeta || (c.homeworks || []).some(homework => homework.loadingMeta));
+    const teacherHtml = teacherLoading
+      ? `<span class="spinner" style="display:inline-block; width:10px; height:10px; margin-right:4px; border-width:1px;${globalThis.BjtuHomeworkUi.spinnerPhaseStyle()}"></span>正在加载…`
       : escapeHtml(c.teacherName || '');
     const card = globalThis.BjtuCourseCardUi.createCourseCard({
       courseId,

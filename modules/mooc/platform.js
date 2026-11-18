@@ -535,7 +535,7 @@ let moocLoginAssistOpening = null;
       env.setState('online');
       env.setProgress?.(courses.length, courses.length);
       render();
-      if (cacheComplete) global.markFullscreenCourseCacheComplete?.('mooc');
+      if (cacheComplete) globalThis.markFullscreenCourseCacheComplete?.('mooc');
     } catch (error) {
       if (serial !== loadSerial) return;
       courses = [];
