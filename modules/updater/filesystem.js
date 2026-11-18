@@ -205,8 +205,32 @@
     return fileConcurrencyDefaultsPromise;
   }
 
-  async function processFiles(files, operation) {
-    const concurrency = Math.min(await readFileConcurrency(), files.length);
+  async function resolveFileConcurrency(files, { autoConcurrency = false } = {}) {
+    const configured = await readFileConcurrency();
+    if (Number.isFinite(configured) || !autoConcurrency) return Math.min(configured,files.length);
+    if (!files.length) return 0;
+    const cpu = Number(global.navigator?.hardwareConcurrency) || 4;
+    const memoryGiB = Number(global.navigator?.deviceMemory) || 4;
+    const workerLimit = Math.min(files.length,16,Math.max(2,Math.floor(cpu * 2)));
+    const mib = 1024 * 1024;
+    const budget = Math.min(256,Math.max(32,memoryGiB * 16)) * mib;
+    // Budget for the largest possible in-flight set, including decompression
+    // copies and a per-writer allowance. A single oversized file still runs.
+    const weights = files.map(file => {
+      const size = Math.max(0,Number(file?.entry?.uncompressedSize ?? file?.size ?? 0) || 0);
+      return size * 2 + mib;
+    }).sort((a,b) => b - a);
+    let concurrency = 0, used = 0;
+    for (let index = 0; index < workerLimit; index++) {
+      if (concurrency && used + weights[index] > budget) break;
+      used += weights[index];
+      concurrency++;
+    }
+    return concurrency;
+  }
+
+  async function processFiles(files, operation, options = {}) {
+    const concurrency = await resolveFileConcurrency(files,options);
     let next = 0;
     let failed = false;
     let failure;

@@ -846,7 +846,7 @@
               console.warn('[bjtu] updater progress write failed:', error);
             }).finally(() => { progressWrite = null; });
           }
-        });
+        }, {autoConcurrency:true});
       } finally {
         // Never overwrite a later complete/error status with a pending progress report.
         await progressWrite;
