@@ -1217,7 +1217,9 @@ function renderBackgroundCleanInstallStatus(status, {readOnly = false} = {}) {
     if (!readOnly) versionDownloadInProgress = true;
     const completed = Math.max(0, Number(status.completed) || 0);
     const total = Math.max(0, Number(status.total) || 0);
-    const percent = total > 0 ? completed * 100 / total : 0;
+    const totalBytes = Math.max(0, Number(status.totalBytes) || 0);
+    const completedBytes = Math.min(totalBytes, Math.max(0, Number(status.completedBytes) || 0));
+    const percent = totalBytes > 0 ? completedBytes * 100 / totalBytes : (total > 0 && completed >= total ? 100 : 0);
     show({
       visible: true,
       status: status.clearing ? '正在清理扩展安装目录…' : `正在写入 ${completed} / ${total}`,
@@ -1226,6 +1228,10 @@ function renderBackgroundCleanInstallStatus(status, {readOnly = false} = {}) {
       phase: 'extracting'
     });
     setVersionDownloadBar({ visible: true, percent, indeterminate: status.clearing === true || total <= 0 });
+    if (!status.clearing) {
+      const statusEl = document.getElementById('version-download-status');
+      if (statusEl) statusEl.insertAdjacentHTML('beforeend', `<span class="version-download-size-pair"><span>已解压</span><span class="file-size-emphasis" data-file-size-bytes="${completedBytes}" style="${buildVersionDownloadEmphasisStyle(completedBytes)}">${escapeVersionHtml(formatDownloadBytes(completedBytes))}</span><span class="version-download-status-separator">/</span><span class="file-size-emphasis" data-file-size-bytes="${totalBytes}" style="${buildVersionDownloadEmphasisStyle(totalBytes)}">${escapeVersionHtml(formatDownloadBytes(totalBytes))}</span></span>`);
+    }
     return;
   }
   if (state === 'reloading') {

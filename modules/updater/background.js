@@ -776,6 +776,8 @@
       const selectedArchiveFiles = selectFiles(archiveFiles);
       if (!selectedArchiveFiles.length) throw new Error('更新压缩包中没有需要写入的文件');
       const files = filterFilesByModules(selectedArchiveFiles, selectedModules);
+      const totalBytes = files.reduce((sum, {entry}) => sum + Math.max(0, Number(entry.uncompressedSize) || 0), 0);
+      let completedBytes = 0;
       const reportProgress = (completed, clearing = false) => setStatus('installing', {
         ...tracking,
         manual,
@@ -783,6 +785,8 @@
         version: release.version,
         name: release.name,
         completed,
+        completedBytes,
+        totalBytes,
         clearing,
         total: files.length,
         directoryName: root.name
@@ -807,6 +811,7 @@
           if (path === 'manifest.json') bytes = fileSystem.applyReleaseVersionName(bytes, release);
           if (await write(root, path, bytes, { directoryCache })) writtenCount += 1;
           completed += 1;
+          completedBytes += Math.max(0, Number(entry.uncompressedSize) || 0);
           const now = Date.now();
           if (completed < files.length && !progressWrite && now - lastReportAt >= 100) {
             lastReportAt = now;
