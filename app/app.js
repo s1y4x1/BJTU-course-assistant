@@ -3097,6 +3097,7 @@ function renderAppToast(message, type = 'success', duration = 3000, allowHtml = 
   toast.addEventListener('click', () => {
     dismissToastAfterCopy(toast);
   });
+  return toast;
 }
 
 function showBackgroundPortalLoginPendingToast() {

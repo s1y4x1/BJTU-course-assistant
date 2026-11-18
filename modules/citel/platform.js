@@ -386,6 +386,7 @@
   }
 
   async function finishLogin(version) {
+    assertCurrent(version);
     if (typeof global.isPlatformEnabled === 'function' && !global.isPlatformEnabled('citel')) {
       global.togglePlatformSelection('citel', { interactive: false });
       await global.platformLoadPromises?.citel;
@@ -408,7 +409,7 @@
       const dialog = document.createElement('dialog');
       loginDialog = dialog; dialog.className = 'citel-login-dialog version-modal-card platform-qr-login-card';
       dialog.setAttribute('aria-labelledby', 'citel-login-title');
-      dialog.innerHTML = `<div class="version-modal-header"><div class="citel-login-title" id="citel-login-title">登录 CITEL</div><button type="button" class="btn version-close-btn" data-citel-cancel aria-label="关闭" title="关闭">×</button></div><div class="platform-qr-login-body citel-login-body"><form class="citel-login-form"><label>用户名<input name="username" autocomplete="username" required value="${escape(stored.citelLoginUsername || stored.citelUsername || '')}"></label><label>密码<input name="password" type="password" autocomplete="current-password" placeholder="留空使用 用户名@Bjtu"></label><p class="citel-login-tip">密码仅用于本次登录，不保存。</p><p class="citel-error" role="alert"></p><button type="submit" class="btn citel-login-submit">登录</button></form></div>`;
+      dialog.innerHTML = `<div class="version-modal-header"><div class="citel-login-title" id="citel-login-title">登录 CITEL</div><button type="button" class="btn version-close-btn" data-citel-cancel aria-label="关闭" title="关闭">×</button></div><div class="platform-qr-login-body citel-login-body"><form class="citel-login-form"><label>用户名<input name="username" autocomplete="username" required value="${escape(stored.citelLoginUsername || stored.citelUsername || '')}"></label><label>密码<input name="password" type="password" autocomplete="current-password" placeholder="留空使用 用户名@Bjtu"></label><p class="citel-login-tip">密码仅用于本次登录，不保存。</p><button type="submit" class="btn citel-login-submit">登录</button></form></div>`;
       document.body.appendChild(dialog); dialog.showModal();
       dialog.querySelector('input[name="username"]')?.focus();
       let submitPromise = null;
@@ -429,34 +430,36 @@
         });
         dialog.querySelector('form').addEventListener('submit', (event) => {
           event.preventDefault();
-          const button = dialog.querySelector('[type="submit"]');
-          button.disabled = true;
+          if (submitPromise) return;
+          const data = new FormData(event.currentTarget);
+          const version = ++serial;
+          if (global.platformInteractiveLoginPending) global.platformInteractiveLoginPending.citel = false;
+          dialog.close();
+          const pendingToast = env?.toast?.('CITEL 正在登录…', 'info', 0);
           submitPromise = (async () => {
             let authenticated = false;
             try {
-              const data = new FormData(event.target);
-              const version = ++serial;
               await authenticate(data.get('username'), data.get('password'), version);
+              assertCurrent(version);
               authenticated = true;
-              // Authentication is the point the user is waiting for; loading the
-              // course list continues in the background after the dialog closes.
-              dialog.close();
+              pendingToast?.remove?.();
+              env?.toast?.('CITEL 登录成功', 'success');
               await finishLogin(version);
             } catch (e) {
-              if (!authenticated) {
-                if (dialog.isConnected) {
-                  dialog.querySelector('[role="alert"]').textContent = e.message;
-                  button.disabled = false;
+              if (e.code !== 'cancelled') {
+                if (!authenticated && version === serial && global.platformLoginState?.citel === 'checking') {
+                  env?.setState?.('offline');
                 }
-              } else {
-                env?.toast?.(e.message, 'error', 4500);
+                env?.toast?.(e.message || 'CITEL 登录失败', 'error', 4500);
               }
+            } finally {
+              pendingToast?.remove?.();
             }
           })();
         });
       });
-      await submitPromise;
       dialog.remove(); loginDialog = null;
+      await submitPromise;
     })().finally(() => { loginPromise = null; });
     return loginPromise;
   }

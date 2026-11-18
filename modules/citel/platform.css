@@ -21,7 +21,6 @@
 .citel-login-form input { height:34px; padding:6px 8px; box-sizing:border-box; border:1px solid #cbd5e1; border-radius:6px; background:#fff; color:#111827; font:inherit; }
 .citel-login-form input:focus { border-color:#F98012; outline:2px solid #F98012; outline-offset:1px; }
 .citel-login-tip { margin:0; color:#64748b; font-size:11px; line-height:1.45; }
-.citel-login-form .citel-error { min-height:18px; margin:0; color:#dc2626; font-size:12px; line-height:1.45; }
 .citel-login-submit { align-self:flex-end; height:34px; padding:6px 16px; background:#F98012; color:#fff; }
 .citel-login-submit:hover { background:#d96a00; }
 html[data-color-scheme="dark"] .citel-login-title { color:#fb923c; }
@@ -29,4 +28,3 @@ html[data-color-scheme="dark"] .citel-login-form label { color:#cbd5e1; }
 html[data-color-scheme="dark"] .citel-login-form input { border-color:#475569; background:#0f172a; color:#f8fafc; }
 html[data-color-scheme="dark"] .citel-login-form input::placeholder { color:#94a3b8; }
 html[data-color-scheme="dark"] .citel-login-tip { color:#94a3b8; }
-html[data-color-scheme="dark"] .citel-login-form .citel-error { color:#fca5a5; }
