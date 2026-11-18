@@ -428,7 +428,7 @@ async function fetchVeReplaySchedule(courseId, { forceReload = false } = {}) {
 
 function positionVeHoverPopover(wrap) {
   if (!(wrap instanceof HTMLElement)) return;
-  const pop = wrap.querySelector(':scope > .ve-teacher-pop, :scope > .ve-course-teacher-pop, :scope > .ve-student-pop');
+  const pop = wrap.querySelector(':scope > .ve-teacher-pop, :scope > .ve-course-teacher-pop, :scope > .ve-student-pop, :scope > .ve-notice-pop');
   if (!(pop instanceof HTMLElement)) return;
   const viewportGap = 8;
   wrap.classList.remove('ve-pop-opens-up');
@@ -481,11 +481,52 @@ function scheduleVeHoverPopoverPosition(pop) {
 
 function bindVeHoverPopoverPositioning(card) {
   if (!(card instanceof HTMLElement)) return;
-  card.querySelectorAll('.ve-teacher-wrap, .ve-course-num-wrap, .ve-student-wrap').forEach((wrap) => {
+  card.querySelectorAll('.ve-teacher-wrap, .ve-course-num-wrap, .ve-student-wrap, .ve-notice-wrap').forEach((wrap) => {
     wrap.addEventListener('mouseenter', () => {
       requestAnimationFrame(() => positionVeHoverPopover(wrap));
     });
   });
+}
+
+function bindVeCourseNotices(card, courseId) {
+  const wrap = card.querySelector('.ve-notice-wrap');
+  const pop = wrap?.querySelector('.ve-notice-pop');
+  const label = wrap?.querySelector('.ve-notice-count');
+  if (!wrap || !pop || !label) return;
+  const version = getCourseListLoadVersionSnapshot();
+  let pending = null, loaded = false;
+  async function load() {
+    if (pending || loaded || isCourseListLoadStale(version)) return pending;
+    pending = (async () => {
+      pop.innerHTML = '<div class="ve-course-teacher-loading"><span class="spinner"></span>正在获取课程通知…</div>';
+      const request = async (pageSize) => {
+        const body = new URLSearchParams({cIds:String(courseId)});
+        if (pageSize) body.set('pageSize',String(pageSize));
+        const {text, res} = await fetchText(BASE_VE + 'back/course/courseInfo.shtml?method=queryAnnounceForCourseList', {
+          method:'POST', body, signal:window.globalVeAbortController?.signal
+        });
+        if (isLikelyLoginPageHtml(text,res?.url)) throw new Error('登录状态已失效');
+        const data = parseVeJson(text);
+        if (data?.STATUS != null && String(data.STATUS) !== '0') throw new Error(data.message || '获取课程通知失败');
+        return data;
+      };
+      let data = await request();
+      if (Number(data.total) > 10) data = await request(Number(data.total));
+      if (isCourseListLoadStale(version) || !card.isConnected) return;
+      const rows = Array.isArray(data.result) ? data.result : [];
+      label.textContent = `${rows.length} 通知`;
+      pop.innerHTML = rows.length ? `<table class="ve-popover-table"><thead><tr><th>内容</th><th>查看次数</th><th>时间</th><th>发布人</th><th>预览</th></tr></thead><tbody>${rows.map(row => `<tr><td>${escapeHtml(row.name || '')}</td><td>${escapeHtml(String(row.read_num ?? ''))}</td><td>${globalThis.BjtuDateTime.html(row.createDate || '')}</td><td>${escapeHtml(row.user_name || '')}</td><td class="ve-notice-content">${globalThis.BjtuHomeworkUi.sanitizeRichHtml(row.content || '')}</td></tr>`).join('')}</tbody></table>` : '<div class="ve-course-teacher-loading">暂无课程通知</div>';
+      loaded = true;
+      scheduleVeHoverPopoverPosition(pop);
+    })().catch(error => {
+      if (isCourseListLoadStale(version) || !card.isConnected) return;
+      pop.textContent = `获取课程通知失败：${error.message}；重新悬停可重试`;
+      scheduleVeHoverPopoverPosition(pop);
+    }).finally(() => { pending = null; });
+    return pending;
+  }
+  wrap.addEventListener('mouseenter', () => void load());
+  void load();
 }
 
 const VE_REPLAY_VIEWS = Object.freeze(['student', 'teacher', 'courseware']);
@@ -1195,7 +1236,7 @@ async function fetchCoursewareItems(courseNum, fzId, externalAbortController = n
 
   const buildCoursewareUrl = (useQuestionMark = true) => {
     const sep = useQuestionMark ? '?' : '&';
-    return `${BASE_VE}back/coursePlatform/courseResource.shtml${sep}method=stuQueryUploadResourceForCourseList&courseId=${encodeURIComponent(courseIdPart)}&cId=${encodeURIComponent(courseIdPart)}&xkhId=${encodeURIComponent(xkhIdPart)}&xqCode=${encodeURIComponent(getCurrentXqCode())}&docType=${encodeURIComponent(docType)}`;
+    return `${BASE_VE}back/coursePlatform/courseResource.shtml${sep}method=queryMyUploadResourceForCourseList&courseId=${encodeURIComponent(courseIdPart)}&cId=${encodeURIComponent(courseIdPart)}&xkhId=${encodeURIComponent(xkhIdPart)}&xqCode=${encodeURIComponent(getCurrentXqCode())}&docType=${encodeURIComponent(docType)}`;
   };
 
   let text = '';
@@ -1249,7 +1290,7 @@ async function fetchCoursewareItems(courseNum, fzId, externalAbortController = n
     const extName = normalizeResourceExt(String(item?.extName || '').trim());
     const urlRaw = String(item?.res_url || item?.resUrl || '').trim();
     const urlNorm = normalizeResourceUrl(urlRaw);
-    const sizeMbRaw = Number(item?.rpSize);
+    const sizeMbRaw = item?.rpSize == null || item.rpSize === '' ? null : Number(item.rpSize);
     const name = extName && !/\.[a-zA-Z0-9_-]{1,16}$/.test(rpName) ? `${rpName}.${extName}` : rpName;
     const rpId = String(item?.rpId || '').trim();
     return {
@@ -2345,6 +2386,8 @@ function renderVeCourseList(courses, {
               <span class="ve-student-count-text">学生</span>
               <span class="ve-student-pop" data-course-id="${escapeHtml(String(courseId || ''))}"><div style="font-size:12px; color:#64748b;">悬停加载学生列表…</div></span>
             </span>
+            <span class="ve-meta-sep">·</span>
+            <span class="ve-notice-wrap"><span class="ve-notice-count">通知</span><span class="ve-notice-pop"></span></span>
           </div>`,
       actionsHtml: `
           <button class="btn" style="background:#1e3a8a;" data-action="courseware">资源下载</button>
@@ -2355,6 +2398,7 @@ function renderVeCourseList(courses, {
     });
     courseListDiv.appendChild(card);
     bindVeHoverPopoverPositioning(card);
+    bindVeCourseNotices(card, courseId);
 
     // bind actions
     const btnCourseware = card.querySelector('button[data-action="courseware"]');

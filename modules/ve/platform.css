@@ -1,8 +1,10 @@
+.ve-notice-wrap,
 .ve-teacher-wrap,
 .ve-student-wrap {
   position:relative;
   display:inline-block;
 }
+.ve-notice-wrap::after,
 .ve-teacher-wrap::after,
 .ve-student-wrap::after,
 .ve-course-num-wrap::after {
@@ -13,6 +15,7 @@
   top:100%;
   height:8px;
 }
+.ve-notice-wrap.ve-pop-opens-up::before,
 .ve-teacher-wrap.ve-pop-opens-up::before,
 .ve-student-wrap.ve-pop-opens-up::before,
 .ve-course-num-wrap.ve-pop-opens-up::before {
@@ -23,6 +26,7 @@
   width:var(--ve-pop-bridge-width, 100%);
   height:8px;
 }
+.ve-notice-count,
 .ve-teacher-name,
 .ve-student-count-text,
 .ve-course-num-text {
@@ -30,6 +34,7 @@
   text-underline-offset:2px;
   cursor:help;
 }
+.ve-notice-pop,
 .ve-teacher-pop,
 .ve-student-pop,
 .ve-course-teacher-pop {
@@ -52,6 +57,7 @@
   display:none;
   color:#111827;
 }
+.ve-notice-wrap:hover .ve-notice-pop,
 .ve-teacher-wrap:hover .ve-teacher-pop,
 .ve-student-wrap:hover .ve-student-pop,
 .ve-course-num-wrap:hover .ve-course-teacher-pop {
@@ -70,6 +76,8 @@
   font-size:12px;
   white-space:nowrap;
 }
+.ve-notice-content { min-width:220px; max-width:500px; overflow-wrap:anywhere; }
+.ve-notice-content img { max-width:100%; }
 .ve-switch-teacher-btn:hover { background:#1d4ed8; }
 .ve-course-num-wrap {
   position:relative;

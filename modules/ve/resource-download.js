@@ -125,6 +125,7 @@ function normalizeResourceUrl(v) {
 }
 
 function formatResourceSizeMb(rpSize) {
+  if (rpSize == null || rpSize === '') return '未知';
   const n = Number(rpSize);
   if (!Number.isFinite(n) || n < 0) return '未知';
   return `${n.toFixed(2)}MB`;
