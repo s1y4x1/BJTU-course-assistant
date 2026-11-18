@@ -1290,7 +1290,10 @@ async function fetchCoursewareItems(courseNum, fzId, externalAbortController = n
     const extName = normalizeResourceExt(String(item?.extName || '').trim());
     const urlRaw = String(item?.res_url || item?.resUrl || '').trim();
     const urlNorm = normalizeResourceUrl(urlRaw);
-    const sizeMbRaw = item?.rpSize == null || item.rpSize === '' ? null : Number(item.rpSize);
+    // This endpoint returns bytes; shared resource rendering/download helpers
+    // consume MiB, unlike the raw queryMyUploadResourceForCourseList payload.
+    const rawBytes = item?.rpSize == null || item.rpSize === '' ? NaN : Number(item.rpSize);
+    const sizeMbRaw = Number.isFinite(rawBytes) && rawBytes >= 0 ? rawBytes / (1024 * 1024) : null;
     const name = extName && !/\.[a-zA-Z0-9_-]{1,16}$/.test(rpName) ? `${rpName}.${extName}` : rpName;
     const rpId = String(item?.rpId || '').trim();
     return {
@@ -1302,7 +1305,7 @@ async function fetchCoursewareItems(courseNum, fzId, externalAbortController = n
       url: urlNorm,
       rpId,
       courseId: String(courseIdPart || '').trim(),
-      rpSize: item?.rpSize,
+      rpSize: sizeMbRaw,
       sizeMb: formatResourceSizeMb(sizeMbRaw),
       sizeMbRaw
     };
