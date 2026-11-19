@@ -1086,6 +1086,9 @@ html[data-color-scheme="dark"] .btn.resource-select-compact:not(#extension-downl
 }
 .top-inline-controls {
     display: flex;
+    position: relative;
+    padding-right: 42px;
+    min-height: 34px;
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
@@ -1150,12 +1153,27 @@ html[data-color-scheme="dark"] .btn.resource-select-compact:not(#extension-downl
     min-width: 0;
 }
 .popup-window-actions {
+    position: absolute;
+    right: 0;
+    top: 0;
     display: inline-flex;
     align-items: center;
     gap: 6px;
     margin-left: auto;
     white-space: nowrap;
 }
+body.popup-mode .top-inline-controls { padding-right: 80px; }
+.android-recommendation .version-modal-card { text-align: center; }
+.android-recommendation p { font-size: var(--bjtu-font-size-body, 13px); }
+.android-recommendation img { width: 148px; height: 148px; max-width: 100%; object-fit: contain; background: #fff; }
+.android-recommendation-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+.android-recommendation-actions .btn { font-size: var(--bjtu-font-size-body, 13px); color: #fff; }
+.android-recommendation-next { background: #1976d2; }
+.android-recommendation-never { background: #dc2626; }
+.android-recommendation-later { background: #64748b; }
+.android-recommendation-next:hover { background: #1565c0; }
+.android-recommendation-never:hover { background: #b91c1c; }
+.android-recommendation-later:hover { background: #475569; }
 .popup-fullscreen-btn {
     display: none;
     align-items: center;
@@ -1186,7 +1204,7 @@ html[data-color-scheme="dark"] .popup-fullscreen-btn:hover { background: #f3f4f6
     display: inline-flex;
     width: 32px;
     height: 32px;
-    margin-left: 6px;
+    margin-left: 0;
     align-items: center;
     justify-content: center;
     background: #6b7280;
