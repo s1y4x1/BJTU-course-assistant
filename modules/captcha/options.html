@@ -40,12 +40,10 @@
   <div class="tip" data-tip-target="#captcha-model-label">模型下载后保存在 IndexedDB，只有已下载的模型可以选用；OCR 核心仍需写入扩展安装目录。</div>
   <div class="option-divider" role="separator"></div>
   <div class="mis-captcha-section">
-    <div class="mis-captcha-toggle-row">
-      <label class="mis-captcha-toggle">
+      <label class="mis-captcha-toggle mis-captcha-toggle-row">
         <input type="checkbox" id="casCaptchaRecognitionEnabled">
         <span class="mis-captcha-toggle-label">自动识别填充 CAS 验证码</span>
       </label>
-    </div>
     <div class="captcha-core-status mis-captcha-status mis-captcha-group">
       <select id="casCaptchaDownloadSource" class="mis-captcha-download-source" aria-label="CAS 验证码识别资源下载源">
         <option value="bjtu-mis-helper">bjtu-mis-helper</option>

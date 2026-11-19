@@ -7,7 +7,7 @@
   background: #f9fafb;
 }
 
-#captcha-model-label {
+.mis-captcha-toggle {
   font-size: var(--bjtu-font-size-secondaryTitle, 16px) !important;
   font-weight: 700;
 }
@@ -90,9 +90,7 @@
 }
 
 .mis-captcha-toggle-row {
-  display: flex;
-  align-items: center;
-  min-height: 30px;
+  margin: 0;
 }
 
 .mis-captcha-toggle {
@@ -109,9 +107,8 @@
 }
 
 .mis-captcha-toggle-label {
-  font-size: 14px;
-  font-weight: 600;
-  color: #334155;
+  font: inherit;
+  color: inherit;
 }
 
 .mis-captcha-status #casCaptchaStatusValue {
@@ -205,9 +202,6 @@
   opacity: .5;
 }
 
-html[data-color-scheme="dark"] .mis-captcha-toggle-label {
-  color: #e2e8f0;
-}
 
 html[data-color-scheme="dark"] .mis-captcha-status #casCaptchaStatusValue.error {
   color: #fca5a5;
