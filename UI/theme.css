@@ -275,6 +275,26 @@ html[data-color-scheme="dark"] .upload-total-progress-wrap .progress-bar-contain
   font-weight: 700;
   color: #111827;
 }
+.bjtu-dialog-actions { display: flex; gap: 8px; margin-top: 10px; }
+.bjtu-dialog-actions > .btn {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+  margin: 0;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 6px;
+  font-size: var(--bjtu-font-size-body, 13px);
+  line-height: 1.4;
+  white-space: normal;
+  color: #fff;
+}
+.bjtu-dialog-actions .bjtu-dialog-primary { background: var(--bjtu-color-button, #1976d2); }
+.bjtu-dialog-actions .bjtu-dialog-primary:hover { background: color-mix(in srgb, var(--bjtu-color-button, #1976d2), #000 12%); }
+.bjtu-dialog-actions .bjtu-dialog-danger { background: #dc2626; }
+.bjtu-dialog-actions .bjtu-dialog-danger:hover { background: #b91c1c; }
+.bjtu-dialog-actions .bjtu-dialog-secondary { background: #6b7280; }
+.bjtu-dialog-actions .bjtu-dialog-secondary:hover { background: #4b5563; }
 
 html[data-color-scheme="dark"] .version-modal-card,
 html[data-color-scheme="dark"] .account-init-card,

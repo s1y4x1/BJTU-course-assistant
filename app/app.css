@@ -1166,14 +1166,8 @@ body.popup-mode .top-inline-controls { padding-right: 80px; }
 .android-recommendation .version-modal-card { text-align: center; }
 .android-recommendation p { font-size: var(--bjtu-font-size-body, 13px); }
 .android-recommendation img { width: 148px; height: 148px; max-width: 100%; object-fit: contain; background: #fff; }
-.android-recommendation-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
-.android-recommendation-actions .btn { font-size: var(--bjtu-font-size-body, 13px); color: #fff; }
-.android-recommendation-next { background: #1976d2; }
-.android-recommendation-never { background: #dc2626; }
-.android-recommendation-later { background: #64748b; }
-.android-recommendation-next:hover { background: #1565c0; }
-.android-recommendation-never:hover { background: #b91c1c; }
-.android-recommendation-later:hover { background: #475569; }
+.android-recommendation-qr { width: 180px; height: 180px; max-width: 100%; display: grid; place-items: center; margin: auto; background: #fff; }
+.android-recommendation-qr iframe { width: 100%; height: 100%; border: 0; }
 .popup-fullscreen-btn {
     display: none;
     align-items: center;
