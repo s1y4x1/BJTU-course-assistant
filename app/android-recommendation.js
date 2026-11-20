@@ -25,7 +25,9 @@
       }
       else if (event.data.requestId === requestId && event.data.type === 'QR_ART_RENDERED') {
         const firstRender = !ready;
-        ready = true; clearTimeout(timeout); fallback.hidden = true; frame.style.opacity = ''; status.hidden = true;
+        ready = true; clearTimeout(timeout); fallback.hidden = true; frame.style.opacity = '';
+        status.hidden = config().animate;
+        if (!status.hidden) status.textContent = '动画已关闭，当前显示静态二维码（可在外观设置中开启动画）';
         // Resume after the browser has laid out the now-visible frame, including restored tabs.
         if (firstRender) requestAnimationFrame(() => { if (alive) visibility(); });
       } else if (event.data.requestId === requestId && event.data.type === 'QR_ART_ERROR') fail();
@@ -37,7 +39,7 @@
     window.addEventListener('bjtu-animation-change', motion);
     window.addEventListener('pageshow', visibility);
     frame.addEventListener('error', fail);
-    frame.src = origin + '/QR-Art/embed.html'; holder.appendChild(frame);
+    frame.src = origin + '/QR-Art/embed.html?renderer=2.1'; holder.appendChild(frame);
     return () => {
       post({type:'QR_ART_PAUSE',paused:true}); alive = false; clearTimeout(timeout);
       window.removeEventListener('message', message); document.removeEventListener('visibilitychange', visibility);

