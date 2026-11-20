@@ -13,9 +13,7 @@
     const requestId = crypto.randomUUID();
     let alive = true, ready = false;
     const post = data => { if (alive) frame.contentWindow?.postMessage({protocol:2,requestId,...data}, origin); };
-    const config = () => globalThis.BjtuAndroidQrArtwork.createConfig(text, {
-      animate:globalThis.BjtuMotion?.isEnabled?.() !== false, speed:globalThis.BjtuMotion?.getSpeed?.() || 1
-    });
+    const config = () => globalThis.BjtuAndroidQrArtwork.createConfig(text);
     const fail = () => { if (!alive || ready) return; status.textContent = 'QR-Art 暂不可用，当前为普通二维码'; };
     const timeout = setTimeout(fail, 12000);
     const message = event => {
@@ -26,24 +24,21 @@
       else if (event.data.requestId === requestId && event.data.type === 'QR_ART_RENDERED') {
         const firstRender = !ready;
         ready = true; clearTimeout(timeout); fallback.hidden = true; frame.style.opacity = '';
-        status.hidden = config().animate;
-        if (!status.hidden) status.textContent = '动画已关闭，当前显示静态二维码（可在外观设置中开启动画）';
+        status.hidden = true;
         // Resume after the browser has laid out the now-visible frame, including restored tabs.
         if (firstRender) requestAnimationFrame(() => { if (alive) visibility(); });
       } else if (event.data.requestId === requestId && event.data.type === 'QR_ART_ERROR') fail();
     };
     const visibility = () => post({type:'QR_ART_PAUSE',paused:document.hidden});
-    const motion = () => { if (ready) post({type:'QR_ART_RENDER',config:config()}); };
     window.addEventListener('message', message);
     document.addEventListener('visibilitychange', visibility);
-    window.addEventListener('bjtu-animation-change', motion);
     window.addEventListener('pageshow', visibility);
     frame.addEventListener('error', fail);
-    frame.src = origin + '/QR-Art/embed.html?renderer=2.1'; holder.appendChild(frame);
+    frame.src = origin + '/QR-Art/embed.html'; holder.appendChild(frame);
     return () => {
       post({type:'QR_ART_PAUSE',paused:true}); alive = false; clearTimeout(timeout);
       window.removeEventListener('message', message); document.removeEventListener('visibilitychange', visibility);
-      window.removeEventListener('bjtu-animation-change', motion); window.removeEventListener('pageshow', visibility); frame.remove();
+      window.removeEventListener('pageshow', visibility); frame.remove();
     };
   }
   async function run() {
