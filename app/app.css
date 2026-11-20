@@ -818,10 +818,11 @@ html[data-color-scheme="dark"] .btn.resource-select-compact:not(#extension-downl
     font-size: 11px !important;
     line-height: 1.2 !important;
     white-space: nowrap;
-    background: #1e3a8a !important;
+    background: #000 !important;
+    color: #fff;
 }
 .courseware-select-all-btn:hover {
-    background: #1e40af !important;
+    background: #333 !important;
 }
 #resource-copy-selected-btn {
     background: #4CAF50;
