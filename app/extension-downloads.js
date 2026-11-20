@@ -91,7 +91,9 @@
     });
   }
   async function privateDownloads(messages) {
-    const refs = (messages || []).filter(item => item.privateFile && item.file?.name
+    // A downloads/ file can be relinked to private storage during deduplication;
+    // resolve the current location from its handle record, not the old message flag.
+    const refs = (messages || []).filter(item => item.file?.name
       && item.fileHandleRef === 'chatroom-file:' + item.id);
     if (!refs.length) return [];
     const directory = await (await navigator.storage.getDirectory()).getDirectoryHandle('chatroom-inbox');
@@ -106,7 +108,7 @@
       const entries = new Map();
       records.forEach((record,i) => {
         const filename = record?.privateName;
-        if (!filename || filename !== record.handle?.name || (record.deduplicated && entries.has(filename))) return;
+        if (!filename || filename !== record.handle?.name || entries.has(filename)) return;
         const {name} = refs[i].file;
         entries.set(filename,{directory, handle:record.handle, name, filename, path:`chatroom-inbox/${filename}`, private:true});
       });
@@ -300,13 +302,16 @@
         cursor.onsuccess = () => {
           const entry = cursor.result;
           if (!entry) {
-            if (to && !from.private) store.put({handle:to.handle,downloadPath:target},`download-alias:${source}`);
+            if (to && !from.private) store.put({handle:to.handle,downloadPath:to.private ? '' : target,
+              privateName:to.private ? to.filename : '',deduplicated:true},`download-alias:${source}`);
             return;
           }
           const key = String(entry.key), value = entry.value;
           if (from.private ? value?.privateName === from.filename : value?.downloadPath === source) {
             if (to) {
-              const location = to.private ? {privateName:to.filename} : {downloadPath:target};
+              const location = to.private
+                ? {privateName:to.filename,downloadPath:''}
+                : {downloadPath:target,privateName:''};
               entry.update({...value,...location,handle:to.handle,deduplicated:true});
             }
             else if (key.startsWith('download-alias:')) entry.delete();
@@ -359,7 +364,7 @@
       const end = processed + size;
       const file = await entry.handle.getFile();
       if (file.size === size && file.lastModified === entry.savedAt) {
-        const signature = (entry.private ? 'private:' : 'directory:') + size + ':' + await fileSignature(file, bytes => {
+        const signature = size + ':' + await fileSignature(file, bytes => {
           processed += bytes;
           if (processed < end) reportProgress();
         });
@@ -390,6 +395,7 @@
         input.type = 'checkbox';
         input.checked = i === 0;
         const detail = span('extension-download-dedup-file',entry.label || entry.name);
+        detail.append(entry.private ? '（聊天室私有存储）' : '（downloads/）');
         const date = span('extension-download-dedup-date');
         BjtuDateTime.set(date,entry.savedAt);
         detail.append(' · ',date);
