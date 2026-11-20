@@ -1968,6 +1968,8 @@ function getSelectedUploadDownloadItems() {
 }
 
 function refreshUploadedFileActions() {
+  const invert = document.getElementById('invert-save-uploads-btn');
+  if (invert) invert.disabled = !document.querySelector('#file-list .submit-file-check:not(:disabled), #saved-uploads-section[data-expanded="1"] .submit-file-check:not(:disabled)');
   const count = getSelectedUploadDownloadItems().length;
   if (copyAllBtn) copyAllBtn.disabled = count === 0;
   const download = document.getElementById('download-selected-uploads-btn');
@@ -6515,6 +6517,7 @@ window.__fetchVideoDetail = async function (rpId, courseId, xkhId, teacherId, bt
 };
 
 function refreshResourceSelectedActions() {
+  if (resourceSelectAllBtn) resourceSelectAllBtn.disabled = typeof getResourceSpaceSelectableIds !== 'function' || getResourceSpaceSelectableIds().length === 0;
   const selected = typeof getSelectableDownloadItems === 'function'
     ? getSelectableDownloadItems().filter((item) => window.resourceSpaceSelected.has(String(item.id || '')))
     : [];
@@ -6558,7 +6561,6 @@ if (resourceSelectAllBtn) {
   resourceSelectAllBtn.addEventListener('click', () => {
     const ids = getResourceSpaceSelectableIds();
     if (!ids.length) {
-      showToast('当前资源空间无可选文件', 'warning', 1200);
       return;
     }
     invertResourceSpaceSelectionByVisibleItems();

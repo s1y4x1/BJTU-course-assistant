@@ -377,8 +377,8 @@ async function initializeSavedUploadsUi() {
   const invertBtn = document.getElementById('invert-save-uploads-btn');
   if (invertBtn) {
     invertBtn.addEventListener('click', () => {
-      document.querySelectorAll('#file-list .file-item input.submit-file-check').forEach(cb => { cb.checked = !cb.checked; });
-      document.querySelectorAll('#saved-uploads-section[data-expanded="1"] .saved-uploads-list > .file-item input.submit-file-check').forEach(cb => { cb.checked = !cb.checked; });
+      document.querySelectorAll('#file-list .file-item input.submit-file-check:not(:disabled)').forEach(cb => { cb.checked = !cb.checked; });
+      document.querySelectorAll('#saved-uploads-section[data-expanded="1"] .saved-uploads-list > .file-item input.submit-file-check:not(:disabled)').forEach(cb => { cb.checked = !cb.checked; });
       if (typeof refreshUploadedFileActions === 'function') refreshUploadedFileActions();
     });
   }
