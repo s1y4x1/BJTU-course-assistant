@@ -1535,6 +1535,7 @@ html[data-color-scheme="dark"] :is(.homework-toggle-row--done, .homework-toggle-
 .homework-card-main { min-width:0; flex:1 1 auto; }
 .homework-card-actions { flex:0 0 auto; }
 .hw-card-item[data-homework-done="1"] .homework-card-actions { align-self:center; }
+.hw-card-item[data-homework-done="1"] .homework-card-actions .btn { display:inline-flex; align-items:center; justify-content:center; }
 .btn:is([data-action="download-homework-package"], [data-action="assessment"], [data-action="archive-batch-download"]):disabled { opacity:.55; cursor:not-allowed; }
 .homework-feedback { margin-top:3px; color:#111827; font-size:var(--bjtu-font-size-body, 13px); overflow-wrap:anywhere; }
 .homework-feedback-comment { white-space:pre-wrap; }
