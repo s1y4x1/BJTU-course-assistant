@@ -66,7 +66,7 @@
       const modal = document.createElement('div'); modal.className = 'version-modal-mask android-recommendation';
       modal.setAttribute('role', 'dialog'); modal.setAttribute('aria-modal', 'true'); modal.setAttribute('aria-labelledby', 'android-recommendation-title');
       modal.innerHTML = '<div class="version-modal-card"><div class="version-modal-header"><strong id="android-recommendation-title">在 Android 上使用课程助手</strong></div><p>扫码下载 Android 运行层。首次启动将下载扩展代码，以后可在应用内更新。</p><div class="android-recommendation-qr"><img alt="Android APK 下载二维码"></div><p class="android-recommendation-qr-status">正在连接 QR-Art…</p><p><a target="_blank" rel="noopener noreferrer">下载 Android APK</a></p><div class="android-recommendation-actions bjtu-dialog-actions"><button type="button" class="btn bjtu-dialog-primary android-recommendation-next">下次更新时再提醒</button><button type="button" class="btn bjtu-dialog-danger android-recommendation-never">不再提醒</button><button type="button" class="btn bjtu-dialog-secondary android-recommendation-later">稍后再说</button></div></div>';
-      modal.querySelector('img').src = buildQrImageUrl(apk.href, 132);
+      modal.querySelector('img').src = buildQrImageUrl(apk.href, 164);
       modal.querySelector('a').href = apk.href;
       let releaseArt = () => {};
       const close = () => { releaseArt(); modal.remove(); document.removeEventListener('keydown', onKey); };
