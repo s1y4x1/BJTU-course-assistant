@@ -3049,7 +3049,7 @@ function dismissToastAfterCopy(toast) {
 
 function showToast(message, type = 'success', duration = 3000, allowHtml = false, options = {}) {
   if (!allowHtml) {
-    const match = String(message || '').match(/^(智慧课程平台|CITEL|每日交作业)([\s\S]*(?:登录|验证)[\s\S]*)$/);
+    const match = String(message || '').match(/^(智慧课程平台|CITEL|每日交作业)([\s\S]*)$/);
     if (match) {
       const platform = { '智慧课程平台':'ve', CITEL:'citel', '每日交作业':'mrjzy' }[match[1]];
       message = globalThis.BjtuPlatformLoginUi.loginLinkHtml(platform) + ' ' + escapeHtml(match[2].trim());
@@ -3885,9 +3885,7 @@ async function loadCurrentXqOptions(forceReload = false) {
 }
 
 async function ensureCurrentXqCode() {
-  const existing = getCurrentXqCode();
-  if (existing) return existing;
-  await loadCurrentXqOptions();
+  if (!currentXqOptions.length || !getCurrentXqCode()) await loadCurrentXqOptions();
   return getCurrentXqCode();
 }
 
