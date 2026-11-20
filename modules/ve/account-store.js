@@ -399,18 +399,26 @@
       : Number.POSITIVE_INFINITY;
     return new Promise((resolve, reject) => {
       const rows = [];
-      const request = index.openCursor(IDBKeyRange.lowerBound('', true));
+      const range = IDBKeyRange.lowerBound('', true);
+      const countRequest = index.count(range);
+      countRequest.onerror = () => reject(countRequest.error || new Error('MIS 绑定账号计数失败'));
+      let total = 0;
+      countRequest.onsuccess = () => {
+        total = Math.min(Number(countRequest.result) || 0, maxItems);
+        onProgress?.({ read: 0, total, limit: maxItems, done: false });
+      };
+      const request = index.openCursor(range);
       request.onerror = () => reject(request.error || new Error('MIS 绑定账号读取失败'));
       request.onsuccess = () => {
         const cursor = request.result;
         if (!cursor) {
-          onProgress?.({ read: rows.length, limit: maxItems, done: true });
+          onProgress?.({ read: rows.length, total, limit: maxItems, done: true });
           resolve(rows);
           return;
         }
         const record = normalize(cursor.value?.loginName, cursor.value);
         if (record?.quickUsername) rows.push(record);
-        onProgress?.({ read: rows.length, limit: maxItems, done: false });
+        onProgress?.({ read: rows.length, total, limit: maxItems, done: rows.length >= maxItems });
         if (rows.length >= maxItems) {
           resolve(rows);
           return;

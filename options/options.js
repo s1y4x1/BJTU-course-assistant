@@ -2405,11 +2405,12 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     try {
       const withQuick = await globalThis.BjtuAccountStore.getQuickAccounts({
         limit: 10000,
-        onProgress: ({ read }) => {
-          if (teacherLabel instanceof HTMLElement) teacherLabel.textContent = `已读取 ${read} 个`;
-          if (teacherBar instanceof HTMLElement) teacherBar.style.width = '100%';
+        onProgress: ({ read, total }) => {
+          if (teacherLabel instanceof HTMLElement) teacherLabel.textContent = `已读取 ${read} / ${total} 个`;
+          if (teacherBar instanceof HTMLElement) teacherBar.style.width = `${total > 0 ? 90 * read / total : 0}%`;
         }
       });
+      if (progressStatus instanceof HTMLElement) progressStatus.textContent = '正在核对登录历史并整理绑定数据…';
       const context = await chrome.runtime.sendMessage({ type: 'PORTAL_LOGIN_CONTEXT' }).catch(() => null);
       const history = Array.isArray(context?.history) ? context.history : [];
       const historyIdSet = new Set(history
@@ -2428,6 +2429,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         return;
       }
       const content = lines.join('\n');
+      if (teacherBar instanceof HTMLElement) teacherBar.style.width = '95%';
+      if (progressStatus instanceof HTMLElement) progressStatus.textContent = lines.length > 128 ? '正在保存导出文件…' : '正在复制到剪贴板…';
       let savedToFile = false;
       if (lines.length > 128) {
         const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
@@ -2447,6 +2450,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
           + '我们恳请您点击下方按钮发送此内容，以帮助我们继续开发核心功能。';
       }
       if (exportModal instanceof HTMLElement) exportModal.style.display = 'flex';
+      if (teacherBar instanceof HTMLElement) teacherBar.style.width = '100%';
     } catch (error) {
       setMsg('导出失败：' + String(error?.message || error), false);
     } finally {
