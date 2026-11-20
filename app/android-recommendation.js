@@ -8,7 +8,7 @@
     const holder = modal.querySelector('.android-recommendation-qr');
     const fallback = holder.querySelector('img'), status = modal.querySelector('.android-recommendation-qr-status');
     const frame = document.createElement('iframe');
-    frame.title = 'QR-Art 动态下载二维码'; frame.hidden = true; frame.referrerPolicy = 'no-referrer';
+    frame.title = 'QR-Art 动态下载二维码'; frame.style.opacity = '0'; frame.referrerPolicy = 'no-referrer';
     frame.setAttribute('sandbox', 'allow-scripts allow-same-origin');
     const requestId = crypto.randomUUID();
     let alive = true, ready = false;
@@ -24,20 +24,24 @@
         try { post({type:'QR_ART_RENDER',config:config()}); } catch { fail(); }
       }
       else if (event.data.requestId === requestId && event.data.type === 'QR_ART_RENDERED') {
-        ready = true; clearTimeout(timeout); fallback.hidden = true; frame.hidden = false; status.hidden = true;
+        const firstRender = !ready;
+        ready = true; clearTimeout(timeout); fallback.hidden = true; frame.style.opacity = ''; status.hidden = true;
+        // Resume after the browser has laid out the now-visible frame, including restored tabs.
+        if (firstRender) requestAnimationFrame(() => { if (alive) visibility(); });
       } else if (event.data.requestId === requestId && event.data.type === 'QR_ART_ERROR') fail();
     };
     const visibility = () => post({type:'QR_ART_PAUSE',paused:document.hidden});
-    const storage = changes => { if (ready && (changes.animationMode || changes.animationSpeed)) post({type:'QR_ART_RENDER',config:config()}); };
+    const motion = () => { if (ready) post({type:'QR_ART_RENDER',config:config()}); };
     window.addEventListener('message', message);
     document.addEventListener('visibilitychange', visibility);
-    chrome.storage.onChanged?.addListener(storage);
+    window.addEventListener('bjtu-animation-change', motion);
+    window.addEventListener('pageshow', visibility);
     frame.addEventListener('error', fail);
     frame.src = origin + '/QR-Art/embed.html'; holder.appendChild(frame);
     return () => {
       post({type:'QR_ART_PAUSE',paused:true}); alive = false; clearTimeout(timeout);
       window.removeEventListener('message', message); document.removeEventListener('visibilitychange', visibility);
-      chrome.storage.onChanged?.removeListener(storage); frame.remove();
+      window.removeEventListener('bjtu-animation-change', motion); window.removeEventListener('pageshow', visibility); frame.remove();
     };
   }
   async function run() {

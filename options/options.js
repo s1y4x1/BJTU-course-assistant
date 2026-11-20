@@ -979,6 +979,21 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   document.getElementById('backgroundAutoInstallOptionalEnabled').checked = backgroundAutoInstallOptionalEnabled === true;
   document.getElementById('updateDirectoryStartupCheckEnabled').checked = updateDirectoryStartupCheckEnabled !== false;
   const updateFileConcurrencyInput = document.getElementById('updateFileConcurrency');
+  const androidRecommendationSelect = document.getElementById('androidRuntimeRecommendationMode');
+  const androidRecommendationKey = 'androidRuntimeRecommendationSeen';
+  const renderAndroidRecommendation = value => {
+    androidRecommendationSelect.value = value?.never ? 'never' : value?.version ? 'update' : 'open';
+  };
+  renderAndroidRecommendation((await chrome.storage.local.get(androidRecommendationKey))[androidRecommendationKey]);
+  androidRecommendationSelect.addEventListener('change', async () => {
+    const mode = androidRecommendationSelect.value;
+    const stored = await chrome.storage.local.get('appliedUpdateWithoutReload');
+    const version = String(stored.appliedUpdateWithoutReload?.ver || chrome.runtime.getManifest().version);
+    await chrome.storage.local.set({ [androidRecommendationKey]: mode === 'never' ? { never: true } : mode === 'update' ? { version } : {} });
+  });
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes[androidRecommendationKey]) renderAndroidRecommendation(changes[androidRecommendationKey].newValue);
+  });
   if (globalThis.BjtuUpdateFileSystem) {
     const { normalizeFileConcurrency } = globalThis.BjtuUpdateFileSystem;
     const stored = await chrome.storage.local.get('updateFileConcurrency');
@@ -2603,6 +2618,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       homeworkForegroundNewAssignmentNotificationEnabled: false,
       backgroundAutoUpdateEnabled: DEFAULT_BACKGROUND_AUTO_UPDATE_ENABLED,
       updateForegroundPromptMode: 'active',
+      androidRuntimeRecommendationSeen: {},
       updateDirectoryStartupCheckEnabled: true,
       updateFileConcurrency: null,
       backgroundAutoInstallOptionalEnabled: DEFAULT_BACKGROUND_AUTO_INSTALL_OPTIONAL_ENABLED,
