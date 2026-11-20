@@ -1,14 +1,14 @@
-param(
+ï»¿param(
   [Parameter(ValueFromRemainingArguments = $true)][string[]]$BridgeArguments,
   [Alias('v')][switch]$ShowVersion
 )
 
-# ASCII bootstrap: repository templates are GBK/936, installed launchers UTF-8 BOM.
+# ASCII bootstrap: repository templates and installed launchers use UTF-8 BOM.
 if ($BJTUCAEncodingReloadedPath -ne $PSCommandPath) {
   $sourceBytes = [System.IO.File]::ReadAllBytes($PSCommandPath)
   if ($sourceBytes.Length -lt 3 -or $sourceBytes[0] -ne 239 -or $sourceBytes[1] -ne 187 -or $sourceBytes[2] -ne 191) {
     $BJTUCAEncodingReloadedPath = $PSCommandPath
-    $sourceText = [System.IO.File]::ReadAllText($PSCommandPath, [System.Text.Encoding]::GetEncoding(936))
+    $sourceText = [System.IO.File]::ReadAllText($PSCommandPath, [System.Text.Encoding]::UTF8)
     $sourceTokens = $null; $sourceErrors = $null
     $sourceAst = [System.Management.Automation.Language.Parser]::ParseInput($sourceText, $PSCommandPath, [ref]$sourceTokens, [ref]$sourceErrors)
     if ($sourceErrors.Count) { throw $sourceErrors[0] }
@@ -34,21 +34,21 @@ if ($action -eq '--chatroom') { $action = 'chatroom' }
 if ($action -in @('uninstall', 'uninst', 'unist', 'u')) {
   $uninstallOptions = @($BridgeArguments | Select-Object -Skip 1)
   if (@($uninstallOptions | Where-Object { $_ -notin @('-r', '-y') }).Count) {
-    throw 'Ğ¶ÔØÃüÁî½öÖ§³Ö -r£¨Ö»È¡Ïû×¢²á£©ºÍ -y£¨Ìø¹ıÈ·ÈÏ£©'
+    throw 'å¸è½½å‘½ä»¤ä»…æ”¯æŒ -rï¼ˆåªå–æ¶ˆæ³¨å†Œï¼‰å’Œ -yï¼ˆè·³è¿‡ç¡®è®¤ï¼‰'
   }
   $action = if ($uninstallOptions -contains '-r') { 'unregister' } else { 'uninstall' }
 }
 
 switch ($action) {
   { $_ -eq 'token' } {
-    if ($BridgeArguments.Count -ne 1) { throw 'token ÃüÁî²»½ÓÊÜÆäËû²ÎÊı' }
+    if ($BridgeArguments.Count -ne 1) { throw 'token å‘½ä»¤ä¸æ¥å—å…¶ä»–å‚æ•°' }
     & node (Join-Path $bridgeRoot 'src\server.js') --show-token
     exit $LASTEXITCODE
   }
   { $_ -in @('help', '--help', '-h', '-?', '/?') } {
     Write-Output @"
-ÓÃ·¨£º$displayCommand [start] [--port=¶Ë¿Ú]
-      $displayCommand chatroom [--port=¶Ë¿Ú]
+ç”¨æ³•ï¼š$displayCommand [start] [--port=ç«¯å£]
+      $displayCommand chatroom [--port=ç«¯å£]
       $displayCommand --show-token
       $displayCommand token
       $displayCommand -c "ve.courseList"
@@ -60,18 +60,18 @@ switch ($action) {
       $displayCommand --help
       $displayCommand -v
 
-bjtuca-bridge ºÍ BJTUCA Ö§³ÖÏàÍ¬²ÎÊı¡£
+bjtuca-bridge å’Œ BJTUCA æ”¯æŒç›¸åŒå‚æ•°ã€‚
 
-start          Æô¶¯±¾µØ Bridge£¨Ä¬ÈÏ²Ù×÷£¬¶Ë¿Ú¶ÁÈ¡ bridge.json£¬³õÊ¼Îª 1896£©
-chatroom       Æô¶¯¶ÀÁ¢ÁÄÌìÊÒ·şÎñÆ÷£¨Ä¬ÈÏ¶Ë¿Ú 1897£¬²»µÈ´ıÀ©Õ¹Á¬½Ó£©
---port=N       Ö¸¶¨¶Ë¿Ú N£¨1 ÖÁ 65535£©£ºÆÕÍ¨ Bridge »áĞ´»Ø bridge.json£»
-               chatroom ½öÓ°Ïì¸Ã¶ÀÁ¢·şÎñ£¬²»Ğ´Èë bridge.json
---show-token   ÏÔÊ¾ bridge.json ÖĞµÄ Bearer Token£¬²»Æô¶¯·şÎñ
-token           Í¬ --show-token£¬±ãÓÚ½Å±¾Ö±½Ó¶ÁÈ¡
--c ÃüÁî        Ö´ĞĞÒ»ÌõÖÕ¶ËÃüÁî²¢ÍË³ö£»¸´ÓÃÕıÔÚÔËĞĞµÄ Bridge£¬·ñÔòÁÙÊ±Æô¶¯²¢µÈ´ıÀ©Õ¹Á¬½Ó
-uninstall      É¾³ıÃüÁî¡¢ÓÃ»§ PATH Ïî¼° Bridge ±¾ÉíºÍÅäÖÃ£¨¼òĞ´ u/uninst/unist£©£»ÊäÈë y È·ÈÏ£¬-y Ìø¹ıÈ·ÈÏ
-unregister     ½öÈ¡ÏûÃüÁî×¢²á²¢ÒÆ³ıÓÃ»§ PATH Ïî£»±£Áô Bridge ±¾Éí¼°ÅäÖÃ£¨¼òĞ´ unreg£¬»ò uninstall ¼°Æä¼òĞ´¼Ó -r£©
--v, --version  ÏÔÊ¾ÃüÁîÈë¿Ú°æ±¾£¬²»Æô¶¯ Bridge
+start          å¯åŠ¨æœ¬åœ° Bridgeï¼ˆé»˜è®¤æ“ä½œï¼Œç«¯å£è¯»å– bridge.jsonï¼Œåˆå§‹ä¸º 1896ï¼‰
+chatroom       å¯åŠ¨ç‹¬ç«‹èŠå¤©å®¤æœåŠ¡å™¨ï¼ˆé»˜è®¤ç«¯å£ 1897ï¼Œä¸ç­‰å¾…æ‰©å±•è¿æ¥ï¼‰
+--port=N       æŒ‡å®šç«¯å£ Nï¼ˆ1 è‡³ 65535ï¼‰ï¼šæ™®é€š Bridge ä¼šå†™å› bridge.jsonï¼›
+               chatroom ä»…å½±å“è¯¥ç‹¬ç«‹æœåŠ¡ï¼Œä¸å†™å…¥ bridge.json
+--show-token   æ˜¾ç¤º bridge.json ä¸­çš„ Bearer Tokenï¼Œä¸å¯åŠ¨æœåŠ¡
+token           åŒ --show-tokenï¼Œä¾¿äºè„šæœ¬ç›´æ¥è¯»å–
+-c å‘½ä»¤        æ‰§è¡Œä¸€æ¡ç»ˆç«¯å‘½ä»¤å¹¶é€€å‡ºï¼›å¤ç”¨æ­£åœ¨è¿è¡Œçš„ Bridgeï¼Œå¦åˆ™ä¸´æ—¶å¯åŠ¨å¹¶ç­‰å¾…æ‰©å±•è¿æ¥
+uninstall      åˆ é™¤å‘½ä»¤ã€ç”¨æˆ· PATH é¡¹åŠ Bridge æœ¬èº«å’Œé…ç½®ï¼ˆç®€å†™ u/uninst/unistï¼‰ï¼›è¾“å…¥ y ç¡®è®¤ï¼Œ-y è·³è¿‡ç¡®è®¤
+unregister     ä»…å–æ¶ˆå‘½ä»¤æ³¨å†Œå¹¶ç§»é™¤ç”¨æˆ· PATH é¡¹ï¼›ä¿ç•™ Bridge æœ¬èº«åŠé…ç½®ï¼ˆç®€å†™ unregï¼Œæˆ– uninstall åŠå…¶ç®€å†™åŠ  -rï¼‰
+-v, --version  æ˜¾ç¤ºå‘½ä»¤å…¥å£ç‰ˆæœ¬ï¼Œä¸å¯åŠ¨ Bridge
 "@
     return
   }
@@ -80,7 +80,7 @@ unregister     ½öÈ¡ÏûÃüÁî×¢²á²¢ÒÆ³ıÓÃ»§ PATH Ïî£»±£Áô Bridge ±¾Éí¼°ÅäÖÃ£¨¼òĞ´ un
     if ($versionVariable) {
       $commandVersion = $versionVariable.Value
     } else {
-      $installerText = [System.IO.File]::ReadAllText((Join-Path $bridgeRoot 'install.ps1'), [System.Text.Encoding]::GetEncoding(936))
+      $installerText = [System.IO.File]::ReadAllText((Join-Path $bridgeRoot 'install.ps1'), [System.Text.Encoding]::UTF8)
       $commandVersion = [regex]::Match($installerText, '(?m)^\$InstallerVersion\s*=\s*''([0-9]+(?:\.[0-9]+){1,3})''').Groups[1].Value
     }
     Write-Output "BJTUCA $commandVersion"
@@ -88,9 +88,9 @@ unregister     ½öÈ¡ÏûÃüÁî×¢²á²¢ÒÆ³ıÓÃ»§ PATH Ïî£»±£Áô Bridge ±¾Éí¼°ÅäÖÃ£¨¼òĞ´ un
   }
   { $_ -in @('uninstall', 'unregister', 'unreg') } {
     if ($action -eq 'uninstall' -and $uninstallOptions -notcontains '-y') {
-      $confirmation = Read-Host '½«É¾³ı Bridge ±¾Éí¡¢ÅäÖÃºÍÒÑ×¢²áµÄÃüÁî¡£ÊäÈë y È·ÈÏĞ¶ÔØ'
+      $confirmation = Read-Host 'å°†åˆ é™¤ Bridge æœ¬èº«ã€é…ç½®å’Œå·²æ³¨å†Œçš„å‘½ä»¤ã€‚è¾“å…¥ y ç¡®è®¤å¸è½½'
       if ($confirmation.Trim() -ine 'y') {
-        Write-Output 'ÒÑÈ¡ÏûĞ¶ÔØ¡£'
+        Write-Output 'å·²å–æ¶ˆå¸è½½ã€‚'
         return
       }
     }
@@ -100,12 +100,12 @@ unregister     ½öÈ¡ÏûÃüÁî×¢²á²¢ÒÆ³ıÓÃ»§ PATH Ïî£»±£Áô Bridge ±¾Éí¼°ÅäÖÃ£¨¼òĞ´ un
       if ((Split-Path -Leaf $actualBridgeDirectory) -ine 'local-bridge' -or
           -not (Test-Path -LiteralPath $bridgeModulePath -PathType Leaf) -or
           (Get-Content -LiteralPath $bridgeModulePath -Raw | ConvertFrom-Json).id -ne 'local-bridge') {
-        throw 'Bridge Ä¿Â¼Ğ£ÑéÊ§°Ü£¬Î´Ö´ĞĞĞ¶ÔØ'
+        throw 'Bridge ç›®å½•æ ¡éªŒå¤±è´¥ï¼Œæœªæ‰§è¡Œå¸è½½'
       }
     }
     $expectedDirectory = [System.IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'BJTUCourseAssistant'))
     $actualDirectory = [System.IO.Path]::GetFullPath($commandDirectory)
-    if ($actualDirectory -ine $expectedDirectory) { throw 'ÃüÁîÄ¿Â¼Ğ£ÑéÊ§°Ü' }
+    if ($actualDirectory -ine $expectedDirectory) { throw 'å‘½ä»¤ç›®å½•æ ¡éªŒå¤±è´¥' }
     $protocolKey = 'HKCU:\Software\Classes\bjtuca'
     if (Test-Path -LiteralPath $protocolKey) {
       Remove-Item -LiteralPath $protocolKey -Recurse -Force
@@ -127,9 +127,9 @@ unregister     ½öÈ¡ÏûÃüÁî×¢²á²¢ÒÆ³ıÓÃ»§ PATH Ïî£»±£Áô Bridge ±¾Éí¼°ÅäÖÃ£¨¼òĞ´ un
       if (Test-Path -LiteralPath $actualBridgeDirectory -PathType Container) {
         Remove-Item -LiteralPath $actualBridgeDirectory -Recurse -Force
       }
-      Write-Output 'bjtuca-bridge ºÍ BJTUCA ÃüÁî¡¢ÓÃ»§ PATH Ïî¼° Bridge Ä¿Â¼£¨º¬ÅäÖÃºÍÒÀÀµ£©ÒÑÉ¾³ı¡£'
+      Write-Output 'bjtuca-bridge å’Œ BJTUCA å‘½ä»¤ã€ç”¨æˆ· PATH é¡¹åŠ Bridge ç›®å½•ï¼ˆå«é…ç½®å’Œä¾èµ–ï¼‰å·²åˆ é™¤ã€‚'
     } else {
-      Write-Output 'bjtuca-bridge ºÍ BJTUCA ÃüÁîÒÑÈ¡Ïû×¢²á£»Bridge ÎÄ¼şºÍ bridge.json ÒÑ±£Áô¡£'
+      Write-Output 'bjtuca-bridge å’Œ BJTUCA å‘½ä»¤å·²å–æ¶ˆæ³¨å†Œï¼›Bridge æ–‡ä»¶å’Œ bridge.json å·²ä¿ç•™ã€‚'
     }
     return
   }
@@ -145,35 +145,35 @@ $startArguments = @($startArguments)
 $singleCommandIndex = [Array]::IndexOf($startArguments, '-c')
 $singleCommandText = $null
 if ($singleCommandIndex -ge 0) {
-  if ($action -eq 'chatroom') { throw 'chatroom ²»Ö§³Ö -c' }
-  if ($singleCommandIndex -eq $startArguments.Count - 1) { throw '-c ºó±ØĞëÌá¹©ÃüÁî' }
+  if ($action -eq 'chatroom') { throw 'chatroom ä¸æ”¯æŒ -c' }
+  if ($singleCommandIndex -eq $startArguments.Count - 1) { throw '-c åå¿…é¡»æä¾›å‘½ä»¤' }
   $singleCommandText = ($startArguments[($singleCommandIndex + 1)..($startArguments.Count - 1)] -join ' ').Trim()
-  if (-not $singleCommandText) { throw '-c ºó±ØĞëÌá¹©ÃüÁî' }
+  if (-not $singleCommandText) { throw '-c åå¿…é¡»æä¾›å‘½ä»¤' }
   $startArguments = if ($singleCommandIndex) { @($startArguments[0..($singleCommandIndex - 1)]) } else { @() }
 }
 foreach ($argument in $startArguments) {
   if ($argument -notmatch '\A--port=([0-9]{1,5})\z' -and ($argument -ne '--show-token' -or $action -eq 'chatroom')) {
-    throw "²»Ö§³ÖµÄ²ÎÊı£º$argument¡£ÔËĞĞ $displayCommand --help ²é¿´ÓÃ·¨¡£"
+    throw "ä¸æ”¯æŒçš„å‚æ•°ï¼š$argumentã€‚è¿è¡Œ $displayCommand --help æŸ¥çœ‹ç”¨æ³•ã€‚"
   }
   if ($argument -match '\A--port=([0-9]{1,5})\z' -and ([int]$Matches[1] -lt 1 -or [int]$Matches[1] -gt 65535)) {
-    throw '¶Ë¿Ú±ØĞëÊÇ 1 ÖÁ 65535 µÄÕûÊı'
+    throw 'ç«¯å£å¿…é¡»æ˜¯ 1 è‡³ 65535 çš„æ•´æ•°'
   }
 }
-if (@($startArguments | Where-Object { $_ -like '--port=*' }).Count -gt 1) { throw 'Ö»ÄÜÖ¸¶¨Ò»¸ö¶Ë¿Ú' }
+if (@($startArguments | Where-Object { $_ -like '--port=*' }).Count -gt 1) { throw 'åªèƒ½æŒ‡å®šä¸€ä¸ªç«¯å£' }
 if ($startArguments -contains '--show-token' -and $startArguments.Count -ne 1) {
-  throw '--show-token ²»ÄÜÓëÆäËû²ÎÊıÒ»ÆğÊ¹ÓÃ'
+  throw '--show-token ä¸èƒ½ä¸å…¶ä»–å‚æ•°ä¸€èµ·ä½¿ç”¨'
 }
-if ($singleCommandText -and $startArguments -contains '--show-token') { throw '-c ²»ÄÜÓë --show-token Ò»ÆğÊ¹ÓÃ' }
+if ($singleCommandText -and $startArguments -contains '--show-token') { throw '-c ä¸èƒ½ä¸ --show-token ä¸€èµ·ä½¿ç”¨' }
 if ($startArguments -notcontains '--show-token') {
   $installerPath = Join-Path $bridgeRoot 'install.ps1'
-  $installerText = [System.IO.File]::ReadAllText($installerPath, [System.Text.Encoding]::GetEncoding(936))
+  $installerText = [System.IO.File]::ReadAllText($installerPath, [System.Text.Encoding]::UTF8)
   $installerVersionMatch = [regex]::Match($installerText, '(?m)^\$InstallerVersion\s*=\s*''([0-9]+(?:\.[0-9]+){1,3})''')
-  if (-not $installerVersionMatch.Success) { throw 'install.ps1 Î´ÉùÃ÷ InstallerVersion' }
+  if (-not $installerVersionMatch.Success) { throw 'install.ps1 æœªå£°æ˜ InstallerVersion' }
   $installedVersionVariable = Get-Variable -Name BJTUCACommandVersion -ErrorAction SilentlyContinue
   $installedVersion = if ($installedVersionVariable) { [version]$installedVersionVariable.Value } else { [version]'0.0.0' }
   $installerVersion = [version]$installerVersionMatch.Groups[1].Value
   if ($installerVersion -gt $installedVersion) {
-    Write-Host "ÃüÁîÈë¿Ú°æ±¾ $installedVersion£¬°²×°½Å±¾°æ±¾ $installerVersion£¬ÕıÔÚ×Ô¶¯¸üĞÂ¡­"
+    Write-Host "å‘½ä»¤å…¥å£ç‰ˆæœ¬ $installedVersionï¼Œå®‰è£…è„šæœ¬ç‰ˆæœ¬ $installerVersionï¼Œæ­£åœ¨è‡ªåŠ¨æ›´æ–°â€¦"
     & $installerPath -SkipStart
   }
 }

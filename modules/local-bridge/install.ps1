@@ -1,15 +1,15 @@
-param(
+ï»¿param(
   [ValidateRange(1, 65535)][int]$Port = 1896,
   [switch]$SkipStart
 )
 
-# ASCII bootstrap: repository templates are GBK/936, installed launchers UTF-8 BOM.
+# ASCII bootstrap: repository templates and installed launchers use UTF-8 BOM.
 # Decode before using any localized strings, including in pwsh (UTF-8 by default).
 if ($BJTUCAEncodingReloadedPath -ne $PSCommandPath) {
   $sourceBytes = [System.IO.File]::ReadAllBytes($PSCommandPath)
   if ($sourceBytes.Length -lt 3 -or $sourceBytes[0] -ne 239 -or $sourceBytes[1] -ne 187 -or $sourceBytes[2] -ne 191) {
     $BJTUCAEncodingReloadedPath = $PSCommandPath
-    $sourceText = [System.IO.File]::ReadAllText($PSCommandPath, [System.Text.Encoding]::GetEncoding(936))
+    $sourceText = [System.IO.File]::ReadAllText($PSCommandPath, [System.Text.Encoding]::UTF8)
     $sourceTokens = $null; $sourceErrors = $null
     $sourceAst = [System.Management.Automation.Language.Parser]::ParseInput($sourceText, $PSCommandPath, [ref]$sourceTokens, [ref]$sourceErrors)
     if ($sourceErrors.Count) { throw $sourceErrors[0] }
@@ -25,7 +25,7 @@ $ErrorActionPreference = 'Stop'
 $bridgeRoot = Split-Path -Parent $PSCommandPath
 
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
-  throw 'Î´ÕÒµ½ Node.js£¬ÇëÏÈ°²×° Node.js 20 »ò¸ü¸ß°æ±¾¡£'
+  throw 'æœªæ‰¾åˆ° Node.jsï¼Œè¯·å…ˆå®‰è£… Node.js 20 æˆ–æ›´é«˜ç‰ˆæœ¬ã€‚'
 }
 
 function Invoke-BridgeDependencyCommand {
@@ -50,10 +50,10 @@ if ($dependenciesReady) {
 }
 if (-not $dependenciesReady) {
   if ((Invoke-BridgeDependencyCommand -Command npm -CommandArguments @('install', '--ignore-scripts', '--no-audit', '--no-fund')) -ne 0) {
-    throw '°²×° Bridge ÒÀÀµÊ§°Ü'
+    throw 'å®‰è£… Bridge ä¾èµ–å¤±è´¥'
   }
   if ((Invoke-BridgeDependencyCommand -Command node -CommandArguments @($dependencyCheckPath)) -ne 0) {
-    throw 'Bridge ÒÀÀµĞ£ÑéÊ§°Ü£¬Î´¸üĞÂÃüÁîÈë¿Ú'
+    throw 'Bridge ä¾èµ–æ ¡éªŒå¤±è´¥ï¼Œæœªæ›´æ–°å‘½ä»¤å…¥å£'
   }
 }
 
@@ -63,7 +63,7 @@ New-Item -ItemType Directory -Path $commandDirectory -Force | Out-Null
 
 $commandScriptPath = Join-Path $bridgeRoot 'command.ps1'
 $escapedBridgeRoot = $bridgeRoot.Replace("'", "''")
-$launcherText = [System.IO.File]::ReadAllText($commandScriptPath, [System.Text.Encoding]::GetEncoding(936))
+$launcherText = [System.IO.File]::ReadAllText($commandScriptPath, [System.Text.Encoding]::UTF8)
 $launcherText = $launcherText.Replace(
   '$bridgeRoot = Split-Path -Parent $PSCommandPath',
   "`$BJTUCACommandVersion = '$InstallerVersion'`r`n`$bridgeRoot = '$escapedBridgeRoot'"
@@ -81,7 +81,7 @@ foreach ($commandName in @('bjtuca-bridge', 'BJTUCA')) {
 }
 
 $protocolScriptPath = Join-Path $commandDirectory 'protocol.ps1'
-$protocolText = [System.IO.File]::ReadAllText((Join-Path $bridgeRoot 'protocol.ps1'), [System.Text.Encoding]::GetEncoding(936))
+$protocolText = [System.IO.File]::ReadAllText((Join-Path $bridgeRoot 'protocol.ps1'), [System.Text.Encoding]::UTF8)
 $protocolText = $protocolText.Replace(
   '$bridgeRoot = Split-Path -Parent $PSCommandPath',
   "`$bridgeRoot = '$escapedBridgeRoot'"
@@ -110,15 +110,15 @@ $processPathEntries = @($env:Path -split ';' | Where-Object {
 $env:Path = (@($processPathEntries) + $commandDirectory) -join ';'
 if (Test-Path -LiteralPath $legacyCommandDirectory -PathType Container) {
   if ([System.IO.Path]::GetFullPath((Split-Path -Parent $legacyCommandDirectory)) -ine $commandDirectory) {
-    throw '¾ÉÃüÁîÄ¿Â¼Ğ£ÑéÊ§°Ü'
+    throw 'æ—§å‘½ä»¤ç›®å½•æ ¡éªŒå¤±è´¥'
   }
   Remove-Item -LiteralPath $legacyCommandDirectory -Recurse -Force
 }
 
-Write-Host "Bridge ÒÑ°²×°µ½µ±Ç°Ä¿Â¼£º$bridgeRoot"
-Write-Host 'ÒÑ×¢²á bjtuca-bridge ºÍ BJTUCA ÃüÁî¼° bjtuca:// Ğ­Òé£¬¿ÉÔÚÈÎÒâÄ¿Â¼»ò´Óä¯ÀÀÆ÷Æô¶¯¡£'
+Write-Host "Bridge å·²å®‰è£…åˆ°å½“å‰ç›®å½•ï¼š$bridgeRoot"
+Write-Host 'å·²æ³¨å†Œ bjtuca-bridge å’Œ BJTUCA å‘½ä»¤åŠ bjtuca:// åè®®ï¼Œå¯åœ¨ä»»æ„ç›®å½•æˆ–ä»æµè§ˆå™¨å¯åŠ¨ã€‚'
 if ($SkipStart) { return }
-Write-Host 'Bridge ÕıÔÚÔËĞĞ£»°´ Ctrl+C ¿ÉÍ£Ö¹¡£'
+Write-Host 'Bridge æ­£åœ¨è¿è¡Œï¼›æŒ‰ Ctrl+C å¯åœæ­¢ã€‚'
 if ($Port -eq 1896) {
   npm --silent start
 } else {
