@@ -4432,6 +4432,7 @@ async function runLoginFlow({ reloadPlatform = true } = {}) {
     let manualPasswordPlain = '';
     let manualPasscode = '';
     let allowStoredCredentials = initialInitializationResult?.skipped !== true;
+    let skipLoginRequestOnce = false;
     let recoveryMessage = account
       ? '账号或密码错误，请重新初始化账号列表或手动输入密码。'
       : '账号不在本地账号列表中，请重新初始化账号列表或手动输入密码。';
@@ -4446,19 +4447,29 @@ async function runLoginFlow({ reloadPlatform = true } = {}) {
       manualPasswordPlain = '';
       manualPasscode = '';
       showToast('智慧课程平台 正在登录…', 'info', 0);
-      await enforceJsessionidBeforeLoginRequest();
-      const result = await globalThis.BjtuAccountLogin.login(username, {
-        signal,
-        password: submittedPassword,
-        passwordPlain: submittedPasswordPlain,
-        passcode: submittedPasscode,
-        skipCurrentCheck: true,
-        allowStoredCredentials
-      });
-      if (signal.aborted || loginCancelRequested) return { ok: false, reason: 'cancelled', message: '登录已取消' };
-      showLoginCredentialEvents(result);
-      if (Array.isArray(result?.credentialEvents) && result.credentialEvents.length) {
-        account = await getLocalAccountInfo(username);
+      let result;
+      if (skipLoginRequestOnce) {
+        skipLoginRequestOnce = false;
+        result = {
+          ok: false,
+          reason: account ? 'needs-password' : 'account-not-found',
+          message: recoveryMessage
+        };
+      } else {
+        await enforceJsessionidBeforeLoginRequest();
+        result = await globalThis.BjtuAccountLogin.login(username, {
+          signal,
+          password: submittedPassword,
+          passwordPlain: submittedPasswordPlain,
+          passcode: submittedPasscode,
+          skipCurrentCheck: true,
+          allowStoredCredentials
+        });
+        if (signal.aborted || loginCancelRequested) return { ok: false, reason: 'cancelled', message: '登录已取消' };
+        showLoginCredentialEvents(result);
+        if (Array.isArray(result?.credentialEvents) && result.credentialEvents.length) {
+          account = await getLocalAccountInfo(username);
+        }
       }
 
       if (result?.ok) {
@@ -4554,6 +4565,7 @@ async function runLoginFlow({ reloadPlatform = true } = {}) {
           const initializationResult = await globalThis.BjtuAccountLogin.initialize({ force: true, showProgress: true });
           if (initializationResult?.skipped === true) {
             allowStoredCredentials = false;
+            skipLoginRequestOnce = true;
             continue;
           }
           account = await getLocalAccountInfo(username);
