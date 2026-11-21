@@ -6,7 +6,9 @@
   "version": "19.8.5",
   "default_locale": "zh_CN",
   "version_name": "19.8.5 AP[I|K]",
-  "omnibox": { "keyword": "bjtuca" },
+  "omnibox": {
+    "keyword": "bjtuca"
+  },
   "icons": {
     "16": "icons/16.png",
     "32": "icons/128.png",
@@ -30,7 +32,7 @@
     "offscreen",
     "sidePanel"
   ],
-   "host_permissions": [
+  "host_permissions": [
     "<all_urls>",
     "http://123.121.147.7:88/*",
     "http://123.121.147.7:8081/*",
