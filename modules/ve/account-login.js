@@ -12,6 +12,13 @@
   const ACCOUNT_FILE_VERSION = 2;
   const REMOTE_ACCOUNT_LIST_URL = 'https://s1y4x1.github.io/account-list.json';
   const AES_QUICK_USERNAME_MAP_URL = 'https://s1y4x1.github.io/R005_P_AES.json';
+  const AES_DICTIONARY_IMPORTED_KEY = 'aesDictionaryImported';
+  const NEW_BADGE_TEXT = '[NEW]';
+  const NEW_BADGE_BUTTON_IDS = [
+    'account-init-aes',
+    'account-init-aes-remote',
+    'account-recovery-reinitialize'
+  ];
   const HISTORY_KEY = 'loginAccountHistory';
   const ADMIN_LOGIN_NAME = '114514';
   const ADMIN_QUICK_USERNAME = '35FB025B242928F7D225330A3DB6C108';
@@ -1203,6 +1210,12 @@
             .filter(([key, value]) => key && value));
           if (!Object.keys(mapping).length) throw new Error('AES 加密字典为空');
           const storedCount = await global.BjtuAccountStore.replaceAesQuickUsernameMap(mapping);
+          try {
+            await chrome.storage.local.set({ [AES_DICTIONARY_IMPORTED_KEY]: true });
+          } catch (error) {
+            // The marker is only a fast path; the dictionary check still applies.
+          }
+          clearNewBadges();
           cleanup();
           setProgress(100, '', false);
           resolve({ source: 'aes', count: storedCount });
@@ -1709,6 +1722,46 @@
     });
   }
 
+  function clearNewBadges() {
+    for (const id of NEW_BADGE_BUTTON_IDS) {
+      const button = document.getElementById(id);
+      if (!button) continue;
+      const text = String(button.textContent || '');
+      if (!text.includes(NEW_BADGE_TEXT)) continue;
+      button.textContent = text.replace(/\s*\[NEW\]\s*/g, ' ').trim();
+    }
+  }
+
+  async function hasAesDictionary() {
+    try {
+      const stored = await chrome.storage.local.get([AES_DICTIONARY_IMPORTED_KEY]);
+      if (stored?.[AES_DICTIONARY_IMPORTED_KEY] === true) return true;
+    } catch (error) {
+      // Fall through to the IndexedDB check.
+    }
+    try {
+      const mapping = await global.BjtuAccountStore?.exportAesQuickUsernameMap?.();
+      if (!mapping || !Object.keys(mapping).length) return false;
+      try {
+        await chrome.storage.local.set({ [AES_DICTIONARY_IMPORTED_KEY]: true });
+      } catch (error) {
+        // The marker is only a fast path; the dictionary check still applies.
+      }
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  async function refreshNewBadges() {
+    const hasBadge = NEW_BADGE_BUTTON_IDS.some((id) => {
+      const button = document.getElementById(id);
+      return Boolean(button && String(button.textContent || '').includes(NEW_BADGE_TEXT));
+    });
+    if (!hasBadge) return;
+    if (await hasAesDictionary()) clearNewBadges();
+  }
+
   global.BjtuAccountLogin = {
     fetchCourses,
     load,
@@ -1734,5 +1787,11 @@
   chrome.storage?.onChanged?.addListener((changes, areaName) => {
     if (areaName === 'local' && changes?.[ACCOUNT_LIST_REVISION_KEY]) accountCache.clear();
   });
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => { void refreshNewBadges(); }, { once: true });
+  } else {
+    void refreshNewBadges();
+  }
 
 })(globalThis);
