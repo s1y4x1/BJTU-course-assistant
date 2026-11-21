@@ -1055,7 +1055,6 @@
       const quickOption = document.getElementById('account-init-quick-option');
       const quickCheckbox = document.getElementById('account-init-fetch-quick-usernames');
       let remoteUnlockClicks = 0;
-      let remoteUnlockLastClick = 0;
       if (!(actions instanceof HTMLElement) || !(fileInput instanceof HTMLInputElement)) {
         resolve({ source: 'skip' });
         return;
@@ -1126,13 +1125,9 @@
         const rect = remote.getBoundingClientRect();
         if (event.clientX < rect.left || event.clientX > rect.right
             || event.clientY < rect.top || event.clientY > rect.bottom) {
-          remoteUnlockClicks = 0;
-          remoteUnlockLastClick = 0;
           return;
         }
-        const now = performance.now();
-        remoteUnlockClicks = now - remoteUnlockLastClick <= 1000 ? remoteUnlockClicks + 1 : 1;
-        remoteUnlockLastClick = now;
+        remoteUnlockClicks += 1;
         if (remoteUnlockClicks >= 3) {
           if (fetchOptions instanceof HTMLElement) fetchOptions.style.display = 'flex';
           if (quickOption instanceof HTMLElement) quickOption.style.display = 'flex';
