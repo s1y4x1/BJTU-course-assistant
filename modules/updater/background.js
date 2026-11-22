@@ -316,7 +316,7 @@
 
   async function verifyBackgroundDirectoryWriteAccess(expectedForegroundProbe) {
     const root = await readDirectoryHandle();
-    const validRoot = await validateDirectory(root);
+    const validRoot = await validateDirectory(root, { verifyByWrite: true });
     if (!validRoot) throw new Error('后台没有扩展目录的读写权限');
     const updaterDirectory = await (await validRoot.getDirectoryHandle('modules')).getDirectoryHandle('updater');
     const foregroundMarker = await updaterDirectory.getFileHandle('directory-permission.json');
@@ -339,9 +339,10 @@
     return content;
   }
 
-  async function validateDirectory(handle) {
-    if (!handle || handle.kind !== 'directory' || typeof handle.queryPermission !== 'function') return null;
-    if (await handle.queryPermission({ mode: 'readwrite' }) !== 'granted') return null;
+  async function validateDirectory(handle, { verifyByWrite = false } = {}) {
+    if (!handle || handle.kind !== 'directory') return null;
+    // The audit below proves read/write access directly; do not block it on a query.
+    if (!verifyByWrite && await handle.queryPermission({ mode: 'readwrite' }) !== 'granted') return null;
     const manifestHandle = await handle.getFileHandle('manifest.json');
     const manifest = JSON.parse(await (await manifestHandle.getFile()).text());
     if (!manifest || typeof manifest !== 'object') throw new Error('manifest.json 格式无效');

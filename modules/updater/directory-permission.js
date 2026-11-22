@@ -114,14 +114,16 @@ function initialize() {
   })().catch(error => { initialization = null; throw error; });
 }
 
-async function verify(handle, store = false, { ifAvailable = false, onProgress } = {}) {
+async function verify(handle, store = false, { ifAvailable = false, onProgress, background = true } = {}) {
   const fileSystem = globalThis.BjtuUpdateFileSystem;
   await fileSystem.withInstallLock(() => withVersionDirectoryPermissionAuditLock(async () => {
     onProgress?.('正在验证前台目录写入权限…');
     const foregroundProbe = await verifyVersionDirectoryWriteAccess(handle);
     if (store) await fileSystem.storeDirectoryHandle(handle);
-    onProgress?.('正在验证后台目录写入权限…');
-    await verifyVersionBackgroundDirectoryWriteAccess(handle, foregroundProbe);
+    if(background){
+      onProgress?.('正在验证后台目录写入权限…');
+      await verifyVersionBackgroundDirectoryWriteAccess(handle, foregroundProbe);
+    }
   }), {ifAvailable});
   if (store) {
     const channel = new BroadcastChannel('bjtu-extension-downloads');
@@ -134,8 +136,9 @@ async function check({ifAvailable = false, onProgress} = {}) {
   try {
     onProgress?.('正在读取已保存的扩展目录…');
     const handle = await globalThis.BjtuUpdateFileSystem.readDirectoryHandle();
-    onProgress?.('正在查询扩展目录授权状态…');
-    if (await handle?.queryPermission({mode:'readwrite'}) !== 'granted') return null;
+    if (!handle || handle.kind !== 'directory') return null;
+    // Actual read/write verification already enforces the browser's permission checks.
+    // A separate queryPermission() can remain pending on restored Edge handles.
     onProgress?.('正在等待目录权限验证…');
     return await verify(handle,false,{ifAvailable,onProgress});
   } catch (error) {
@@ -156,8 +159,8 @@ async function request({ startup = false, audit = false, forUpdate = false } = {
   requestInProgress = (async () => {
     const modal = await initialize();
     let handle = await globalThis.BjtuUpdateFileSystem.readDirectoryHandle();
-    if (handle && await handle.queryPermission({mode:'readwrite'}) === 'granted') {
-      try { return audit ? await verify(handle) : await validateVersionUpdateDirectory(handle); }
+    if (handle) {
+      try { return await verify(handle,false,{background:audit}); }
       catch { handle = null; }
     }
     const choose = modal.querySelector('#version-directory-permission-choose');
