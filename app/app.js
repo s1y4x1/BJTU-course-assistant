@@ -7666,7 +7666,7 @@ globalThis.__bjtuLlmPageSnapshot=()=>({
   platforms:PLATFORM_IDS.map(id=>({id,enabled:isPlatformEnabled(id),state:window.platformLoginState?.[id],loaded:window.platformLoadedOnce?.[id]})),
   currentVeAccount:currentVeAccountInfo && Object.fromEntries(['loginName','userName','userId','roleName','roleCode'].map(key=>[key,currentVeAccountInfo[key]])),
   citelAccount:window.BjtuCitelPlatform?.currentAccount?.(),
-  courses:[...document.querySelectorAll('.course-card-identity')].map(el=>el.textContent.trim()),
+  courses:[...document.querySelectorAll('.course-card-title')].map(el=>el.textContent.replace(/\s+/g,' ').trim()).filter(Boolean),
   assignments:[...document.querySelectorAll('[data-homework-done]')].filter(el=>el.dataset.homeworkDone!=='1').map(el=>({
     title:el.querySelector('.homework-card-title')?.textContent.trim(),
     overdue:el.dataset.homeworkOverdue==='1',deadline:el.dataset.homeworkDeadline,
