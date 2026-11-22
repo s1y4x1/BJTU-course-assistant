@@ -9,6 +9,12 @@
   'use strict';
   const backgroundMode = globalThis.BjtuChatroomBackgroundMode;
   const background = backgroundMode?.enabled === true;
+  if(!background) {
+    try {
+      const modules=await Promise.all(['llm','api'].map(id=>fetch(chrome.runtime.getURL(`modules/${id}/module.json`))));
+      globalThis.__bjtuChatroomLlmAvailable=modules.every(response=>response.ok);
+    } catch {globalThis.__bjtuChatroomLlmAvailable=false;}
+  }
   // When the background engine is available this page only renders its state
   // and keeps its own media connections; closing the page no longer needs to
   // move the transport. Otherwise fall back to owning the engine locally.
@@ -380,6 +386,7 @@
   }
   function chooseConversation(id, {interactive = false, focusComposer = true} = {}) {
     if (id === selected) {
+      if(id==='llm')return;
       if (interactive) {
         if (focusComposer && !isLeftGroup()) $('message').focus();
         void markConversationRead({interactive:true});
@@ -396,10 +403,24 @@
     draftStartedAt = Date.now();
     sidebar?.render();
     updateConversation(); renderMessages();
-    if (focusComposer && !isLeftGroup()) $('message').focus();
+    if (focusComposer && selected!=='llm' && !isLeftGroup()) $('message').focus();
     void markConversationRead({interactive});
   }
   function updateConversation() {
+    const assistant=selected==='llm' && globalThis.__bjtuChatroomLlmAvailable;
+    const panel=$('messages').closest('.conversation');
+    panel.classList.toggle('llm-conversation',assistant);
+    let frame=$('chatroom-llm-frame');
+    if(assistant&&!frame){
+      frame=document.createElement('iframe');frame.id='chatroom-llm-frame';frame.title='AI 助手';
+      frame.src=chrome.runtime.getURL('modules/llm/chat.html?view=chatroom');panel.append(frame);
+    }
+    if(frame){
+      frame.hidden=!assistant;
+      const notify=()=>frame.contentWindow?.postMessage({type:'BJTU_LLM_VISIBILITY',visible:assistant && embeddedVisible && document.visibilityState==='visible'},location.origin);
+      frame.onload=notify;notify();
+    }
+    if(assistant)return;
     const room = currentRoom(), peerId = selected.startsWith('peer:') ? selected.slice(5) : null;
     const left = isLeftGroup();
     $('message-form').hidden = left;
@@ -485,6 +506,7 @@
     content.after(toggle);
   }
   function renderMessages() {
+    if(selected==='llm')return;
     const savedMessages = new Map(state.messages.filter(m => m.file && m.fileHandleRef).map(m => [m.id, m]));
     for (const [id, task] of savedPreviews) {
       if (task.conversationId !== selected || savedMessages.get(id)?.fileHandleRef !== task.message.fileHandleRef) {
@@ -1495,6 +1517,7 @@
   window.addEventListener('blur', checkAfterBlur, {signal:uiAbort.signal});
   if (embedded) { try { parent.addEventListener('blur', checkAfterBlur, {signal:uiAbort.signal}); } catch {} }
   document.addEventListener('visibilitychange', () => {
+    if(selected==='llm')updateConversation();
     void markConversationRead();
     if (document.visibilityState !== 'visible') notifyPendingFileInvitations();
   }, {signal:uiAbort.signal});

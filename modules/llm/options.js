@@ -7,7 +7,7 @@
     if (global.BjtuQwenLocalModel) return Promise.resolve();
     return localModelScript ||= new Promise((resolve,reject) => {
       const script = document.createElement('script');
-      script.src = chrome.runtime.getURL('modules/qwen/local-model.js');
+      script.src = chrome.runtime.getURL('modules/llm/local-model.js');
       script.onload = resolve;
       script.onerror = () => {localModelScript=null;reject(new Error('无法加载本地模型组件'));};
       document.head.append(script);
@@ -200,8 +200,8 @@
     const standaloneLink = document.getElementById('qwenOpenChatStandalone');
     if (standaloneLink instanceof HTMLAnchorElement) {
       standaloneLink.href = global.chrome?.runtime?.getURL
-        ? chrome.runtime.getURL('modules/qwen/chat.html')
-        : 'modules/qwen/chat.html';
+        ? chrome.runtime.getURL('modules/llm/chat.html')
+        : 'modules/llm/chat.html';
     }
 
     const thinking = document.getElementById('qwenThinkingEnabled');
@@ -304,5 +304,5 @@
   systemThemeMedia?.addEventListener?.('change', () => applyFabColorMode(selectedFabColorMode));
 
   global.BjtuQwenOptions = { init, reset };
-  global.BjtuOptionsModules?.register('qwen', global.BjtuQwenOptions);
+  global.BjtuOptionsModules?.register('llm', global.BjtuQwenOptions);
 })(globalThis);

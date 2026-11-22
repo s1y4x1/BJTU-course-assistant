@@ -18,10 +18,16 @@
   const OPERATION_RESULTS_LIMIT = 20;
   const QWEN_VIEW_ID = global.crypto?.randomUUID?.() || `qwen-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-  // 独立页面模式（modules/qwen/chat.html）：面板直接展开铺满窗口。
-  const STANDALONE_CHAT = /\/modules\/qwen\/chat\.html$/i.test(global.location?.pathname || '');
+  // 独立页面模式（modules/llm/chat.html）：面板直接展开铺满窗口。
+  const STANDALONE_CHAT = /\/modules\/llm\/chat\.html$/i.test(global.location?.pathname || '');
   // 边栏视图：关闭按钮变为与课程助手（popup.html）互相切换的按钮。
   const SIDE_PANEL_VIEW = new URLSearchParams(global.location?.search || '').get('view') === 'sidepanel';
+  const CHATROOM_VIEW = new URLSearchParams(global.location?.search || '').get('view') === 'chatroom';
+  let chatroomVisible = !CHATROOM_VIEW;
+  if(CHATROOM_VIEW)global.addEventListener('message',event=>{
+    if(event.source!==global.parent || event.origin!==global.location.origin || event.data?.type!=='BJTU_LLM_VISIBILITY')return;
+    chatroomVisible=event.data.visible===true;reportQwenViewState();
+  });
   if (SIDE_PANEL_VIEW) document.documentElement.classList.add('qwen-side-panel-view');
 
   let port = null;
@@ -82,6 +88,7 @@
       context: SIDE_PANEL_VIEW ? 'sidepanel' : (STANDALONE_CHAT ? 'standalone' : 'app'),
       viewId: QWEN_VIEW_ID,
       visible: document.visibilityState === 'visible'
+        && (!CHATROOM_VIEW || chatroomVisible)
         && (STANDALONE_CHAT || (panel instanceof HTMLElement && !panel.hidden))
     };
   }
@@ -1442,7 +1449,7 @@
   async function refreshStatus({ checkLogin = false, allowOpening = true } = {}) {
     const status = await send('QWEN_GET_STATUS', { checkLogin: checkLogin === true });
     lastKnownLoggedIn = status?.loggedIn === true;
-    lastKnownEnabled = status?.enabled !== false;
+    lastKnownEnabled = STANDALONE_CHAT || status?.enabled !== false;
     if (status?.provider === 'local') {
       const state = await global.BjtuQwenLocalModel.availability().catch(error => String(error.message));
       lastKnownLoggedIn = state === 'available';
@@ -2572,8 +2579,9 @@
       });
     }
     if (closeBtn instanceof HTMLButtonElement) {
+      if(CHATROOM_VIEW){closeBtn.hidden=true;closeBtn.style.display='none';}
       if (STANDALONE_CHAT && SIDE_PANEL_VIEW) {
-        // 边栏中变为切换按钮：在千问助手与课程助手之间来回。
+        // 边栏中变为切换按钮：在AI 助手与课程助手之间来回。
         closeBtn.textContent = '🔄';
         closeBtn.title = '切换到课程助手';
         closeBtn.setAttribute('aria-label', '切换到课程助手');

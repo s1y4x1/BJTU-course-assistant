@@ -85,8 +85,8 @@
         styles: ['operations-ui.css'], scripts: ['operations-ui.js']
       }
     },
-    qwen: {
-      label: '通义千问',
+    llm: {
+      label: 'AI 助手（LLM）',
       dependencies: ['api'],
       styles: ['options.css', 'app.css', 'chat.css'],
       files: ['background.js', 'qwen-client.js', 'local-client.js', 'compatible-client.js', 'local-model.js', 'agent.js', 'SystemPrompt.md', 'icon.svg', 'app.html', 'app.js', 'chat.html', 'chat.css', 'options.html', 'options.js'],
@@ -149,6 +149,12 @@
       if ([...withDependencies([id])].some((dependency) => !available[dependency])) available[id] = false;
     }
     global.__bjtuAvailableModules = available;
+    if (available.llm && available.chatroom) {
+      const state = await chrome.storage.local.get('llmChatroomIntegrated');
+      if (!state.llmChatroomIntegrated) await chrome.storage.local.set({qwenEnabled:false,llmChatroomIntegrated:true});
+    } else {
+      await chrome.storage.local.remove('llmChatroomIntegrated');
+    }
     if (typeof document !== 'undefined') {
       document.documentElement.dataset.modulesReady = '1';
       document.querySelectorAll('[data-module]').forEach((element) => {

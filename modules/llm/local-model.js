@@ -37,7 +37,7 @@
     void (async () => {
       let session;
       try {
-        if (await availability() !== 'available') throw new Error('本地模型尚未就绪，请先在千问助手选项中点击「准备本地模型」');
+        if (await availability() !== 'available') throw new Error('本地模型尚未就绪，请先在AI 助手选项中点击「准备本地模型」');
         controller.signal.throwIfAborted();
         session = await api().create({initialPrompts:message.history || [],signal:controller.signal});
         controller.signal.throwIfAborted();

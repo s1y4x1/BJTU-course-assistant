@@ -2,13 +2,13 @@
   'use strict';
   global.__bjtuQwenAppReady = (async () => {
     const available = await global.BjtuModuleRegistry.ready;
-    if (!await global.__bjtuApiReady || !available.qwen) return false;
+    if (!await global.__bjtuApiReady || !available.llm) return false;
     await global.BjtuModuleRegistry.loadStyle('UI/file-size-emphasis.css');
     await global.BjtuModuleRegistry.loadStyle('UI/markdown.css');
     await global.BjtuModuleRegistry.loadScript('UI/file-size-emphasis.js');
-    await global.BjtuModuleRegistry.loadStyle('modules/qwen/app.css');
+    await global.BjtuModuleRegistry.loadStyle('modules/llm/app.css');
     await global.BjtuModuleRegistry.loadStyle('modules/api/operations-ui.css');
-    const markupResponse = await fetch(chrome.runtime.getURL('modules/qwen/app.html'), {
+    const markupResponse = await fetch(chrome.runtime.getURL('modules/llm/app.html'), {
       cache: 'no-store'
     });
     if (!markupResponse.ok) throw new Error(`无法加载 Qwen 模块界面：HTTP ${markupResponse.status}`);
@@ -25,8 +25,8 @@
     await global.BjtuModuleRegistry.loadScript('UI/markdown.js');
     await global.BjtuMarkdown.ready;
     await global.BjtuModuleRegistry.loadScript('modules/api/operations-ui.js');
-    await global.BjtuModuleRegistry.loadScript('modules/qwen/local-model.js');
-    await global.BjtuModuleRegistry.loadScript('modules/qwen/app.js');
+    await global.BjtuModuleRegistry.loadScript('modules/llm/local-model.js');
+    await global.BjtuModuleRegistry.loadScript('modules/llm/app.js');
     return true;
   })().catch((error) => {
     console.error('[bjtu] qwen module failed to load:', error);

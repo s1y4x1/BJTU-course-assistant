@@ -4,23 +4,23 @@
   <script src="../../UI/options-message.js"></script>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>通义千问选项</title>
+  <title>AI 助手选项</title>
   <script src="../../UI/theme.js"></script>
   <link rel="stylesheet" href="../../options/options.css">
   <link rel="stylesheet" href="../../UI/theme.css">
   <link rel="stylesheet" href="options.css">
 </head>
-<body class="module-options-standalone" data-options-module="qwen">
+<body class="module-options-standalone" data-options-module="llm">
 <section class="qwen-options-card" data-options-fragment>
   <div class="section-title">
-    <a class="module-options-page-link" data-module-options-link="qwen" href="options.html"
-      title="在当前页面打开通义千问选项">通义千问</a>
+    <a class="module-options-page-link" data-module-options-link="llm" href="options.html"
+      title="在当前页面打开AI 助手选项">AI 助手</a>
   </div>
 
   <div class="qwen-toggle-row">
     <label class="qwen-toggle">
       <input type="checkbox" id="qwenEnabled">
-      <span class="qwen-toggle-label">在扩展全屏页面上显示「千问助手」按钮</span>
+      <span class="qwen-toggle-label">在扩展全屏页面上显示「AI 助手」按钮</span>
     </label>
   </div>
 
@@ -48,7 +48,7 @@
       <div class="qwen-setting-row"><label for="llmApiBaseUrl">API 基础地址</label><input id="llmApiBaseUrl" type="url" placeholder="http://127.0.0.1:11434/v1" autocomplete="off"></div>
       <div class="qwen-setting-row"><label for="llmApiKey">API Key</label><input id="llmApiKey" type="password" autocomplete="new-password" placeholder="本机 Ollama 可留空"></div>
       <div class="qwen-setting-row"><label for="llmApiModel">模型 ID</label><input id="llmApiModel" type="text" placeholder="可从下方列表选择，也可直接填写" autocomplete="off"><button id="llmRefreshModels" class="btn" type="button">刷新模型</button></div>
-      <div class="tip">支持 /models 和 /chat/completions。密钥仅保存在本机扩展设置中；请求直接发送到填写的服务地址。模型能力及费用由服务商决定。更换地址后会开始新会话。</div>
+      <div class="tip">支持 /models 和 /chat/completions。密钥仅保存在本机扩展设置中；请求直接发送到填写的服务地址。模型能力及费用由服务商决定。更换地址后会开始新会话并清除旧服务的密钥。</div>
     </div>
     <div id="qwenLocalModelOptions" hidden>
       <div class="qwen-setting-row"><button type="button" id="qwenPrepareLocalModel" class="btn">准备本地模型</button><button type="button" id="qwenLocalModelSettings" class="btn" title="在实验设置中搜索 Prompt API，设为 Enabled 并重启浏览器">打开 Prompt API 设置</button><span id="qwenLocalModelStatus" role="status"></span></div>
@@ -102,7 +102,7 @@
     </div>
 
     <div class="qwen-toggle-row">
-      <a id="qwenOpenChatStandalone" class="btn" style="text-decoration:none;">打开千问助手</a>
+      <a id="qwenOpenChatStandalone" class="btn" style="text-decoration:none;">打开AI 助手</a>
     </div>
 
   </div>

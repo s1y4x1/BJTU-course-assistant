@@ -8,6 +8,12 @@
   background: #f9fafb;
 }
 
+#llmApiOptions :is(input[type="url"],input[type="password"],input[type="text"]) {
+  min-width: 10em;
+  width: min(32em, 100%);
+  max-width: 100%;
+}
+
 html[data-color-scheme="dark"] .qwen-options-card {
   border-color: #334155;
   background: #111827;

@@ -376,11 +376,11 @@ tryImportModuleScripts('../core/background-homework-platforms.js');
 tryImportModuleScripts('../core/module-registry.js');
 tryImportModuleScripts('../modules/api/operations.js', '../modules/api/background.js');
 tryImportModuleScripts(
-  '../modules/qwen/qwen-client.js',
-  '../modules/qwen/local-client.js',
-  '../modules/qwen/compatible-client.js',
-  '../modules/qwen/agent.js',
-  '../modules/qwen/background.js'
+  '../modules/llm/qwen-client.js',
+  '../modules/llm/local-client.js',
+  '../modules/llm/compatible-client.js',
+  '../modules/llm/agent.js',
+  '../modules/llm/background.js'
 );
 tryImportModuleScripts('../modules/local-bridge/client.js');
 if (veBackgroundReady) tryImportModuleScripts('../modules/ve/background-homework.js');
@@ -479,9 +479,9 @@ const OPTIONAL_CONTENT_SCRIPTS = [
   },
   {
     id: 'bjtu-qwen-page-bridge',
-    module: 'qwen',
+    module: 'llm',
     matches: ['https://chat.qwen.ai/*'],
-    js: ['modules/qwen/content-script.js'],
+    js: ['modules/llm/content-script.js'],
     runAt: 'document_idle'
   },
   {

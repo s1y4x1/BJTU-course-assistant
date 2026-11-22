@@ -3,7 +3,7 @@
   'use strict';
 
   const EXECUTION_BLOCK_PATTERN = /```(sandbox|app|background)\s*\n?([\s\S]*?)```/gi;
-  const SYSTEM_PROMPT_PATH = 'modules/qwen/SystemPrompt.md';
+  const SYSTEM_PROMPT_PATH = 'modules/llm/SystemPrompt.md';
   const SYSTEM_PROMPT_DOCS_PLACEHOLDER = '{{QWEN_DOCS}}';
   let systemPromptTemplatePromise = null;
 

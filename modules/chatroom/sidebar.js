@@ -269,10 +269,17 @@
       return {...entry, name, members,
         onlineCount: members?.filter(id => id === state.self.id || state.peers.some(peer => peer.id === id && peer.online)).length || 0};
     });
+    if (global.__bjtuChatroomLlmAvailable) entries.unshift({id:'llm',kind:'assistant',name:'AI 助手',view:{},members:[]});
     // Selecting a row may mark its messages read immediately. Don't replace
     // or move the pressed button until its pointer gesture has finished.
     if (!heldConversation) reconcile($('conversations'), roomNodes, entries, r => r.id, entry => {
       const el = node('div', undefined, 'conversation-entry');
+      if(entry.kind==='assistant') {
+        const link=button('',()=>chooseConversation('llm'),'conversation-link');
+        link.dataset.conversation='llm';
+        link.append(node('span','🤖','conversation-avatar'),node('span','AI 助手','conversation-name'));
+        el.append(link);return el;
+      }
       const link = button('', () => { if (!hold.consumeClick()) chooseConversation(entry.id); }, 'conversation-link');
       link.dataset.conversation = entry.id;
       link.title = '长按 0.5 秒或右键打开会话菜单';

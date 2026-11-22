@@ -371,7 +371,10 @@
       const url=new URL(next.llmApiBaseUrl);
       if(!['http:','https:'].includes(url.protocol)||url.username||url.password||url.search||url.hash)throw new Error('请输入有效的 HTTP(S) API 基础地址');
       const previous=await chrome.storage.local.get(['llmApiBaseUrl','qwenProvider']);
-      if(previous.llmApiBaseUrl!==next.llmApiBaseUrl){next.llmApiLastChatId='';if((next.qwenProvider || previous.qwenProvider)==='openai'){next.qwenLastChatId='';next.qwenOpeningPendingChatId='';}}
+      if(previous.llmApiBaseUrl!==next.llmApiBaseUrl){
+        if(patch.apiKey===undefined)next.llmApiKey='';
+        next.llmApiLastChatId='';if((next.qwenProvider || previous.qwenProvider)==='openai'){next.qwenLastChatId='';next.qwenOpeningPendingChatId='';}
+      }
     }
     if (typeof patch?.enabled === 'boolean') next.qwenEnabled = patch.enabled;
     if (patch?.fabColorMode !== undefined) {
@@ -488,8 +491,8 @@
       chrome.notifications.create(notificationId, {
         type: 'basic',
         iconUrl: chrome.runtime.getURL('icons/128.png'),
-        title: '千问助手回复生成完毕',
-        message: summary ? summary.slice(0, 180) : '回复已生成完毕，请返回千问助手查看。'
+        title: 'AI 助手回复生成完毕',
+        message: summary ? summary.slice(0, 180) : '回复已生成完毕，请返回AI 助手查看。'
       }, () => {
         void chrome.runtime.lastError;
         resolve();
@@ -535,7 +538,7 @@
       return;
     }
     if (!tab) {
-      await chrome.tabs.create({ url: chrome.runtime.getURL('modules/qwen/chat.html'), active: true }).catch(() => null);
+      await chrome.tabs.create({ url: chrome.runtime.getURL('modules/llm/chat.html'), active: true }).catch(() => null);
     }
   }
 
@@ -719,7 +722,7 @@
             };
             const client = settings.provider === 'local' ? localClient : settings.provider === 'openai' ? global.BjtuLlmCompatibleClient.create() : global.BjtuQwenClient;
             const operations = global.BJTUCA;
-            if (!settings.enabled) throw Object.assign(new Error('通义千问模块已禁用，请先在扩展选项中开启'), { code: 'DISABLED' });
+            // qwenEnabled controls only the full-page shortcut, not access to chat.
             const modelId = settings.provider === 'local' ? 'browser-local' : (settings.provider==='openai'?settings.apiModel:settings.modelId) || await resolveDefaultModel(client);
             const groups = await operations.groups();
             const sourceChatId = String(message.chatId || '');
@@ -818,7 +821,7 @@
                     chrome.notifications.create(notificationId, {
                       type: 'basic',
                       iconUrl: chrome.runtime.getURL('icons/128.png'),
-                      title: mode === 'operation-permission' ? '千问请求执行 JavaScript' : '千问助手',
+                      title: mode === 'operation-permission' ? '千问请求执行 JavaScript' : 'AI 助手',
                       message: safeMessage,
                       priority: 2,
                       requireInteraction: true,

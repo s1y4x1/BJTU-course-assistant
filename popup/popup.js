@@ -35,9 +35,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     qwenFrame = document.createElement('iframe');
     qwenFrame.id = 'qwen-side-panel-frame';
     qwenFrame.className = 'side-panel-frame';
-    qwenFrame.title = '千问助手';
+    qwenFrame.title = 'AI 助手';
     qwenFrame.setAttribute('sandbox', 'allow-scripts allow-forms allow-same-origin allow-popups allow-downloads allow-modals');
-    qwenFrame.src = chrome.runtime.getURL('modules/qwen/chat.html?view=sidepanel');
+    qwenFrame.src = chrome.runtime.getURL('modules/llm/chat.html?view=sidepanel');
     qwenFrame.hidden = true;
     frame.after(qwenFrame);
     return qwenFrame;
@@ -59,7 +59,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       document.documentElement.style.setProperty('--popup-height', '100vh');
       const [stored, qwenResponse] = await Promise.all([
         chrome.storage.local.get(SIDE_PANEL_LAST_VIEW_KEY),
-        fetch(chrome.runtime.getURL('modules/qwen/module.json'), { cache: 'no-store' }).catch(() => null)
+        fetch(chrome.runtime.getURL('modules/llm/module.json'), { cache: 'no-store' }).catch(() => null)
       ]);
       qwenAvailable = qwenResponse?.ok === true;
       await showSidePanelView(stored?.[SIDE_PANEL_LAST_VIEW_KEY] === 'qwen' ? 'qwen' : 'course');

@@ -61,7 +61,7 @@
     }
     const path = new URL(url).pathname;
     const entry = {
-      priority: path === '/app/app.html' ? 2 : path === '/modules/qwen/chat.html' ? 1 : 0,
+      priority: path === '/app/app.html' ? 2 : path === '/modules/llm/chat.html' ? 1 : 0,
       sequence: ++apiPageConnectionSequence,
       pending: new Map()
     };

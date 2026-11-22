@@ -1276,11 +1276,11 @@ const sidePanelView = new URLSearchParams(window.location.search).get('view') ==
 let sidePanelQwenAvailable = false;
 if (openOptionsBtn) {
   if (sidePanelView) {
-    void fetch(chrome.runtime.getURL('modules/qwen/module.json'), { cache: 'no-store' }).then((response) => {
+    void fetch(chrome.runtime.getURL('modules/llm/module.json'), { cache: 'no-store' }).then((response) => {
       if (!response.ok) return;
       sidePanelQwenAvailable = true;
       openOptionsBtn.textContent = '🔄';
-      openOptionsBtn.title = '切换到千问助手';
+      openOptionsBtn.title = '切换到AI 助手';
     }).catch(() => {});
   }
   openOptionsBtn.addEventListener('click', () => {
