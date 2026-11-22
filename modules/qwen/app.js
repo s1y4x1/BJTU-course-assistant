@@ -1429,7 +1429,7 @@
       }
       const current = String(status?.modelId || '') || String(response.models[0]?.id || '');
       if (current) select.value = current;
-      select.disabled = false;
+      select.disabled = status?.provider === 'local';
     } else {
       const option = document.createElement('option');
       option.value = '';
@@ -1443,7 +1443,13 @@
     const status = await send('QWEN_GET_STATUS', { checkLogin: checkLogin === true });
     lastKnownLoggedIn = status?.loggedIn === true;
     lastKnownEnabled = status?.enabled !== false;
-    if (status?.loggedIn) {
+    if (status?.provider === 'local') {
+      const state = await global.BjtuQwenLocalModel.availability().catch(error => String(error.message));
+      lastKnownLoggedIn = state === 'available';
+      status.loggedIn = lastKnownLoggedIn;
+      setStatus(state === 'available' ? '本地模型已就绪' : ({downloadable:'请先在选项中准备本地模型',downloading:'本地模型正在下载',unavailable:'本地模型不可用'})[state] || state,state === 'available' ? 'ok' : 'error');
+      showLoginHint(false);
+    } else if (status?.loggedIn) {
       setStatus('已登录', 'ok');
       showLoginHint(false);
     } else {
@@ -1452,6 +1458,9 @@
     }
     const thinking = el(THINKING_ID);
     if (thinking instanceof HTMLInputElement) thinking.checked = status?.thinkingEnabled === true;
+    if (thinking instanceof HTMLInputElement) thinking.disabled = status?.provider === 'local';
+    const chatIdInput = el('qwen-chat-id');
+    if (chatIdInput instanceof HTMLInputElement) chatIdInput.disabled = status?.provider === 'local';
     if (allowOpening) maybeSendOpening();
     return status;
   }
@@ -1734,6 +1743,7 @@
       const chatPort = chrome.runtime.connect({ name: 'bjtu-qwen-chat' });
       port = chatPort;
       chatPort.onMessage.addListener((message) => {
+        if (global.BjtuQwenLocalModel.handlePort(chatPort,message)) return;
         if (renderStreamEvent(message)) return;
         if (message?.type === 'operation') {
           setStatus('操作中…');
@@ -2294,10 +2304,19 @@
     }
 
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area !== 'local' || !changes.qwenLastChatId) return;
-      adoptSharedChatId(changes.qwenLastChatId.newValue);
+      if (area !== 'local') return;
+      if (changes.qwenProvider) {
+        try {port?.postMessage({type:'stop'});port?.disconnect();} catch {}
+        port=null;setBusy(false);
+        void refreshModels();
+        void refreshStatus({allowOpening:false});
+      }
+      if (changes.qwenLastChatId) adoptSharedChatId(changes.qwenLastChatId.newValue);
     });
     document.addEventListener('visibilitychange', reportQwenViewState);
+    global.addEventListener('focus', () => {
+      if (panelActivated && !busy) void refreshStatus().catch(() => {});
+    });
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message?.type === 'BJTUCA_LOCAL_APPROVAL_RESOLVED') {
         if (pendingAskFromLocalBridge && pendingAskId === String(message?.id || '')) hideAsk();

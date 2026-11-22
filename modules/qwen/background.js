@@ -3,7 +3,7 @@
   'use strict';
   if (!global.BJTUCA || !global.BjtuApiSettings) return;
 
-  const SETTINGS_KEYS = ['qwenEnabled', 'qwenFabColorMode', 'qwenModelId', 'qwenThinkingEnabled', 'qwenMaxIterations', 'qwenAlwaysAllow', 'qwenApprovalNotificationMode', 'qwenCompletionNotificationMode'];
+  const SETTINGS_KEYS = ['qwenEnabled', 'qwenProvider', 'qwenFabColorMode', 'qwenModelId', 'qwenThinkingEnabled', 'qwenMaxIterations', 'qwenAlwaysAllow', 'qwenApprovalNotificationMode', 'qwenCompletionNotificationMode'];
   const LOGIN_TAB_ID_KEY = 'qwenLoginTabId';
   const LOGIN_ORIGIN_KEY = 'qwenLoginOrigin';
   const WAF_NOTIFICATION_ID = 'bjtu-qwen-waf-verification';
@@ -327,6 +327,7 @@
     const operationSettings = await global.BjtuApiSettings.get();
     return {
       enabled: stored.qwenEnabled !== false,
+      provider: stored.qwenProvider === 'local' ? 'local' : 'qwen',
       fabColorMode: ['dark', 'light', 'system', 'extension'].includes(stored.qwenFabColorMode)
         ? stored.qwenFabColorMode
         : 'extension',
@@ -346,6 +347,16 @@
 
   async function saveSettings(patch) {
     const next = {};
+    if (patch?.provider !== undefined) {
+      const stored = await chrome.storage.local.get(['qwenProvider','qwenLastChatId','qwenLocalLastChatId','qwenCloudLastChatId']);
+      const oldProvider = stored.qwenProvider === 'local' ? 'local' : 'qwen';
+      next.qwenProvider = patch.provider === 'local' ? 'local' : 'qwen';
+      if (oldProvider !== next.qwenProvider) {
+        next[oldProvider === 'local' ? 'qwenLocalLastChatId' : 'qwenCloudLastChatId'] = String(stored.qwenLastChatId || '');
+        next.qwenLastChatId = String(stored[next.qwenProvider === 'local' ? 'qwenLocalLastChatId' : 'qwenCloudLastChatId'] || '');
+        next.qwenOpeningPendingChatId = '';
+      }
+    }
     if (typeof patch?.enabled === 'boolean') next.qwenEnabled = patch.enabled;
     if (patch?.fabColorMode !== undefined) {
       next.qwenFabColorMode = ['dark', 'light', 'system', 'extension'].includes(patch.fabColorMode)
@@ -376,24 +387,27 @@
   }
 
   const activeChatPorts = new Set();
-  let sharedChatCreationPromise = null;
+  const sharedChatCreationPromises = new Map();
   let sharedOpeningInFlight = null;
 
   async function resolveSharedChatId(client, modelId) {
     const stored = await chrome.storage.local.get('qwenLastChatId').catch(() => ({}));
     const existing = String(stored?.qwenLastChatId || '');
-    if (existing) return existing;
-    if (!sharedChatCreationPromise) {
-      sharedChatCreationPromise = client.newChat(modelId).then(async (chatId) => {
+    if (existing && existing.startsWith('local-') === (modelId === 'browser-local')) return existing;
+    const provider = modelId === 'browser-local' ? 'local' : 'qwen';
+    if (!sharedChatCreationPromises.has(provider)) {
+      const promise = client.newChat(modelId).then(async (chatId) => {
         const id = String(chatId || '');
         if (!id) throw new Error('新建共享会话失败：未返回会话 ID');
+        if ((await getSettings()).provider !== provider) throw new DOMException('模型来源已切换','AbortError');
         await chrome.storage.local.set({ qwenLastChatId: id });
         return id;
       }).finally(() => {
-        sharedChatCreationPromise = null;
+        sharedChatCreationPromises.delete(provider);
       });
+      sharedChatCreationPromises.set(provider,promise);
     }
-    return sharedChatCreationPromise;
+    return sharedChatCreationPromises.get(provider);
   }
 
   function broadcastSharedChatUpdated(chatId, sourceViewId) {
@@ -563,6 +577,7 @@
       if (String(port.name || '') !== 'bjtu-qwen-chat') return;
       activeChatPorts.add(port);
       const abortController = new AbortController();
+      const localClient = global.BjtuQwenLocalClient.create(port);
       const turnRef = {};
       let pendingAsk = null;
       let pendingRetry = null;
@@ -648,6 +663,10 @@
           stopRequested = true;
           resolveAskOnAbort();
           resolveRetryOnAbort();
+          if (turnRef.chatId?.startsWith('local-')) {
+            abortController.abort(new DOMException('生成中止', 'AbortError'));
+            return;
+          }
           void (async () => {
             // response_id 由流首个 response.created/delta 事件给出。若用户点得
             // 很早，短暂等待该事件，否则无法构造千问要求的停止请求。
@@ -679,10 +698,10 @@
               viewId: String(message?.uiState?.viewId || ''),
               visible: message?.uiState?.visible === true
             };
-            const client = global.BjtuQwenClient;
+            const client = settings.provider === 'local' ? localClient : global.BjtuQwenClient;
             const operations = global.BJTUCA;
             if (!settings.enabled) throw Object.assign(new Error('通义千问模块已禁用，请先在扩展选项中开启'), { code: 'DISABLED' });
-            const modelId = settings.modelId || await resolveDefaultModel(client);
+            const modelId = settings.provider === 'local' ? 'browser-local' : settings.modelId || await resolveDefaultModel(client);
             const groups = await operations.groups();
             const sourceChatId = String(message.chatId || '');
             const requestedChatId = await resolveSharedChatId(client, modelId);
@@ -706,6 +725,7 @@
             }
             loopSession = requestedChatId ? await loadChatPermissionSession(requestedChatId) : {};
             const result = await global.BjtuQwenAgent.runTurn({
+              client,
               modelId,
               userText: String(message.text).trim(),
               chatId: requestedChatId,
@@ -874,6 +894,10 @@
         void (async () => {
           const settings = await getSettings();
           const client = global.BjtuQwenClient;
+          if (settings.provider === 'local') {
+            sendResponse({ok:true,...settings,loggedIn:true,modelId:'browser-local',modelName:'浏览器本地模型（Prompt API）'});
+            return;
+          }
           let loggedIn = false;
           let checkError = '';
           try {
@@ -895,7 +919,7 @@
       if (type === 'QWEN_GET_CHAT_HISTORY') {
         void (async () => {
           const chatId = String(message?.payload?.chatId || '');
-          const client = global.BjtuQwenClient;
+          const client = chatId.startsWith('local-') ? global.BjtuQwenLocalClient.create() : global.BjtuQwenClient;
           if (!chatId || !client?.fetchChatHistory) {
             sendResponse({ ok: false, message: '无会话或客户端未就绪' });
             return;
@@ -922,7 +946,7 @@
       if (type === 'QWEN_DELETE_CHAT') {
         void (async () => {
           const chatId = String(message?.payload?.chatId || '');
-          const client = global.BjtuQwenClient;
+          const client = chatId.startsWith('local-') ? global.BjtuQwenLocalClient.create() : global.BjtuQwenClient;
           if (!chatId || !client?.deleteChat) {
             sendResponse({ ok: false, message: '无会话或客户端未就绪' });
             return;
@@ -977,7 +1001,8 @@
       if (type === 'QWEN_LIST_MODELS') {
         void (async () => {
           try {
-            const client = global.BjtuQwenClient;
+            const settings = await getSettings();
+            const client = settings.provider === 'local' ? global.BjtuQwenLocalClient.create() : global.BjtuQwenClient;
             if (!client) throw new Error('通义千问客户端未就绪');
             const models = await client.fetchModels();
             sendResponse({ ok: true, models });

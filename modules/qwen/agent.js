@@ -94,8 +94,7 @@
     return template.replace(SYSTEM_PROMPT_DOCS_PLACEHOLDER, String(qwenDocs || '').trim());
   }
 
-  async function ensureLoggedIn() {
-    const client = global.BjtuQwenClient;
+  async function ensureLoggedIn(client) {
     if (!client) throw new Error('通义千问客户端未就绪');
     if (await client.isLoggedIn()) return;
     throw Object.assign(new Error('尚未登录通义千问，请先打开 https://chat.qwen.ai/ 登录'), { code: 'NOT_LOGGED_IN' });
@@ -124,10 +123,10 @@
       alwaysAllow = false,
       parentIdExplicit = false
     } = options || {};
-    const client = global.BjtuQwenClient;
+    const client = options?.client || global.BjtuQwenClient;
     const operations = global.BJTUCA;
     if (!client || !operations) throw new Error('通义千问模块未就绪');
-    await ensureLoggedIn();
+    await ensureLoggedIn(client);
 
     const providedChatId = String(chatId || '');
     let effectiveChatId = providedChatId;

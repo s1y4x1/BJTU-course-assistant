@@ -2,6 +2,17 @@
   'use strict';
 
   let initialized = false;
+  let localModelScript;
+  function loadLocalModel() {
+    if (global.BjtuQwenLocalModel) return Promise.resolve();
+    return localModelScript ||= new Promise((resolve,reject) => {
+      const script = document.createElement('script');
+      script.src = chrome.runtime.getURL('modules/qwen/local-model.js');
+      script.onload = resolve;
+      script.onerror = () => {localModelScript=null;reject(new Error('无法加载本地模型组件'));};
+      document.head.append(script);
+    });
+  }
   let selectedFabColorMode = 'extension';
   let extensionThemeMode = 'system';
   const systemThemeMedia = global.matchMedia?.('(prefers-color-scheme: dark)');
@@ -68,6 +79,15 @@
     applyFabColorMode(status.fabColorMode);
     const thinking = document.getElementById('qwenThinkingEnabled');
     if (thinking instanceof HTMLInputElement) thinking.checked = status.thinkingEnabled === true;
+    const local = status.provider === 'local';
+    document.getElementById('qwenProvider').value = local ? 'local' : 'qwen';
+    document.getElementById('qwenLocalModelOptions').hidden = !local;
+    if (thinking) thinking.disabled = local;
+    if (local) {
+      await loadLocalModel();
+      const state = await global.BjtuQwenLocalModel.availability().catch(error => String(error.message));
+      document.getElementById('qwenLocalModelStatus').textContent = ({available:'本地模型已就绪',downloadable:'需要下载模型',downloading:'浏览器正在下载模型',unavailable:'当前设备或浏览器设置不支持本地模型'})[state] || state;
+    }
     const maxIterations = document.getElementById('qwenMaxIterations');
     if (maxIterations instanceof HTMLInputElement) maxIterations.value = String(Math.max(1, Number(status.maxIterations) || 6));
     applyAlwaysAllowState(status.alwaysAllow === true);
@@ -92,11 +112,11 @@
           if (model.id === status.modelId) option.selected = true;
           select.appendChild(option);
         }
-        if (!status.modelId) {
+        if (!status.modelId && !local) {
           const first = modelsResponse.models[0];
           await send('QWEN_SETTINGS_SET', { modelId: first.id });
         }
-        select.disabled = false;
+        select.disabled = local;
       } else {
         const option = document.createElement('option');
         option.value = '';
@@ -111,6 +131,21 @@
     if (initialized) return;
     initialized = true;
     setMessage = typeof context?.setMessage === 'function' ? context.setMessage : setMessage;
+    document.getElementById('qwenProvider')?.addEventListener('change', async event => {
+      const result = await send('QWEN_SETTINGS_SET',{provider:event.target.value});
+      if (result.ok === false) setMessage(result.message,false);
+      await refresh();
+    });
+    document.getElementById('qwenPrepareLocalModel')?.addEventListener('click', async event => {
+      const button = event.currentTarget, status = document.getElementById('qwenLocalModelStatus');
+      button.disabled = true; status.textContent = '正在准备本地模型…';
+      try {
+        await loadLocalModel();
+        await global.BjtuQwenLocalModel.prepare(fraction => {status.textContent=`正在下载本地模型… ${Math.round(fraction*100)}%`;});
+        status.textContent = '本地模型已就绪';
+      } catch (error) { status.textContent = String(error.message || error); }
+      finally {button.disabled=false;}
+    });
 
     const toggle = document.getElementById('qwenEnabled');
     if (toggle instanceof HTMLInputElement) {
@@ -193,12 +228,13 @@
   }
 
   async function reset() {
-    await send('QWEN_SETTINGS_SET', { enabled: true, fabColorMode: 'extension', modelId: '', thinkingEnabled: false, maxIterations: 6, alwaysAllow: false, approvalNotificationMode: 'background', completionNotificationMode: 'background' });
+    await send('QWEN_SETTINGS_SET', { provider:'qwen', enabled: true, fabColorMode: 'extension', modelId: '', thinkingEnabled: false, maxIterations: 6, alwaysAllow: false, approvalNotificationMode: 'background', completionNotificationMode: 'background' });
     void refresh();
   }
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== 'local') return;
+    if (changes.qwenProvider) void refresh().catch(error => setMessage(error.message,false));
     if (changes.qwenEnabled) {
       const enabled = changes.qwenEnabled.newValue !== false;
       const toggle = document.getElementById('qwenEnabled');

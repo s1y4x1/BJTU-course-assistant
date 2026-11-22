@@ -36,6 +36,17 @@
 
   <div class="qwen-sub-options">
     <div class="qwen-setting-row">
+      <label class="qwen-setting-label" for="qwenProvider">模型来源</label>
+      <select id="qwenProvider">
+        <option value="qwen">qwen.ai</option>
+        <option value="local">浏览器本地模型（Prompt API）</option>
+      </select>
+    </div>
+    <div id="qwenLocalModelOptions" hidden>
+      <div class="qwen-setting-row"><button type="button" id="qwenPrepareLocalModel" class="btn">准备本地模型</button><span id="qwenLocalModelStatus" role="status"></span></div>
+      <div class="tip">首次使用由浏览器下载模型，之后在本机生成回复，不登录或发送对话到 qwen.ai。需浏览器启用 Prompt API 且设备满足要求；中文和操作调用能力取决于浏览器模型。不支持独立思考开关。</div>
+    </div>
+    <div class="qwen-setting-row">
       <label class="qwen-setting-label" for="qwenModelSelect">模型</label>
       <select id="qwenModelSelect" class="qwen-model-select" disabled>
         <option value="">加载模型中…</option>
