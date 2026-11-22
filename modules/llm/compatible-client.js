@@ -2,6 +2,7 @@
 (function(global) {
   'use strict';
   const PREFIX = 'compatible-';
+  const modelCatalog=new Map();
   const storageKey = id => {
     if (!String(id).startsWith(PREFIX)) throw new Error('不是兼容 API 会话，请新建会话');
     return 'llmApiChat:' + id;
@@ -44,12 +45,30 @@
       async fetchModels() {
         const data=await (await request('/models')).json();
         if(data.error)throw apiError(data);
-        return (Array.isArray(data.data)?data.data:[]).filter(m=>!m.type || !/image|video|audio|embedding/i.test(m.type)).map(m=>({id:String(m.id || ''),name:String(m.name || m.id || '')})).filter(m=>m.id);
+        const c=await config();
+        const list=(Array.isArray(data.data)?data.data:[]).filter(m=>!m.type || !/image|video|audio|embedding/i.test(m.type));
+        modelCatalog.set(c.base,list);if(modelCatalog.size>8)modelCatalog.delete(modelCatalog.keys().next().value);
+        return list.map(m=>({...global.BjtuLlmModelInfo.describe(m,'openai',c.preset),id:String(m.id || ''),name:String(m.name || m.id || '')})).filter(m=>m.id);
       },
+      async getModelInfo(modelId){
+        const c=await config();
+        if(!modelCatalog.has(c.base))await this.fetchModels().catch(()=>{});
+        const raw=(modelCatalog.get(c.base)||[]).find(m=>m.id===modelId) || {id:modelId};
+        let info=global.BjtuLlmModelInfo.describe(raw,'openai',c.preset);
+        if(c.preset==='ollama'){
+          const show=await(await request('/api/show',{model:modelId},undefined,true)).json();
+          if(show.error)throw apiError(show);
+          info=global.BjtuLlmModelInfo.describe({...raw,capabilities:show.capabilities},'openai',c.preset);
+          const configured=Number(String(show.parameters || '').match(/\bnum_ctx\s+(\d+)/)?.[1]);
+          info.contextTokens=configured || Object.entries(show.model_info || {}).filter(([k])=>k.endsWith('.context_length')).map(([,v])=>Number(v)).find(v=>v>0) || info.contextTokens;
+        }
+        return info;
+      },
+      async prepareAttachments(files,{modelId}){return global.BjtuLlmModelInfo.validate(files,await this.getModelInfo(modelId));},
       newChat:async()=>{const id=PREFIX+crypto.randomUUID(),c=await config();await chrome.storage.local.set({[storageKey(id)]:{base:c.base,messages:[]}});return id;},
       fetchChatHistory,
       deleteChat:id=>chrome.storage.local.remove(storageKey(id)),
-      buildUserMessage:({content,thinking=false})=>({id:crypto.randomUUID(),role:'user',content:String(content),thinking:thinking===true,timestamp:Math.floor(Date.now()/1000)}),
+      buildUserMessage:({content,thinking=false,attachments=[]})=>({id:crypto.randomUUID(),role:'user',content:global.BjtuLlmModelInfo.appendText(content,attachments),images:attachments.filter(f=>f.kind==='image').map(f=>f.dataUrl),attachmentNames:attachments.map(f=>f.name),thinking:thinking===true,timestamp:Math.floor(Date.now()/1000)}),
       async streamCompletions({chatId,modelId,messages,parentId,onEvent,signal}) {
         signal?.throwIfAborted();
         const c=await config(),k=storageKey(chatId),stored=(await chrome.storage.local.get(k))[k];
@@ -65,7 +84,9 @@
         }
         const thinking=user.thinking===true;
         const native=c.preset==='ollama';
-        let body={model,stream:true,messages:[...history,user].map(({role,content})=>({role,content}))};
+        let body={model,stream:true,messages:[...history,user].map(({role,content,images=[]})=>native
+          ?{role,content,...(images.length?{images:images.map(url=>url.slice(url.indexOf(',')+1))}:{})}
+          :{role,content:images.length?[{type:'text',text:content},...images.map(url=>({type:'image_url',image_url:{url}}))]:content})};
         if(native){
           if(options.max_tokens!==undefined){options.num_predict=options.max_tokens;delete options.max_tokens;}
           body={...body,...(c.settings.llmApiThinkingProtocol==='none'?{}:{think:thinking}),options};

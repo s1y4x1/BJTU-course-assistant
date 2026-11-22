@@ -141,7 +141,7 @@
     if ($('share-draft').checked && !draftSendTimer && $('message').value.length) draftSendTimer = setTimeout(publishDraft, 160);
   }
   await BjtuMarkdown.ready;
-  const markdown = BjtuMarkdown.createParser({preserveWhitespace:true});
+  const markdown = BjtuMarkdown.createChatParser();
   const draftHeartbeat = setInterval(() => {
     let removed = false;
     for (const [key,draft] of liveDrafts) if (draft.expiresAt <= Date.now()) {liveDrafts.delete(key); removed = true;}

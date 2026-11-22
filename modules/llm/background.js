@@ -758,7 +758,7 @@
           return;
         }
         if (message?.type !== 'send') return;
-        if (!String(message.text || '').trim() && String(message.chatId || '')) return;
+        if (!String(message.text || '').trim() && !message.attachments?.length && String(message.chatId || '')) return;
         void (async () => {
           let releaseOpeningLock = null;
           try {
@@ -800,7 +800,8 @@
             const result = await global.BjtuQwenAgent.runTurn({
               client,
               modelId,
-              userText: String(message.text).trim(),
+              userText: String(message.text || ''),
+              attachments:Array.isArray(message.attachments)?message.attachments:[],
               chatId: requestedChatId,
               parentId: keepSourceParent ? String(message.parentId || '') : '',
               parentIdExplicit: keepSourceParent && message.editParentGiven === true,
@@ -1093,6 +1094,17 @@
           }
         })();
         return true;
+      }
+      if(type==='LLM_MODEL_INFO'){
+        void(async()=>{
+          try{
+            const settings=await getSettings();
+            if(settings.provider==='local'){sendResponse({ok:true,info:{id:'browser-local',images:false,textFiles:false,attachmentNote:'当前浏览器本地模型接入仅支持文本，上限由浏览器会话决定'}});return;}
+            const client=settings.provider==='openai'?global.BjtuLlmCompatibleClient.create():global.BjtuQwenClient;
+            const id=String(message.payload?.modelId || (settings.provider==='openai'?settings.apiModel:settings.modelId));
+            sendResponse({ok:true,info:await client.getModelInfo(id)});
+          }catch(error){sendResponse({ok:false,message:String(error.message || error)});}
+        })();return true;
       }
       if (type === 'QWEN_BUILD_SYSTEM_PROMPT') {
         const agent = global.BjtuQwenAgent;

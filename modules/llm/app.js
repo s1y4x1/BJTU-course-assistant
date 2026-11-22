@@ -2,18 +2,18 @@
 (function initQwenChatApp(global) {
   'use strict';
 
-  const FAB_ID = 'qwen-chat-fab';
-  const PANEL_ID = 'qwen-chat-panel';
-  const STATUS_ID = 'qwen-chat-status';
-  const MESSAGES_ID = 'qwen-chat-messages';
-  const MESSAGES_SCROLL_ID = 'qwen-chat-messages-scroll';
-  const LOGIN_HINT_ID = 'qwen-chat-login-hint';
-  const INPUT_ID = 'qwen-chat-input';
-  const SEND_ID = 'qwen-chat-send';
-  const STOP_ID = 'qwen-chat-stop';
-  const SCROLL_BOTTOM_ID = 'qwen-chat-scroll-bottom';
-  const MODEL_ID = 'qwen-chat-model';
-  const THINKING_ID = 'qwen-chat-thinking';
+  const FAB_ID = 'llm-chat-fab';
+  const PANEL_ID = 'llm-chat-panel';
+  const STATUS_ID = 'llm-chat-status';
+  const MESSAGES_ID = 'llm-chat-messages';
+  const MESSAGES_SCROLL_ID = 'llm-chat-messages-scroll';
+  const LOGIN_HINT_ID = 'llm-chat-login-hint';
+  const INPUT_ID = 'llm-chat-input';
+  const SEND_ID = 'llm-chat-send';
+  const STOP_ID = 'llm-chat-stop';
+  const SCROLL_BOTTOM_ID = 'llm-chat-scroll-bottom';
+  const MODEL_ID = 'llm-chat-model';
+  const THINKING_ID = 'llm-chat-thinking';
   const OPERATION_RESULTS_STORAGE_KEY = 'qwenOperationResults';
   const OPERATION_RESULTS_LIMIT = 20;
   const QWEN_VIEW_ID = global.crypto?.randomUUID?.() || `qwen-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -29,7 +29,7 @@
     document.documentElement.classList.add('llm-chatroom-view');
     const applyChatroomStyle=()=>document.body.classList.add('chatroom-page');
     if(document.body)applyChatroomStyle();else document.addEventListener('DOMContentLoaded',applyChatroomStyle,{once:true});
-    for(const path of ['modules/chatroom/chat.css','modules/llm/chatroom.css']){
+    for(const path of ['options/options.css','modules/chatroom/chat.css','modules/llm/chatroom.css']){
       const link=document.createElement('link');link.rel='stylesheet';link.href=chrome.runtime.getURL(path);document.head.append(link);
     }
   }
@@ -37,11 +37,11 @@
     if(event.source!==global.parent || event.origin!==global.location.origin || event.data?.type!=='BJTU_LLM_VISIBILITY')return;
     chatroomVisible=event.data.visible===true;
     chatroomNames={user:String(event.data.selfName || '我'),assistant:String(event.data.assistantName || 'AI 助手')};
-    const title=document.querySelector('.qwen-chat-title');if(title && title.textContent!==chatroomNames.assistant)title.textContent=chatroomNames.assistant;
+    const title=document.querySelector('.llm-chat-title');if(title && title.textContent!==chatroomNames.assistant)title.textContent=chatroomNames.assistant;
     document.querySelectorAll('[data-llm-author]').forEach(name=>{const text=chatroomNames[name.dataset.llmAuthor];if(name.textContent!==text)name.textContent=text;});
     reportQwenViewState();
   });
-  if (SIDE_PANEL_VIEW) document.documentElement.classList.add('qwen-side-panel-view');
+  if (SIDE_PANEL_VIEW) document.documentElement.classList.add('llm-side-panel-view');
 
   let port = null;
   let historyNeedsInitialScroll = false;
@@ -197,14 +197,14 @@
       const resultMode = /^res: (sandbox|app|background)$/.exec(languageInfo)?.[1] || '';
       if (resultMode) {
         const jsonText = String(text || '').trim();
-        return `<div class="qwen-chat-op qwen-inline-res"><div class="qwen-chat-op-name">操作结果（${escapeHtmlQwen(resultMode)}）</div><div class="qwen-chat-op-result">${escapeHtmlQwen(jsonText)}</div></div>`;
+        return `<div class="llm-chat-op llm-inline-res"><div class="llm-chat-op-name">操作结果（${escapeHtmlQwen(resultMode)}）</div><div class="llm-chat-op-result">${escapeHtmlQwen(jsonText)}</div></div>`;
       }
       return global.BjtuMarkdown.renderCodeBlock(text, language);
     };
     renderer.blockquote = function renderBlockquote({ tokens }) {
-      return `<blockquote class="qwen-md-blockquote">${this.parser.parse(tokens || [])}</blockquote>`;
+      return `<blockquote class="llm-md-blockquote">${this.parser.parse(tokens || [])}</blockquote>`;
     };
-    qwenMarkdownParser = global.BjtuMarkdown.createParser({renderer});
+    qwenMarkdownParser = global.BjtuMarkdown.createChatParser({renderer});
     return qwenMarkdownParser;
   }
 
@@ -221,10 +221,10 @@
   }
 
   function mdContainer(bubble) {
-    let container = bubble.querySelector(':scope > .qwen-chat-md');
+    let container = bubble.querySelector(':scope > .llm-chat-md');
     if (!(container instanceof HTMLElement)) {
       container = document.createElement('div');
-      container.className = 'qwen-chat-md bjtu-markdown';
+      container.className = 'llm-chat-md bjtu-markdown';
       container._mdText = '';
       bubble.appendChild(container);
     }
@@ -234,7 +234,7 @@
 
   function mdRawText(bubble) {
     if (!(bubble instanceof HTMLElement)) return '';
-    const container = bubble.querySelector(':scope > .qwen-chat-md');
+    const container = bubble.querySelector(':scope > .llm-chat-md');
     return container?._mdText || '';
   }
 
@@ -269,7 +269,7 @@
   function clearSuggestedReplies() {
     const messages = el(MESSAGES_ID);
     if (!(messages instanceof HTMLElement)) return;
-    messages.querySelectorAll(':scope > .qwen-chat-suggestions').forEach((item) => item.remove());
+    messages.querySelectorAll(':scope > .llm-chat-suggestions').forEach((item) => item.remove());
   }
 
   function renderSuggestedReplies(bubble, suggestions) {
@@ -278,24 +278,24 @@
     if (!(anchor instanceof HTMLElement) || !anchor.isConnected) return null;
     const messages = el(MESSAGES_ID);
     if (!(messages instanceof HTMLElement)) return null;
-    let container = [...messages.querySelectorAll(':scope > .qwen-chat-suggestions')]
+    let container = [...messages.querySelectorAll(':scope > .llm-chat-suggestions')]
       .find((item) => item._qwenSuggestionBubble === bubble);
-    messages.querySelectorAll(':scope > .qwen-chat-suggestions').forEach((item) => {
+    messages.querySelectorAll(':scope > .llm-chat-suggestions').forEach((item) => {
       if (item !== container) item.remove();
     });
     if (!(container instanceof HTMLElement)) {
       container = document.createElement('div');
-      container.className = 'qwen-chat-suggestions';
+      container.className = 'llm-chat-suggestions';
       container._qwenSuggestionBubble = bubble;
       anchor.after(container);
     }
-    container.querySelectorAll('.qwen-chat-cursor').forEach((node) => node.remove());
+    container.querySelectorAll('.llm-chat-cursor').forEach((node) => node.remove());
     suggestions.forEach((suggestion, index) => {
       let button = container.children[index];
       if (!(button instanceof HTMLButtonElement)) {
         button = document.createElement('button');
         button.type = 'button';
-        button.className = 'qwen-chat-suggestion-btn';
+        button.className = 'llm-chat-suggestion-btn';
         button.addEventListener('click', () => {
           if (busy) return;
           const reply = String(button.textContent || '').trim();
@@ -331,7 +331,7 @@
     return global.BjtuMarkdown.copyText(text, button);
   }
 
-  function createCopyButton(getText, className = 'qwen-chat-copy-btn') {
+  function createCopyButton(getText, className = 'llm-chat-copy-btn') {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = className;
@@ -344,7 +344,7 @@
   function createOperationResultSize(text) {
     const bytes = new TextEncoder().encode(String(text || '')).byteLength;
     const size = document.createElement('span');
-    size.className = 'qwen-chat-op-size file-size-emphasis';
+    size.className = 'llm-chat-op-size file-size-emphasis';
     size.dataset.fileSizeBytes = String(bytes);
     size.textContent = global.BjtuFileSizeEmphasis.formatBytes(bytes);
     global.BjtuFileSizeEmphasis.applyBytes(size, bytes);
@@ -353,14 +353,14 @@
 
   function completeOperationCard(card) {
     if (!(card instanceof HTMLElement)) return;
-    const name = card.querySelector(':scope > .qwen-chat-op-name');
-    const result = card.querySelector(':scope > .qwen-chat-op-result');
+    const name = card.querySelector(':scope > .llm-chat-op-name');
+    const result = card.querySelector(':scope > .llm-chat-op-result');
     if (!(name instanceof HTMLElement) || !(result instanceof HTMLElement)) return;
-    result.classList.remove('qwen-chat-op-result-loading');
-    let actions = name.querySelector(':scope > .qwen-chat-op-actions');
+    result.classList.remove('llm-chat-op-result-loading');
+    let actions = name.querySelector(':scope > .llm-chat-op-actions');
     if (!(actions instanceof HTMLElement)) {
       actions = document.createElement('span');
-      actions.className = 'qwen-chat-op-actions';
+      actions.className = 'llm-chat-op-actions';
       name.appendChild(actions);
     }
     actions.replaceChildren(
@@ -371,8 +371,8 @@
 
   function enhanceOperationResultControls(container) {
     if (!(container instanceof HTMLElement)) return;
-    container.querySelectorAll('.qwen-chat-op').forEach((card) => {
-      if (card.querySelector(':scope > .qwen-chat-op-result-loading')) return;
+    container.querySelectorAll('.llm-chat-op').forEach((card) => {
+      if (card.querySelector(':scope > .llm-chat-op-result-loading')) return;
       completeOperationCard(card);
     });
   }
@@ -502,13 +502,13 @@
     const messages = el(MESSAGES_ID);
     if (!(messages instanceof HTMLElement)) return null;
     const card = document.createElement('div');
-    card.className = 'qwen-chat-op';
+    card.className = 'llm-chat-op';
     const name = document.createElement('div');
-    name.className = 'qwen-chat-op-name';
+    name.className = 'llm-chat-op-name';
     const nameText = document.createElement('span');
     nameText.textContent = '操作结果';
     const content = document.createElement('div');
-    content.className = 'qwen-chat-op-result';
+    content.className = 'llm-chat-op-result';
     content.textContent = extractResJson(text);
     name.appendChild(nameText);
     card.append(name, content);
@@ -524,7 +524,7 @@
   }
 
   function hideHistoryExecuteButton() {
-    el(MESSAGES_ID)?.querySelectorAll('.qwen-chat-execute-btn').forEach((btn) => btn.remove());
+    el(MESSAGES_ID)?.querySelectorAll('.llm-chat-execute-btn').forEach((btn) => btn.remove());
   }
 
   // 历史最后一条为操作调用消息时，执行该代码并把结果作为下一条请求发回千问。
@@ -534,7 +534,7 @@
     hideHistoryExecuteButton();
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'btn qwen-chat-execute-btn';
+    button.className = 'btn llm-chat-execute-btn';
     button.textContent = '执行';
     button.addEventListener('click', async () => {
       if (busy) return;
@@ -574,21 +574,21 @@
     hideHistoryExecuteButton();
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'btn qwen-chat-execute-btn';
+    button.className = 'btn llm-chat-execute-btn';
     button.textContent = '执行';
     button.addEventListener('click', async () => {
       hideHistoryExecuteButton();
       // 查找最后一条用户消息并重新发送
-      const userMessages = Array.from(messages.querySelectorAll('.qwen-chat-msg-user'));
+      const userMessages = Array.from(messages.querySelectorAll('.llm-chat-msg-user'));
       const lastUserMsg = userMessages.length ? userMessages[userMessages.length - 1] : null;
-      const text = lastUserMsg?.querySelector('.qwen-chat-msg-text')?.textContent?.trim() || '';
+      const text = lastUserMsg?.querySelector('.llm-chat-msg-text')?.textContent?.trim() || '';
       if (!text) return;
-      const input = el('qwen-chat-input');
+      const input = el('llm-chat-input');
       if (input instanceof HTMLTextAreaElement) {
         input.value = text;
         input.dispatchEvent(new Event('input', { bubbles: true }));
       }
-      const form = el('qwen-chat-input-form');
+      const form = el('llm-chat-input-form');
       if (form instanceof HTMLFormElement) form.requestSubmit();
     });
     messages.appendChild(button);
@@ -597,8 +597,8 @@
 
   function isOperationCallMessage(node) {
     if (!(node instanceof HTMLElement)) return false;
-    if (node.matches('.qwen-chat-op')) return true;
-    if (!node.matches('.qwen-chat-msg-row.assistant')) return false;
+    if (node.matches('.llm-chat-op')) return true;
+    if (!node.matches('.llm-chat-msg-row.assistant')) return false;
     return [...node.querySelectorAll('.bjtu-md-codeblock-wrap[data-language]')].some((block) =>
       ['app', 'background', 'sandbox'].includes(String(block.dataset.language || '').toLowerCase())
     );
@@ -607,29 +607,29 @@
   function createOperationHistory(nodes) {
     if (!Array.isArray(nodes) || !nodes.length) return null;
     const details = document.createElement('details');
-    details.className = 'qwen-chat-operation-history';
+    details.className = 'llm-chat-operation-history';
     const summary = document.createElement('summary');
     const collapsedLabel = document.createElement('span');
-    collapsedLabel.className = 'qwen-chat-operation-history-collapsed-label';
+    collapsedLabel.className = 'llm-chat-operation-history-collapsed-label';
     collapsedLabel.textContent = '展开操作调用与结果';
     const expandedLabel = document.createElement('span');
-    expandedLabel.className = 'qwen-chat-operation-history-expanded-label';
+    expandedLabel.className = 'llm-chat-operation-history-expanded-label';
     expandedLabel.textContent = '收起操作调用与结果';
     summary.append(collapsedLabel, expandedLabel);
     const content = document.createElement('div');
-    content.className = 'qwen-chat-operation-history-content';
+    content.className = 'llm-chat-operation-history-content';
     content.append(...nodes);
     details.append(summary, content);
     return details;
   }
 
   function collapseOperationSegment(nodes) {
-    const finalReply = [...nodes].reverse().find((node) => node.matches?.('.qwen-chat-msg-row.assistant'));
+    const finalReply = [...nodes].reverse().find((node) => node.matches?.('.llm-chat-msg-row.assistant'));
     if (!(finalReply instanceof HTMLElement) || isOperationCallMessage(finalReply)) return;
     const beforeFinalReply = nodes.slice(0, nodes.indexOf(finalReply));
     if (!beforeFinalReply.some(isOperationCallMessage)) return;
     const collapsible = beforeFinalReply.filter((node) =>
-      node.matches?.('.qwen-chat-op, .qwen-chat-msg-row.assistant')
+      node.matches?.('.llm-chat-op, .llm-chat-msg-row.assistant')
     );
     if (!collapsible.length) return;
     const details = createOperationHistory(collapsible);
@@ -641,7 +641,7 @@
     const children = [...messages.children];
     let segmentStart = 0;
     for (let index = 0; index <= children.length; index += 1) {
-      const atBoundary = index === children.length || children[index]?.matches?.('.qwen-chat-msg-row.user');
+      const atBoundary = index === children.length || children[index]?.matches?.('.llm-chat-msg-row.user');
       if (!atBoundary) continue;
       if (index > segmentStart) collapseOperationSegment(children.slice(segmentStart, index));
       segmentStart = index;
@@ -751,7 +751,7 @@
     scrollMessagesToBottom(container, { settle: false });
   }
 
-  const HISTORY_LOADING_ID = 'qwen-chat-history-loading';
+  const HISTORY_LOADING_ID = 'llm-chat-history-loading';
 
   function resumePendingHistory(responseId) {
     const targetResponseId = String(responseId || '');
@@ -799,7 +799,7 @@
               inThinking = false;
             }
             if (!error && !stopped && activeBubble instanceof HTMLElement && !mdRawText(activeBubble)
-              && !activeBubble.querySelector(':scope > .qwen-chat-thinking')) {
+              && !activeBubble.querySelector(':scope > .llm-chat-thinking')) {
               appendAssistantText(activeBubble, '（无回复）');
             }
             removeCursor(activeBubble);
@@ -940,15 +940,15 @@
     const statusEl = el(STATUS_ID);
     if (statusEl instanceof HTMLElement) {
       statusEl.textContent = text;
-      statusEl.className = `qwen-chat-status ${state}`;
+      statusEl.className = `llm-chat-status ${state}`;
     }
   }
 
   function initOperationsPopover() {
-    const wrap = document.querySelector('.qwen-chat-ops-toggle-wrap');
-    const popover = el('qwen-chat-ops-popover');
+    const wrap = document.querySelector('.llm-chat-ops-toggle-wrap');
+    const popover = el('llm-chat-ops-popover');
     if (!(wrap instanceof HTMLElement) || !(popover instanceof HTMLElement)) return;
-    const toggle = el('qwen-chat-ops-toggle');
+    const toggle = el('llm-chat-ops-toggle');
     if (popover.parentElement !== document.body) {
       document.body.appendChild(popover);
     }
@@ -1030,8 +1030,8 @@
     if (stopBtn instanceof HTMLButtonElement) stopBtn.hidden = !busy;
     const messages = el(MESSAGES_ID);
     if (messages instanceof HTMLElement) {
-      messages.classList.toggle('qwen-chat-generating', busy);
-      messages.querySelectorAll('.qwen-chat-suggestion-btn').forEach((button) => {
+      messages.classList.toggle('llm-chat-generating', busy);
+      messages.querySelectorAll('.llm-chat-suggestion-btn').forEach((button) => {
         if (button instanceof HTMLButtonElement) button.disabled = busy;
       });
     }
@@ -1050,10 +1050,10 @@
     let anchor;
     if (role === 'user') {
       const row = document.createElement('div');
-      row.className = 'qwen-chat-msg-row user';
+      row.className = 'llm-chat-msg-row user';
       const editBtn = document.createElement('button');
       editBtn.type = 'button';
-      editBtn.className = 'qwen-chat-edit-btn';
+      editBtn.className = 'llm-chat-edit-btn';
       editBtn.textContent = '编辑';
       editBtn.title = '编辑此消息（发送时将以此消息为基准续接）';
       editBtn.addEventListener('click', () => {
@@ -1072,19 +1072,19 @@
       });
       row.appendChild(editBtn);
       bubble = document.createElement('div');
-      bubble.className = 'qwen-chat-msg user';
+      bubble.className = 'llm-chat-msg user';
       row.appendChild(bubble);
       anchor = row;
     } else if (role === 'assistant') {
       const row = document.createElement('div');
-      row.className = 'qwen-chat-msg-row assistant';
+      row.className = 'llm-chat-msg-row assistant';
       bubble = document.createElement('div');
-      bubble.className = 'qwen-chat-msg assistant';
-      row.append(bubble, createCopyButton(() => mdRawText(bubble), 'qwen-chat-copy-btn qwen-chat-assistant-copy-btn'));
+      bubble.className = 'llm-chat-msg assistant';
+      row.append(bubble, createCopyButton(() => mdRawText(bubble), 'llm-chat-copy-btn llm-chat-assistant-copy-btn'));
       anchor = row;
     } else {
       bubble = document.createElement('div');
-      bubble.className = `qwen-chat-msg ${role}`;
+      bubble.className = `llm-chat-msg ${role}`;
       anchor = bubble;
     }
     if(CHATROOM_VIEW && ['user','assistant'].includes(role)){
@@ -1107,7 +1107,7 @@
       container.innerHTML = renderQwenMarkdown(str);
       enhanceOperationResultControls(container);
     }
-    bubble.classList.toggle('qwen-chat-empty-reply', role === 'assistant' && str.trim() === '（无回复）');
+    bubble.classList.toggle('llm-chat-empty-reply', role === 'assistant' && str.trim() === '（无回复）');
     messages.appendChild(anchor);
     maybeAutoScrollMessages(messages);
     return bubble;
@@ -1115,14 +1115,14 @@
 
   function removeMessageBubble(bubble) {
     if (!(bubble instanceof HTMLElement)) return;
-    const row = bubble.closest('.qwen-chat-msg-row.assistant');
+    const row = bubble.closest('.llm-chat-msg-row.assistant');
     if (row instanceof HTMLElement) row.remove();
     else bubble.remove();
   }
 
   function messageDisplayNode(bubble) {
     if (!(bubble instanceof HTMLElement)) return null;
-    return bubble.closest('.qwen-chat-msg-row') || bubble;
+    return bubble.closest('.llm-chat-msg-row') || bubble;
   }
 
   function placeMessageAfter(bubble, anchor) {
@@ -1136,13 +1136,13 @@
   function latestRetryDisplayAnchor() {
     const messages = el(MESSAGES_ID);
     if (!(messages instanceof HTMLElement)) return null;
-    const candidates = messages.querySelectorAll('.qwen-chat-msg-row.user, .qwen-chat-op, .qwen-chat-msg-row.assistant');
+    const candidates = messages.querySelectorAll('.llm-chat-msg-row.user, .llm-chat-op, .llm-chat-msg-row.assistant');
     return candidates.length ? candidates[candidates.length - 1] : null;
   }
 
   function cursorHost(bubble) {
     if (!(bubble instanceof HTMLElement)) return bubble;
-    const md = bubble.querySelector(':scope > .qwen-chat-md');
+    const md = bubble.querySelector(':scope > .llm-chat-md');
     const container = md instanceof HTMLElement ? md : bubble;
     let host = container;
     const last = container.lastElementChild;
@@ -1168,9 +1168,9 @@
   function ensureCursor(bubble) {
     if (!(bubble instanceof HTMLElement)) return;
     const host = cursorHost(bubble);
-    if (!host.querySelector(':scope > .qwen-chat-cursor')) {
+    if (!host.querySelector(':scope > .llm-chat-cursor')) {
       const cursor = document.createElement('span');
-      cursor.className = 'qwen-chat-cursor';
+      cursor.className = 'llm-chat-cursor';
       let insertionPoint = null;
       let tail = host.lastChild;
       while (tail) {
@@ -1200,12 +1200,12 @@
 
   function removeCursor(bubble) {
     if (!(bubble instanceof HTMLElement)) return;
-    bubble.querySelectorAll('.qwen-chat-cursor').forEach((node) => node.remove());
+    bubble.querySelectorAll('.llm-chat-cursor').forEach((node) => node.remove());
     const messages = el(MESSAGES_ID);
     if (messages instanceof HTMLElement) {
-      messages.querySelectorAll(':scope > .qwen-chat-suggestions').forEach((container) => {
+      messages.querySelectorAll(':scope > .llm-chat-suggestions').forEach((container) => {
         if (container._qwenSuggestionBubble === bubble) {
-          container.querySelectorAll('.qwen-chat-cursor').forEach((node) => node.remove());
+          container.querySelectorAll('.llm-chat-cursor').forEach((node) => node.remove());
         }
       });
     }
@@ -1217,9 +1217,9 @@
     const container = renderSuggestedReplies(bubble, parsed.suggestions);
     if (!(container instanceof HTMLElement)) return false;
     const cursor = document.createElement('span');
-    cursor.className = 'qwen-chat-cursor';
+    cursor.className = 'llm-chat-cursor';
     if (parsed.cursorPlacement === 'button') {
-      const buttons = container.querySelectorAll(':scope > .qwen-chat-suggestion-btn');
+      const buttons = container.querySelectorAll(':scope > .llm-chat-suggestion-btn');
       const button = buttons.length ? buttons[buttons.length - 1] : null;
       if (button instanceof HTMLButtonElement) {
         button.appendChild(cursor);
@@ -1232,7 +1232,7 @@
 
   function collapseThinking(bubble) {
     if (!(bubble instanceof HTMLElement)) return;
-    const details = bubble.querySelector(':scope > .qwen-chat-thinking');
+    const details = bubble.querySelector(':scope > .llm-chat-thinking');
     if (details instanceof HTMLDetailsElement) details.open = false;
   }
 
@@ -1240,8 +1240,8 @@
     if (!(bubble instanceof HTMLElement)) return;
     removeCursor(bubble);
     if (inThinkingFlag) {
-      const details = bubble.querySelector(':scope > .qwen-chat-thinking');
-      const body = details instanceof HTMLElement ? details.querySelector('.qwen-chat-thinking-body') : null;
+      const details = bubble.querySelector(':scope > .llm-chat-thinking');
+      const body = details instanceof HTMLElement ? details.querySelector('.llm-chat-thinking-body') : null;
       if (body instanceof HTMLElement) {
         ensureCursor(body);
       } else {
@@ -1256,16 +1256,16 @@
     const messages = el(MESSAGES_ID);
     if (!(messages instanceof HTMLElement)) return;
     const card = document.createElement('div');
-    card.className = 'qwen-chat-op';
+    card.className = 'llm-chat-op';
     const name = document.createElement('div');
-    name.className = 'qwen-chat-op-name';
+    name.className = 'llm-chat-op-name';
     const nameText = document.createElement('span');
     nameText.textContent = '操作结果';
     name.appendChild(nameText);
     const content = document.createElement('div');
-    content.className = 'qwen-chat-op-result qwen-chat-op-result-loading';
+    content.className = 'llm-chat-op-result llm-chat-op-result-loading';
     const spinner = document.createElement('span');
-    spinner.className = 'qwen-chat-op-spinner';
+    spinner.className = 'llm-chat-op-spinner';
     spinner.setAttribute('aria-hidden', 'true');
     const loadingText = document.createElement('span');
     loadingText.textContent = '执行中…';
@@ -1280,17 +1280,17 @@
     const messages = el(MESSAGES_ID);
     if (!(messages instanceof HTMLElement)) return null;
     const card = document.createElement('div');
-    card.className = 'qwen-chat-op qwen-chat-function-call';
+    card.className = 'llm-chat-op llm-chat-function-call';
     card.dataset.functionId = String(call?.id || '');
     const name = document.createElement('div');
-    name.className = 'qwen-chat-op-name';
+    name.className = 'llm-chat-op-name';
     const nameText = document.createElement('span');
     nameText.textContent = String(call?.name || 'function_call');
     name.appendChild(nameText);
     const content = document.createElement('div');
-    content.className = 'qwen-chat-op-result qwen-chat-function-body';
+    content.className = 'llm-chat-op-result llm-chat-function-body';
     const argumentsEl = document.createElement('div');
-    argumentsEl.className = 'qwen-chat-function-arguments';
+    argumentsEl.className = 'llm-chat-function-arguments';
     argumentsEl.textContent = String(call?.arguments || '');
     content.appendChild(argumentsEl);
     card.append(name, content);
@@ -1301,9 +1301,9 @@
 
   function updateFunctionCallCard(card, call) {
     if (!(card instanceof HTMLElement)) return;
-    const nameText = card.querySelector(':scope > .qwen-chat-op-name > span:first-child');
+    const nameText = card.querySelector(':scope > .llm-chat-op-name > span:first-child');
     if (nameText instanceof HTMLElement && call?.name) nameText.textContent = String(call.name);
-    const argumentsEl = card.querySelector(':scope > .qwen-chat-function-body > .qwen-chat-function-arguments');
+    const argumentsEl = card.querySelector(':scope > .llm-chat-function-body > .llm-chat-function-arguments');
     if (argumentsEl instanceof HTMLElement) argumentsEl.textContent = String(call?.arguments || '');
     maybeAutoScrollMessages(el(MESSAGES_ID));
   }
@@ -1336,13 +1336,13 @@
   function renderFunctionToolResult(container, value) {
     container.replaceChildren();
     const text = document.createElement('div');
-    text.className = 'qwen-chat-function-result-text';
+    text.className = 'llm-chat-function-result-text';
     text.textContent = toolResultText(value);
     container.appendChild(text);
     const imageUrls = toolResultImageUrls(value);
     if (imageUrls.length) {
       const previews = document.createElement('div');
-      previews.className = 'qwen-chat-function-images';
+      previews.className = 'llm-chat-function-images';
       for (const url of imageUrls) {
         const link = document.createElement('a');
         link.href = url;
@@ -1361,14 +1361,14 @@
 
   function finishFunctionCallCard(card, functionResult) {
     if (!(card instanceof HTMLElement)) return;
-    const body = card.querySelector(':scope > .qwen-chat-function-body');
+    const body = card.querySelector(':scope > .llm-chat-function-body');
     if (!(body instanceof HTMLElement)) return;
-    body.querySelector(':scope > .qwen-chat-function-divider')?.remove();
-    body.querySelector(':scope > .qwen-chat-function-result')?.remove();
+    body.querySelector(':scope > .llm-chat-function-divider')?.remove();
+    body.querySelector(':scope > .llm-chat-function-result')?.remove();
     const divider = document.createElement('hr');
-    divider.className = 'qwen-chat-function-divider';
+    divider.className = 'llm-chat-function-divider';
     const result = document.createElement('div');
-    result.className = 'qwen-chat-function-result';
+    result.className = 'llm-chat-function-result';
     renderFunctionToolResult(result, functionResult?.result);
     body.append(divider, result);
     completeOperationCard(card);
@@ -1429,10 +1429,10 @@
 
   function updateOperationResult(card, result, { remember = true } = {}) {
     if (!(card instanceof HTMLElement)) return;
-    const existing = card.querySelector(':scope > .qwen-chat-op-result');
+    const existing = card.querySelector(':scope > .llm-chat-op-result');
     if (existing instanceof HTMLElement) existing.remove();
     const content = document.createElement('div');
-    content.className = 'qwen-chat-op-result';
+    content.className = 'llm-chat-op-result';
     content.textContent = formatOutcomeText(result);
     card.appendChild(content);
     completeOperationCard(card);
@@ -1469,6 +1469,7 @@
       select.appendChild(option);
       select.disabled = true;
     }
+    if(CHATROOM_VIEW)void global.BjtuLlmComposer.refresh();
   }
 
   async function refreshStatus({ checkLogin = false, allowOpening = true } = {}) {
@@ -1494,7 +1495,7 @@
     const thinking = el(THINKING_ID);
     if (thinking instanceof HTMLInputElement) thinking.checked = status?.thinkingEnabled === true;
     if (thinking instanceof HTMLInputElement) thinking.disabled = status?.provider === 'local';
-    const chatIdInput = el('qwen-chat-id');
+    const chatIdInput = el('llm-chat-id');
     if (chatIdInput instanceof HTMLInputElement) chatIdInput.disabled = status?.provider !== 'qwen';
     if (allowOpening) maybeSendOpening();
     return status;
@@ -1514,24 +1515,24 @@
     container._mdText = String(container._mdText || '') + String(text);
     const parsed = splitSuggestedReplies(container._mdText, { allowIncomplete: true });
     container.innerHTML = renderQwenMarkdown(parsed.text);
-    bubble?.classList?.toggle('qwen-chat-empty-reply', String(parsed.text || '').trim() === '（无回复）');
+    bubble?.classList?.toggle('llm-chat-empty-reply', String(parsed.text || '').trim() === '（无回复）');
     enhanceOperationResultControls(container);
     if (parsed.found) renderSuggestedReplies(bubble, parsed.suggestions);
   }
 
   function ensureThinkingBlock(bubble) {
-    let details = bubble.querySelector(':scope > .qwen-chat-thinking');
+    let details = bubble.querySelector(':scope > .llm-chat-thinking');
     if (!(details instanceof HTMLElement)) {
       details = document.createElement('details');
-      details.className = 'qwen-chat-thinking';
+      details.className = 'llm-chat-thinking';
       const summary = document.createElement('summary');
       summary.textContent = '思考过程';
       const body = document.createElement('div');
-      body.className = 'qwen-chat-thinking-body';
+      body.className = 'llm-chat-thinking-body';
       details.append(summary, body);
     }
     if (bubble.firstElementChild !== details) bubble.prepend(details);
-    return details.querySelector('.qwen-chat-thinking-body');
+    return details.querySelector('.llm-chat-thinking-body');
   }
 
   let pendingAskId = null;
@@ -1540,8 +1541,8 @@
   let pendingLocalBridgeApprovalResponse = null;
 
   function updateAskContinueLabel() {
-    const count = el('qwen-chat-ask-count');
-    const button = el('qwen-chat-ask-continue');
+    const count = el('llm-chat-ask-count');
+    const button = el('llm-chat-ask-continue');
     if (button instanceof HTMLButtonElement) {
       if (pendingAskMode === 'operation-permission') {
         button.textContent = '允许一次';
@@ -1556,13 +1557,13 @@
     pendingAskId = String(message?.id || '');
     pendingAskMode = String(message?.mode || '');
     pendingAskFromLocalBridge = message?.localBridge === true;
-    const container = el('qwen-chat-ask');
-    const text = el('qwen-chat-ask-text');
-    const count = el('qwen-chat-ask-count');
-    const always = el('qwen-chat-ask-always');
-    const sessionAlways = el('qwen-chat-ask-session');
-    const operationsAlways = el('qwen-chat-ask-operations');
-    const stop = el('qwen-chat-ask-stop');
+    const container = el('llm-chat-ask');
+    const text = el('llm-chat-ask-text');
+    const count = el('llm-chat-ask-count');
+    const always = el('llm-chat-ask-always');
+    const sessionAlways = el('llm-chat-ask-session');
+    const operationsAlways = el('llm-chat-ask-operations');
+    const stop = el('llm-chat-ask-stop');
     if (container instanceof HTMLElement) {
       if (text instanceof HTMLElement) text.textContent = message?.message || '操作调用次数过多，是否继续？';
       const value = Number(message?.count) > 0 ? Number(message.count) : 3;
@@ -1597,7 +1598,7 @@
   }
 
   function hideAsk() {
-    const container = el('qwen-chat-ask');
+    const container = el('llm-chat-ask');
     if (container instanceof HTMLElement) container.hidden = true;
     pendingAskId = null;
     pendingAskMode = '';
@@ -1606,7 +1607,7 @@
   }
 
   function resolveAsk(action) {
-    const container = el('qwen-chat-ask');
+    const container = el('llm-chat-ask');
     if (container instanceof HTMLElement) container.hidden = true;
     if (!pendingAskId) return;
     const id = pendingAskId;
@@ -1615,7 +1616,7 @@
     pendingAskMode = '';
     pendingAskFromLocalBridge = false;
     pendingLocalBridgeApprovalResponse = null;
-    const countEl = el('qwen-chat-ask-count');
+    const countEl = el('llm-chat-ask-count');
     const count = countEl instanceof HTMLInputElement ? parseInt(countEl.value, 10) : 0;
     if (typeof localBridgeResponse === 'function') {
       localBridgeResponse({
@@ -1643,7 +1644,7 @@
       removeCursor(activeBubble);
       if (activeBubble instanceof HTMLElement
         && !mdRawText(activeBubble)
-        && !activeBubble.querySelector(':scope > .qwen-chat-thinking')) {
+        && !activeBubble.querySelector(':scope > .llm-chat-thinking')) {
         removeMessageBubble(activeBubble);
       }
       activeBubble = null;
@@ -1667,10 +1668,10 @@
         setStatus('思考中…');
         const bubble = ensureAssistantBubble();
         if (bubble) {
-          const existingDetails = bubble.querySelector(':scope > .qwen-chat-thinking');
+          const existingDetails = bubble.querySelector(':scope > .llm-chat-thinking');
           const body = ensureThinkingBlock(bubble);
           if (body) appendAssistantText(body, message.text);
-          const details = bubble.querySelector(':scope > .qwen-chat-thinking');
+          const details = bubble.querySelector(':scope > .llm-chat-thinking');
           if (!(existingDetails instanceof HTMLDetailsElement) && details instanceof HTMLDetailsElement) details.open = true;
           inThinking = true;
           placeCursor(bubble, true);
@@ -1707,7 +1708,7 @@
     };
   }
 
-  function startStream({ text, editParent = '', isEditSend = false, showUserBubble = true }) {
+  function startStream({ text, editParent = '', isEditSend = false, showUserBubble = true, attachments = [] }) {
     clearSuggestedReplies();
     const wasOpeningStream = openingStarted;
     const requestParentId = wasOpeningStream ? '' : (editParent || sessionParentId);
@@ -1715,11 +1716,12 @@
     let retryVisibleAnchor = null;
     let requestUserAnchor = null;
     if (showUserBubble) {
-      const userBubble = appendMessage('user', text, editParent || sessionParentId);
+      const userBubble = appendMessage('user', text + (attachments.length ? '\n\n' + attachments.map(file=>`📎 ${file.name}`).join('\n') : ''), editParent || sessionParentId);
       requestUserAnchor = messageDisplayNode(userBubble);
       retryVisibleAnchor = requestUserAnchor;
       const input = el(INPUT_ID);
       if (input instanceof HTMLTextAreaElement) input.value = '';
+      if(CHATROOM_VIEW)global.BjtuLlmComposer.clear();
     } else {
       retryVisibleAnchor = latestRetryDisplayAnchor();
     }
@@ -1787,7 +1789,7 @@
             inThinking = false;
           }
           removeCursor(activeBubble);
-          if (activeBubble instanceof HTMLElement && !mdRawText(activeBubble) && !activeBubble.querySelector(':scope > .qwen-chat-thinking')) {
+          if (activeBubble instanceof HTMLElement && !mdRawText(activeBubble) && !activeBubble.querySelector(':scope > .llm-chat-thinking')) {
             removeMessageBubble(activeBubble);
             activeBubble = null;
           }
@@ -1884,7 +1886,7 @@
           removeCursor(activeBubble);
           activeBubble = null;
           if (lastOperationCard.card instanceof HTMLElement
-            && lastOperationCard.card.querySelector('.qwen-chat-op-result-loading')) {
+            && lastOperationCard.card.querySelector('.llm-chat-op-result-loading')) {
             updateOperationResult(lastOperationCard.card, {
               ok: false,
               name: 'code',
@@ -1899,7 +1901,7 @@
           const stoppedBubble = appendMessage('error', '生成中止');
           const retryBtn = document.createElement('button');
           retryBtn.type = 'button';
-          retryBtn.className = 'qwen-chat-retry-btn';
+          retryBtn.className = 'llm-chat-retry-btn';
           retryBtn.textContent = '重试';
           retryBtn.title = '重新发送刚才中止的请求';
           retryBtn.addEventListener('click', () => {
@@ -1941,7 +1943,7 @@
           const retriedBubble = activeBubble instanceof HTMLElement ? activeBubble : null;
           removeCursor(retriedBubble);
           const retriedBubbleHasContent = retriedBubble instanceof HTMLElement
-            && (!!mdRawText(retriedBubble) || !!retriedBubble.querySelector(':scope > .qwen-chat-thinking'));
+            && (!!mdRawText(retriedBubble) || !!retriedBubble.querySelector(':scope > .llm-chat-thinking'));
           if (retriedBubbleHasContent) {
             retryVisibleAnchor = messageDisplayNode(retriedBubble) || retryVisibleAnchor;
           } else if (retriedBubble instanceof HTMLElement) {
@@ -1960,7 +1962,7 @@
           }
           const btn = document.createElement('button');
           btn.type = 'button';
-          btn.className = 'qwen-chat-retry-btn';
+          btn.className = 'llm-chat-retry-btn';
           btn.textContent = '重试';
           btn.title = '重新发送刚才的请求';
           if (waitsForWafWindow) {
@@ -2043,7 +2045,7 @@
             let visibleAnchor = retryVisibleAnchor;
             if (activeBubble instanceof HTMLElement) {
               removeCursor(activeBubble);
-              if (mdRawText(activeBubble) || activeBubble.querySelector(':scope > .qwen-chat-thinking')) {
+              if (mdRawText(activeBubble) || activeBubble.querySelector(':scope > .llm-chat-thinking')) {
                 visibleAnchor = messageDisplayNode(activeBubble) || visibleAnchor;
                 retryVisibleAnchor = visibleAnchor;
               } else {
@@ -2056,7 +2058,7 @@
             setStatus('风控校验', 'error');
             const retryBtn = document.createElement('button');
             retryBtn.type = 'button';
-            retryBtn.className = 'qwen-chat-retry-btn';
+            retryBtn.className = 'llm-chat-retry-btn';
             retryBtn.textContent = '重试';
             retryBtn.title = '重新发送刚才的请求';
             const waitsForWafWindow = !!String(message.validationUrl || '');
@@ -2121,6 +2123,7 @@
       chatPort.postMessage({
         type: 'send',
         text,
+        attachments,
         isOpening: wasOpeningStream,
         thinking: (el(THINKING_ID) instanceof HTMLInputElement) && el(THINKING_ID).checked,
         uiState: currentQwenViewState(),
@@ -2149,7 +2152,7 @@
     pendingEditParentId = '';
     const isEditSend = pendingEdit;
     pendingEdit = false;
-    startStream({ text, editParent, isEditSend, showUserBubble: true });
+    startStream({ text, editParent, isEditSend, showUserBubble: true, attachments: CHATROOM_VIEW ? global.BjtuLlmComposer.files() : [] });
   }
 
   function maybeSendOpening() {
@@ -2227,14 +2230,14 @@
   }
 
   function syncChatIdInput() {
-    const input = el('qwen-chat-id');
+    const input = el('llm-chat-id');
     if (!(input instanceof HTMLInputElement)) return;
     input.value = sessionChatId;
     input.disabled = busy;
   }
 
   async function changeChatId() {
-    const input = el('qwen-chat-id');
+    const input = el('llm-chat-id');
     const nextChatId = input.value.trim();
     await loadChatStateFromStorage();
     if (busy || !nextChatId || nextChatId === sessionChatId) {
@@ -2279,6 +2282,7 @@
 
   async function init() {
     await global.BjtuMarkdown.ready;
+    if(CHATROOM_VIEW)await global.BjtuLlmComposer.mount();
     if (new URLSearchParams(global.location?.search || '').get('popup') === '1') {
       const fab = el(FAB_ID);
       if (fab instanceof HTMLElement) fab.style.display = 'none';
@@ -2429,11 +2433,11 @@
 
     const fab = el(FAB_ID);
     const panel = el(PANEL_ID);
-    const closeBtn = el('qwen-chat-close');
+    const closeBtn = el('llm-chat-close');
     const stopBtn = el(STOP_ID);
-    const form = el('qwen-chat-input-form');
+    const form = el('llm-chat-input-form');
     const input = el(INPUT_ID);
-    const loginBtn = el('qwen-chat-login-btn');
+    const loginBtn = el('llm-chat-login-btn');
     const messages = el(MESSAGES_ID);
     const messagesScroller = getMessagesScrollContainer(messages);
     const scrollBottomBtn = el(SCROLL_BOTTOM_ID);
@@ -2521,7 +2525,7 @@
         panel.style.height = `${rect.height}px`;
         syncPanelResizeBounds();
       }, { capture: true });
-      const header = panel.querySelector('.qwen-chat-header');
+      const header = panel.querySelector('.llm-chat-header');
       if (header instanceof HTMLElement) {
         header.addEventListener('pointerdown', (event) => {
           if (event.button !== 0) return;
@@ -2593,6 +2597,7 @@
     if (modelSelect instanceof HTMLSelectElement) {
       modelSelect.addEventListener('change', () => {
         void send('QWEN_SETTINGS_SET', { modelId: modelSelect.value });
+        if(CHATROOM_VIEW)void global.BjtuLlmComposer.refresh();
       });
     }
     const thinkingToggle = el(THINKING_ID);
@@ -2623,7 +2628,7 @@
         void setEmbeddedPanelOpen(false);
       });
     }
-    const chatIdInput = el('qwen-chat-id');
+    const chatIdInput = el('llm-chat-id');
     chatIdInput?.addEventListener('change', () => void changeChatId());
     chatIdInput?.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
@@ -2635,7 +2640,7 @@
         chatIdInput.blur();
       }
     });
-    const newChatBtn = el('qwen-chat-new');
+    const newChatBtn = el('llm-chat-new');
     if (newChatBtn instanceof HTMLButtonElement) {
       newChatBtn.addEventListener('click', () => {
         const currentId = sessionChatId;
@@ -2673,40 +2678,40 @@
         }
       });
     }
-    const askCount = el('qwen-chat-ask-count');
+    const askCount = el('llm-chat-ask-count');
     if (askCount instanceof HTMLInputElement) {
       askCount.addEventListener('input', updateAskContinueLabel);
     }
-    const askContinue = el('qwen-chat-ask-continue');
+    const askContinue = el('llm-chat-ask-continue');
     if (askContinue instanceof HTMLButtonElement) {
       askContinue.addEventListener('click', () => resolveAsk('continue'));
     }
-    const askAlways = el('qwen-chat-ask-always');
+    const askAlways = el('llm-chat-ask-always');
     if (askAlways instanceof HTMLButtonElement) {
       askAlways.addEventListener('click', () => resolveAsk(pendingAskMode === 'operation-permission' ? 'always-turn' : 'always'));
     }
-    const askSession = el('qwen-chat-ask-session');
+    const askSession = el('llm-chat-ask-session');
     if (askSession instanceof HTMLButtonElement) {
       askSession.addEventListener('click', () => resolveAsk('always-session'));
     }
-    const askOperations = el('qwen-chat-ask-operations');
+    const askOperations = el('llm-chat-ask-operations');
     if (askOperations instanceof HTMLButtonElement) {
       askOperations.addEventListener('click', () => resolveAsk('always-operations'));
     }
-    const askStop = el('qwen-chat-ask-stop');
+    const askStop = el('llm-chat-ask-stop');
     if (askStop instanceof HTMLButtonElement) {
       askStop.addEventListener('click', () => resolveAsk('stop'));
     }
     if (form instanceof HTMLFormElement) {
       form.addEventListener('submit', (event) => {
         event.preventDefault();
-        const text = String(input instanceof HTMLTextAreaElement ? input.value : '').trim();
-        if (text) sendMessage(text);
+        const text = String(input instanceof HTMLTextAreaElement ? input.value : '');
+        if (text.trim() || (CHATROOM_VIEW && global.BjtuLlmComposer.files().length)) sendMessage(text);
       });
     }
     if (input instanceof HTMLTextAreaElement) {
       input.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter' && !event.shiftKey) {
+        if (!CHATROOM_VIEW && event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
           event.preventDefault();
           form?.requestSubmit?.();
         }

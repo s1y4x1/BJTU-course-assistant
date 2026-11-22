@@ -110,7 +110,7 @@
     if (/spin/i.test(String(animation?.animationName || ''))) return true;
     const target = animationTargetElement(animation);
     return !!target && (
-      !!target.closest('.qwen-chat-msg.assistant')
+      !!target.closest('.llm-chat-msg.assistant')
       ||
       target.matches('[class*="spinner"], .checking .dot, .content-loading .dot, .is-loading, [class*="progress-bar"], [role="progressbar"], .is-indeterminate')
       || !!target.closest('[class*="spinner"], .checking, .content-loading, .is-loading, [role="progressbar"], .is-indeterminate')

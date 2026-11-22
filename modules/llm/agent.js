@@ -207,7 +207,9 @@
       const requestThinking = typeof getThinking === 'function'
         ? (await getThinking()) === true
         : thinking === true;
-      const message = client.buildUserMessage({ modelId, content, thinking: requestThinking });
+      const files=iteration===0 && Array.isArray(options.attachments)?options.attachments:[];
+      const attachments=files.length && client.prepareAttachments?await client.prepareAttachments(files,{modelId}):[];
+      const message = client.buildUserMessage({ modelId, content, thinking: requestThinking, attachments });
       message.parent_id = parentId || null;
       message.parentId = parentId || null;
 

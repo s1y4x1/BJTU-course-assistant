@@ -16,9 +16,9 @@
     holder.innerHTML = await markupResponse.text();
     document.body.appendChild(holder.content.cloneNode(true));
     if (new URLSearchParams(global.location?.search || '').get('popup') === '1') {
-      const fab = document.getElementById('qwen-chat-fab');
+      const fab = document.getElementById('llm-chat-fab');
       if (fab instanceof HTMLElement) fab.style.display = 'none';
-      const panel = document.getElementById('qwen-chat-panel');
+      const panel = document.getElementById('llm-chat-panel');
       if (panel instanceof HTMLElement) panel.hidden = true;
     }
     await global.BjtuModuleRegistry.loadScript('UI/marked.umd.js');

@@ -732,13 +732,13 @@ if (!popupMode) {
     if (!(target instanceof Element)) return false;
     if (floatingWindow instanceof HTMLElement) {
       if (target === floatingWindow || target.classList.contains('section-title')) return true;
-      if (floatingWindow.id !== 'qwen-chat-panel') return false;
+      if (floatingWindow.id !== 'llm-chat-panel') return false;
       return target.matches([
-        '.qwen-chat-header',
-        '.qwen-chat-messages-wrap',
-        '.qwen-chat-messages-scroll',
-        '.qwen-chat-messages',
-        '.qwen-chat-input-row'
+        '.llm-chat-header',
+        '.llm-chat-messages-wrap',
+        '.llm-chat-messages-scroll',
+        '.llm-chat-messages',
+        '.llm-chat-input-row'
       ].join(','));
     }
     return target === document.body

@@ -449,8 +449,14 @@
     return list.map((item) => ({
       id: String(item?.id || ''),
       name: String(item?.name || item?.id || ''),
-      description: String(item?.info?.meta?.description || '')
+      description: String(item?.info?.meta?.description || ''),
+      ...global.BjtuLlmModelInfo.describe(item,'qwen')
     })).filter((item) => item.id);
+  }
+
+  async function getModelInfo(modelId){
+    if(!modelMetadata.has(String(modelId)))await fetchModels();
+    return global.BjtuLlmModelInfo.describe({id:modelId,info:{meta:modelMetadata.get(String(modelId)) || {}}},'qwen');
   }
 
   async function fetchChatHistoryData(chatId) {
@@ -512,14 +518,14 @@
     return chatId;
   }
 
-  function buildUserMessage({ modelId, content, timestamp, thinking = false }) {
+  function buildUserMessage({ modelId, content, timestamp, thinking = false, attachments=[] }) {
     return {
       id: null,
       fid: global.crypto.randomUUID(),
       parentId: null,
       childrenIds: [global.crypto.randomUUID()],
       role: 'user',
-      content: String(content || ''),
+      content: global.BjtuLlmModelInfo.appendText(content,attachments),
       user_action: 'chat',
       files: [],
       timestamp: Math.floor((timestamp || Date.now()) / 1000),
@@ -863,6 +869,8 @@
     openLoginPage,
     captureToken,
     fetchModels,
+    getModelInfo,
+    prepareAttachments:async(files,{modelId})=>global.BjtuLlmModelInfo.validate(files,await getModelInfo(modelId)),
     newChat,
     fetchChatHistory,
     resumeChatHistory,

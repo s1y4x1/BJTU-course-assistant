@@ -346,5 +346,6 @@
     });
   }
 
-  global.BjtuMarkdown = Object.freeze({ ready, activateVendor, escapeHtml, renderCodeBlock, highlightCode, createRenderer, createParser, copyText, bindCopy, missingVendors });
+  const createChatParser = (options={}) => createParser({...options,preserveWhitespace:true});
+  global.BjtuMarkdown = Object.freeze({ ready, activateVendor, escapeHtml, renderCodeBlock, highlightCode, createRenderer, createParser, createChatParser, copyText, bindCopy, missingVendors });
 })(globalThis);
