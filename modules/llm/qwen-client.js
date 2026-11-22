@@ -437,10 +437,12 @@
     return requestJsonDirect(url, options);
   }
 
+  const modelMetadata = new Map();
   async function fetchModels() {
     // 从扩展 Service Worker 直接请求模型列表。
     const data = await requestJsonDirect(`${CHAT_BASE}/api/v2/models/`);
     const list = Array.isArray(data?.data?.data) ? data.data.data : [];
+    for (const item of list) if(item?.id) modelMetadata.set(String(item.id),item.info?.meta || {});
     return list.map((item) => ({
       id: String(item?.id || ''),
       name: String(item?.name || item?.id || ''),
@@ -512,7 +514,7 @@
       id: null,
       fid: global.crypto.randomUUID(),
       parentId: null,
-      childrenIds: [],
+      childrenIds: [global.crypto.randomUUID()],
       role: 'user',
       content: String(content || ''),
       user_action: 'chat',
@@ -540,6 +542,17 @@
     if (!await isLoggedIn()) throw notLoggedInError();
     await ensureDirectRequestHeaders();
     const resumeId = String(resumeResponseId || '');
+    if(!resumeId) {
+      if(!modelMetadata.has(String(modelId)))await fetchModels();
+      const meta=modelMetadata.get(String(modelId)) || {};
+      messages=messages.map(message=>{
+        const feature={...message.feature_config,auto_search:meta.auto_search===true};
+        // Keep the user-requested detailed thinking format for every model.
+        feature.thinking_format='detail';
+        if(meta.auto_thinking===false)feature.auto_thinking=false;
+        return {...message,childrenIds:message.childrenIds?.length?message.childrenIds:[global.crypto.randomUUID()],feature_config:feature};
+      });
+    }
     const url = `${CHAT_BASE}/api/v2/chat/completions?chat_id=${encodeURIComponent(chatId)}${resumeId ? `&response_id=${encodeURIComponent(resumeId)}` : ''}`;
     const token = await getStoredToken();
     const parent = String(parentId || '');
