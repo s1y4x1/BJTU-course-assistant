@@ -2,6 +2,13 @@
   'use strict';
 
   let initialized = false;
+  let refreshRevision = 0;
+  let chatroomAvailable = false;
+  function applyEntryChoice(enabled) {
+    document.getElementById('llmStandaloneToggle').hidden=chatroomAvailable;
+    document.getElementById('llmEntryChoices').hidden=!chatroomAvailable;
+    document.querySelectorAll('input[name="llmEntry"]').forEach(input=>{input.checked=input.value===(enabled?'standalone':'chatroom');});
+  }
   let localModelScript;
   function loadLocalModel() {
     if (global.BjtuQwenLocalModel) return Promise.resolve();
@@ -68,12 +75,15 @@
   }
 
   async function refresh() {
+    const revision=++refreshRevision;
     const [status, themeSettings] = await Promise.all([
       send('QWEN_GET_STATUS'),
       chrome.storage.local.get('themeMode').catch(() => ({}))
     ]);
     extensionThemeMode = global.BjtuTheme?.normalizeMode(themeSettings?.themeMode) || 'system';
     const toggle = document.getElementById('qwenEnabled');
+    chatroomAvailable=status.chatroomAvailable===true;
+    applyEntryChoice(status.enabled!==false);
     if (toggle instanceof HTMLInputElement) toggle.checked = status.enabled !== false;
     applyEnabledState(status.enabled !== false);
     applyFabColorMode(status.fabColorMode);
@@ -83,12 +93,16 @@
     document.getElementById('qwenProvider').value = status.provider || 'qwen';
     document.getElementById('qwenLocalModelOptions').hidden = !local;
     document.getElementById('llmApiOptions').hidden = status.provider !== 'openai';
-    for(const [id,value] of Object.entries({llmApiBaseUrl:status.apiBaseUrl,llmApiKey:status.apiKey,llmApiModel:status.apiModel})) {
-      const input=document.getElementById(id);if(input && document.activeElement!==input)input.value=value || '';
+    if(revision!==refreshRevision)return;
+    for(const [id,value] of Object.entries({llmApiBaseUrl:status.apiBaseUrl,llmApiKey:status.apiKey,llmApiModel:status.apiModel,llmApiTemperature:status.apiTemperature,llmApiTopP:status.apiTopP,llmApiTopK:status.apiTopK,llmApiMaxTokens:status.apiMaxTokens,llmApiThinkingProtocol:status.apiThinkingProtocol || 'auto'})) {
+      const input=document.getElementById(id);if(input && document.activeElement!==input)input.value=value ?? '';
     }
     const base=status.apiBaseUrl || '';
-    document.getElementById('llmApiPreset').value = base.includes('apihub.agnes-ai.com')?'agnes':/^http:\/\/(localhost|127\.0\.0\.1):11434\/v1\/?$/.test(base)?'ollama':'custom';
-    if (thinking) thinking.disabled = status.provider !== 'qwen';
+    const preset=status.apiPreset || (base.includes('agnes-ai.')?'agnes':base.includes('api.deepseek.com')?'deepseek':/:11434/.test(base)?'ollama':'custom');
+    document.getElementById('llmApiPreset').value = preset;
+    document.getElementById('llmApiTopKRow').hidden=!['ollama','agnes'].includes(preset);
+    document.getElementById('llmRefreshModels').hidden=status.provider!=='openai';
+    if (thinking) thinking.disabled = local;
     if (local) {
       const localStatus = document.getElementById('qwenLocalModelStatus');
       localStatus.textContent = '正在检查本地模型…';
@@ -109,8 +123,13 @@
     }
 
     const modelsResponse = await send('QWEN_LIST_MODELS');
+    if(revision!==refreshRevision)return;
+    const manual=status.provider==='openai' && (!modelsResponse.ok || !modelsResponse.models?.length);
+    document.getElementById('llmApiManualModelRow').hidden=!manual;
+    document.getElementById('llmApiModelError').textContent=manual?String(modelsResponse.message || '服务未返回可用模型，允许手动输入'):'';
     const select = document.getElementById('qwenModelSelect');
     if (select instanceof HTMLSelectElement) {
+      select.style.display=manual?'none':'';
       select.replaceChildren();
       if (modelsResponse.ok && Array.isArray(modelsResponse.models) && modelsResponse.models.length) {
         for (const model of modelsResponse.models) {
@@ -120,8 +139,11 @@
           if (model.id === (status.provider==='openai'?status.apiModel:status.modelId)) option.selected = true;
           select.appendChild(option);
         }
-        if (!(status.provider==='openai'?status.apiModel:status.modelId) && !local) {
-          const first = modelsResponse.models[0];
+        const configured=status.provider==='openai'?status.apiModel:status.modelId;
+        if (!modelsResponse.models.some(m=>m.id===configured) && !local) {
+          const preferred=status.provider==='openai' && preset==='agnes'?'agnes-3.0-flash':'';
+          const first = modelsResponse.models.find(m=>m.id===preferred) || modelsResponse.models[0];
+          select.value=first.id;
           await send('QWEN_SETTINGS_SET', { modelId: first.id });
         }
         select.disabled = local;
@@ -139,20 +161,30 @@
     if (initialized) return;
     initialized = true;
     setMessage = typeof context?.setMessage === 'function' ? context.setMessage : setMessage;
-    for(const [id,field] of Object.entries({llmApiBaseUrl:'apiBaseUrl',llmApiKey:'apiKey',llmApiModel:'apiModel'})) {
+    document.querySelectorAll('input[name="llmEntry"]').forEach(input=>input.addEventListener('change',async()=>{
+      if(!input.checked)return;
+      const enabled=input.value==='standalone';
+      const result=await send('QWEN_SETTINGS_SET',{enabled});
+      if(result.ok===false)setMessage(result.message,false);
+      else {applyEntryChoice(enabled);applyEnabledState(enabled);setMessage('已保存');}
+    }));
+    for(const [id,field] of Object.entries({llmApiBaseUrl:'apiBaseUrl',llmApiKey:'apiKey',llmApiModel:'apiModel',llmApiTemperature:'apiTemperature',llmApiTopP:'apiTopP',llmApiTopK:'apiTopK',llmApiMaxTokens:'apiMaxTokens',llmApiThinkingProtocol:'apiThinkingProtocol'})) {
       document.getElementById(id)?.addEventListener('change',async event=>{
+        if(event.target instanceof HTMLInputElement && !event.target.checkValidity()){
+          event.target.reportValidity();await refresh();return;
+        }
         const result=await send('QWEN_SETTINGS_SET',{[field]:event.target.value});
         if(result.ok===false)setMessage(result.message,false);
-        else {setMessage('已保存');if(field!=='apiKey')await refresh();}
+        else {setMessage('已保存');if(['apiBaseUrl','apiKey','apiModel'].includes(field))await refresh();}
       });
     }
     document.getElementById('llmRefreshModels')?.addEventListener('click',()=>void refresh().catch(e=>setMessage(e.message,false)));
     document.getElementById('llmApiPreset')?.addEventListener('change',async event=>{
-      const presets={ollama:{apiBaseUrl:'http://127.0.0.1:11434/v1',apiKey:'',apiModel:''},agnes:{apiBaseUrl:'https://apihub.agnes-ai.com/v1',apiKey:'',apiModel:'agnes-2.5-flash'}};
+      const presets={ollama:{apiBaseUrl:'http://127.0.0.1:11434/v1',apiKey:'',apiModel:''},agnes:{apiBaseUrl:'https://apihub.agnes-ai.com/v1',apiKey:'',apiModel:'agnes-3.0-flash'},deepseek:{apiBaseUrl:'https://api.deepseek.com/v1',apiKey:'',apiModel:'deepseek-flash'}};
       if(presets[event.target.value]){
-        const result=await send('QWEN_SETTINGS_SET',presets[event.target.value]);
+        const result=await send('QWEN_SETTINGS_SET',{...presets[event.target.value],apiPreset:event.target.value,apiThinkingProtocol:'auto'});
         if(result.ok===false)setMessage(result.message,false);else await refresh();
-      }
+      }else await send('QWEN_SETTINGS_SET',{apiPreset:'custom'});
     });
     document.getElementById('qwenLocalModelSettings')?.addEventListener('click', async () => {
       try {
@@ -266,6 +298,7 @@
     if (changes.qwenProvider) void refresh().catch(error => setMessage(error.message,false));
     if (changes.qwenEnabled) {
       const enabled = changes.qwenEnabled.newValue !== false;
+      applyEntryChoice(enabled);
       const toggle = document.getElementById('qwenEnabled');
       if (toggle instanceof HTMLInputElement) toggle.checked = enabled;
       applyEnabledState(enabled);

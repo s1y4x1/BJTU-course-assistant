@@ -24,9 +24,22 @@
   const SIDE_PANEL_VIEW = new URLSearchParams(global.location?.search || '').get('view') === 'sidepanel';
   const CHATROOM_VIEW = new URLSearchParams(global.location?.search || '').get('view') === 'chatroom';
   let chatroomVisible = !CHATROOM_VIEW;
+  let chatroomNames={user:'我',assistant:'AI 助手'};
+  if(CHATROOM_VIEW){
+    document.documentElement.classList.add('llm-chatroom-view');
+    const applyChatroomStyle=()=>document.body.classList.add('chatroom-page');
+    if(document.body)applyChatroomStyle();else document.addEventListener('DOMContentLoaded',applyChatroomStyle,{once:true});
+    for(const path of ['modules/chatroom/chat.css','modules/llm/chatroom.css']){
+      const link=document.createElement('link');link.rel='stylesheet';link.href=chrome.runtime.getURL(path);document.head.append(link);
+    }
+  }
   if(CHATROOM_VIEW)global.addEventListener('message',event=>{
     if(event.source!==global.parent || event.origin!==global.location.origin || event.data?.type!=='BJTU_LLM_VISIBILITY')return;
-    chatroomVisible=event.data.visible===true;reportQwenViewState();
+    chatroomVisible=event.data.visible===true;
+    chatroomNames={user:String(event.data.selfName || '我'),assistant:String(event.data.assistantName || 'AI 助手')};
+    const title=document.querySelector('.qwen-chat-title');if(title && title.textContent!==chatroomNames.assistant)title.textContent=chatroomNames.assistant;
+    document.querySelectorAll('[data-llm-author]').forEach(name=>{const text=chatroomNames[name.dataset.llmAuthor];if(name.textContent!==text)name.textContent=text;});
+    reportQwenViewState();
   });
   if (SIDE_PANEL_VIEW) document.documentElement.classList.add('qwen-side-panel-view');
 
@@ -85,7 +98,7 @@
   function currentQwenViewState() {
     const panel = el(PANEL_ID);
     return {
-      context: SIDE_PANEL_VIEW ? 'sidepanel' : (STANDALONE_CHAT ? 'standalone' : 'app'),
+      context: CHATROOM_VIEW ? 'chatroom' : SIDE_PANEL_VIEW ? 'sidepanel' : (STANDALONE_CHAT ? 'standalone' : 'app'),
       viewId: QWEN_VIEW_ID,
       visible: document.visibilityState === 'visible'
         && (!CHATROOM_VIEW || chatroomVisible)
@@ -393,7 +406,7 @@
     const list = Array.isArray(message?.content_list) ? message.content_list : [];
     if (!list.length) {
       const parsed = splitSuggestedReplies(String(message?.content || ''));
-      const bubble = appendMessage('assistant', parsed.text || '（无回复）');
+      const bubble = appendMessage('assistant', parsed.text || '（无回复）',undefined,message.timestamp ?? null);
       return parsed.suggestions.length ? { bubble, suggestions: parsed.suggestions } : null;
     }
 
@@ -404,7 +417,7 @@
     const flushAssistant = ({ final = false } = {}) => {
       if (!answer && !thinking) return;
       const parsed = splitSuggestedReplies(answer);
-      const bubble = appendMessage('assistant', parsed.text || (final ? '（无回复）' : ''));
+      const bubble = appendMessage('assistant', parsed.text || (final ? '（无回复）' : ''),undefined,message.timestamp ?? null);
       if (thinking && bubble instanceof HTMLElement) {
         const body = ensureThinkingBlock(bubble);
         if (body instanceof HTMLElement) {
@@ -446,7 +459,7 @@
     flushAssistant({ final: true });
     if (!rendered) {
       const parsed = splitSuggestedReplies(String(message?.content || ''));
-      const bubble = appendMessage('assistant', parsed.text || '（无回复）');
+      const bubble = appendMessage('assistant', parsed.text || '（无回复）',undefined,message.timestamp ?? null);
       suggestionCandidate = parsed.suggestions.length ? { bubble, suggestions: parsed.suggestions } : null;
     }
     return suggestionCandidate;
@@ -656,7 +669,7 @@
         if (blocks.length) {
           for (const block of blocks) appendResCard(block);
         } else {
-          appendMessage('user', extractUserQuestion(content), String(message?.parentId || message?.parent_id || lastAssistantResponseId));
+          appendMessage('user', extractUserQuestion(content), String(message?.parentId || message?.parent_id || lastAssistantResponseId),message.timestamp ?? null);
         }
       } else if (role === 'assistant') {
         const assistantResponseId = String(message?.response_id || message?.id || '');
@@ -1029,7 +1042,7 @@
     }
   }
 
-  function appendMessage(role, text, parentId) {
+  function appendMessage(role, text, parentId, timestamp=Date.now()) {
     const messages = el(MESSAGES_ID);
     if (!(messages instanceof HTMLElement)) return;
     const str = String(text || '');
@@ -1074,10 +1087,22 @@
       bubble.className = `qwen-chat-msg ${role}`;
       anchor = bubble;
     }
+    if(CHATROOM_VIEW && ['user','assistant'].includes(role)){
+      bubble.classList.add('message');if(role==='user')bubble.classList.add('mine');
+      const header=document.createElement('div');header.className='muted message-author';
+      const name=document.createElement('strong');name.className='message-author-name';name.dataset.llmAuthor=role;
+      name.textContent=chatroomNames[role];name.tabIndex=0;name.setAttribute('role','button');name.title=role==='user'?'修改昵称':'修改 AI 助手备注';
+      const edit=()=>global.parent.postMessage({type:'BJTU_LLM_EDIT_NAME',role},global.location.origin);
+      name.addEventListener('click',edit);name.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();edit();}});
+      header.append(name);
+      if(timestamp!=null){const time=document.createElement('span');global.BjtuDateTime.set(time,timestamp);header.append(document.createTextNode(' · '),time);}
+      bubble.prepend(header);
+    }
     if (role === 'error') {
       bubble.textContent = str;
     } else {
       const container = mdContainer(bubble);
+      if(CHATROOM_VIEW)container.classList.add('message-text');
       container._mdText = str;
       container.innerHTML = renderQwenMarkdown(str);
       enhanceOperationResultControls(container);
@@ -1468,7 +1493,7 @@
     }
     const thinking = el(THINKING_ID);
     if (thinking instanceof HTMLInputElement) thinking.checked = status?.thinkingEnabled === true;
-    if (thinking instanceof HTMLInputElement) thinking.disabled = status?.provider !== 'qwen';
+    if (thinking instanceof HTMLInputElement) thinking.disabled = status?.provider === 'local';
     const chatIdInput = el('qwen-chat-id');
     if (chatIdInput instanceof HTMLInputElement) chatIdInput.disabled = status?.provider !== 'qwen';
     if (allowOpening) maybeSendOpening();

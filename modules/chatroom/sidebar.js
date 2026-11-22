@@ -226,7 +226,8 @@
         if (!hold.consumeClick()) toast('请长按「删除」1 秒确认删除会话及本地记录');
       }, 'conversation-menu-delete');
       const hold = bindHold(del,{signal:uiAbort.signal,onConfirm:() => void perform('conversation-delete').catch(report)});
-      menu.append(pin,hide,del);
+      if(entry.kind==='assistant')menu.append(pin);
+      else menu.append(pin,hide,del);
       root.append(menu);
       menu.showPopover();
       const rect = anchor.getBoundingClientRect();
@@ -262,40 +263,34 @@
     const editorAccounts = $('editor-fields').querySelector('.editor-accounts');
     if ($('editor').open && editorAccounts?.dataset.peerId) updateEditorAccounts(editorAccounts);
     const {visibleConversations, unreadCount} = global.BjtuChatroomConversations;
-    const entries = visibleConversations(state).map(entry => {
+    const entries = visibleConversations(state,{assistant:global.__bjtuChatroomLlmAvailable?(global.__bjtuLlmActivity || {}):null}).map(entry => {
       const isPublic = entry.id === 'public';
       const members = isPublic ? [state.self.id, ...state.peers.filter(peer => peer.online && !peer.blocked).map(peer => peer.id)].filter(Boolean) : entry.members;
       const name = entry.kind === 'private' ? nameOf(entry.peerId) : entry.view.remark || (isPublic ? '公共群聊' : entry.name);
       return {...entry, name, members,
         onlineCount: members?.filter(id => id === state.self.id || state.peers.some(peer => peer.id === id && peer.online)).length || 0};
     });
-    if (global.__bjtuChatroomLlmAvailable) entries.unshift({id:'llm',kind:'assistant',name:'AI 助手',view:{},members:[]});
     // Selecting a row may mark its messages read immediately. Don't replace
     // or move the pressed button until its pointer gesture has finished.
     if (!heldConversation) reconcile($('conversations'), roomNodes, entries, r => r.id, entry => {
       const el = node('div', undefined, 'conversation-entry');
-      if(entry.kind==='assistant') {
-        const link=button('',()=>chooseConversation('llm'),'conversation-link');
-        link.dataset.conversation='llm';
-        link.append(node('span','🤖','conversation-avatar'),node('span','AI 助手','conversation-name'));
-        el.append(link);return el;
-      }
       const link = button('', () => { if (!hold.consumeClick()) chooseConversation(entry.id); }, 'conversation-link');
       link.dataset.conversation = entry.id;
       link.title = '长按 0.5 秒或右键打开会话菜单';
       link.setAttribute('aria-expanded','false');
-      const avatar = node('span', entry.kind === 'group' ? '👥' : '👤', 'conversation-avatar');
+      const avatar = node('span', entry.kind === 'assistant'?'🤖':entry.kind === 'group' ? '👥' : '👤', 'conversation-avatar');
       avatar.setAttribute('aria-hidden', 'true');
       if (entry.kind === 'private') {
         const dot = node('span',undefined,`conversation-online-dot${entry.online ? ' online' + (entry.background ? ' background' : '') : ''}`);
         dot.title = entry.online ? entry.background ? '后台在线' : '在线' : '离线'; avatar.append(dot);
       }
-      else if (!entry.left) avatar.append(node('span', `${entry.onlineCount}/${entry.members?.length || 0}`, 'conversation-group-count'));
+      else if (entry.kind==='group' && !entry.left) avatar.append(node('span', `${entry.onlineCount}/${entry.members?.length || 0}`, 'conversation-group-count'));
       const content = node('span', undefined, 'conversation-preview'), name = node('span', entry.name, 'conversation-name');
-      name.title = '修改备注';
+      name.title = entry.kind==='assistant'?'修改 AI 助手备注':'修改备注';
       name.addEventListener('click', event => {
         event.stopPropagation();
         if (hold.consumeClick()) return;
+        if(entry.kind==='assistant'){editAssistant();return;}
         if (entry.kind === 'private') editPerson(entry.peerId);
         else editText('修改群聊备注','备注',entry.view.remark || '',remark => mutate('conversation-remark',{conversationId:entry.id,remark}),80);
       }, {signal:uiAbort.signal});
@@ -388,6 +383,9 @@
       label.append(input); fields.append(label);
       return value => mutate('settings', {nickname: value.trim()});
     }, {autoSave:true});
+  }
+  function editAssistant() {
+    editText('AI 助手','备注（留空恢复默认名称）',state.conversations?.llm?.remark || '',remark=>mutate('conversation-remark',{conversationId:'llm',remark}),80,'AI 助手');
   }
   function editPerson(peerId) {
     if (peerId === state.self.id) {
@@ -602,7 +600,7 @@
     const confirmClear = submit => openEditor('清空记录', fields => {
       fields.append(node('p', '确定清空当前会话的本地记录并停止文件传输？')); return submit;
     });
-    const controller = {ready:Promise.resolve(),render,setReady,groupEditor,leaveGroup,editPerson,confirmClear,destroy};
+    const controller = {ready:Promise.resolve(),render,setReady,groupEditor,leaveGroup,editPerson,editAssistant,confirmClear,destroy};
     instances.set(root,controller);
     controller.ready = (async () => {
       settings = await global.BjtuChatroomSettings.mount(root, report);

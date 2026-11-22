@@ -7,22 +7,31 @@
     return 'llmApiChat:' + id;
   };
   async function config() {
-    const s = await chrome.storage.local.get(['llmApiBaseUrl','llmApiKey','llmApiModel']);
+    const s = await chrome.storage.local.get(['llmApiBaseUrl','llmApiKey','llmApiModel','llmApiPreset','llmApiTemperature','llmApiTopP','llmApiTopK','llmApiMaxTokens','llmApiThinkingProtocol']);
     const url = new URL(s.llmApiBaseUrl || 'http://127.0.0.1:11434/v1');
     if (!['http:','https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error('API 地址必须为不含账密、查询参数和片段的 HTTP(S) 地址');
-    return {base:url.href.replace(/\/$/,''),key:String(s.llmApiKey || '').trim(),model:String(s.llmApiModel || '').trim()};
+    const preset=s.llmApiPreset || (url.hostname.endsWith('agnes-ai.com')||url.hostname.endsWith('agnes-ai.cn')?'agnes':url.hostname==='api.deepseek.com'?'deepseek':url.port==='11434'?'ollama':'custom');
+    return {base:url.href.replace(/\/$/,''),key:String(s.llmApiKey || '').trim(),model:String(s.llmApiModel || '').trim(),preset,settings:s};
   }
-  async function request(path,body,signal) {
+  function apiError(data,status,key='') {
+    let message=String(data?.error?.message || (typeof data?.error==='string'?data.error:'') || data?.message || `兼容 API 请求失败${status?`：HTTP ${status}`:''}`);
+    if(key)message=message.split(key).join('[已隐藏密钥]');
+    return Object.assign(new Error(message),{status,code:String(data?.error?.code || '')});
+  }
+  async function request(path,body,signal,nativeOllama=false) {
     const c = await config();
     const timeout = AbortSignal.timeout(120000);
-    const response = await fetch(c.base + path, {
+    const response = await fetch((nativeOllama?c.base.replace(/\/v1$/,''):c.base) + path, {
       method: body ? 'POST' : 'GET', credentials:'omit',
       headers:{Accept:body?'text/event-stream, application/json':'application/json',...(body?{'Content-Type':'application/json'}:{}),...(c.key?{Authorization:'Bearer '+c.key}:{})},
       body:body?JSON.stringify(body):undefined, signal:signal?AbortSignal.any([signal,timeout]):timeout
     });
     if(!response.ok) {
-      // Do not echo request headers or arbitrary response text (which may include secrets).
-      throw new Error(`兼容 API 请求失败：HTTP ${response.status}${response.status===401?'，请检查 API Key':''}${response.status===404?'，请检查 API 基础地址和模型':''}`);
+      const data=await response.json().catch(()=>null);
+      if(response.status===403 && c.preset==='ollama' && !data?.error && !data?.message) {
+        throw Object.assign(new Error(`Ollama 拒绝了当前扩展来源（HTTP 403）。请在 OLLAMA_ORIGINS 中允许 chrome-extension://${chrome.runtime.id}，然后完全退出并重启 Ollama`),{status:403});
+      }
+      throw apiError(data,response.status,c.key);
     }
     return response;
   }
@@ -33,18 +42,14 @@
     return {
       isLoggedIn:async()=>{await config();return true;},
       async fetchModels() {
-        const c=await config();
-        try {
-          const data=await (await request('/models')).json();
-          const models=(Array.isArray(data.data)?data.data:[]).map(m=>({id:String(m.id || ''),name:String(m.name || m.id || '')})).filter(m=>m.id);
-          if(c.model&&!models.some(m=>m.id===c.model))models.unshift({id:c.model,name:c.model});
-          return models;
-        } catch(error) {if(c.model)return [{id:c.model,name:c.model}];throw error;}
+        const data=await (await request('/models')).json();
+        if(data.error)throw apiError(data);
+        return (Array.isArray(data.data)?data.data:[]).filter(m=>!m.type || !/image|video|audio|embedding/i.test(m.type)).map(m=>({id:String(m.id || ''),name:String(m.name || m.id || '')})).filter(m=>m.id);
       },
       newChat:async()=>{const id=PREFIX+crypto.randomUUID(),c=await config();await chrome.storage.local.set({[storageKey(id)]:{base:c.base,messages:[]}});return id;},
       fetchChatHistory,
       deleteChat:id=>chrome.storage.local.remove(storageKey(id)),
-      buildUserMessage:({content})=>({id:crypto.randomUUID(),role:'user',content:String(content)}),
+      buildUserMessage:({content,thinking=false})=>({id:crypto.randomUUID(),role:'user',content:String(content),thinking:thinking===true,timestamp:Math.floor(Date.now()/1000)}),
       async streamCompletions({chatId,modelId,messages,parentId,onEvent,signal}) {
         signal?.throwIfAborted();
         const c=await config(),k=storageKey(chatId),stored=(await chrome.storage.local.get(k))[k];
@@ -54,11 +59,39 @@
         const model=c.model || modelId;
         if(!model)throw new Error('请先选择或填写 API 模型');
         const user={...messages[0],id:crypto.randomUUID()},responseId=crypto.randomUUID();
-        const response=await request('/chat/completions',{model,stream:true,messages:[...history,user].map(({role,content})=>({role,content}))},signal);
+        const options={};
+        for(const [field,key]of Object.entries({temperature:'llmApiTemperature',top_p:'llmApiTopP',top_k:'llmApiTopK',max_tokens:'llmApiMaxTokens'})){
+          const raw=c.settings[key];if(raw!==''&&raw!=null&&Number.isFinite(Number(raw)))options[field]=Number(raw);
+        }
+        const thinking=user.thinking===true;
+        const native=c.preset==='ollama';
+        let body={model,stream:true,messages:[...history,user].map(({role,content})=>({role,content}))};
+        if(native){
+          if(options.max_tokens!==undefined){options.num_predict=options.max_tokens;delete options.max_tokens;}
+          body={...body,...(c.settings.llmApiThinkingProtocol==='none'?{}:{think:thinking}),options};
+        }else{
+          if(c.preset==='deepseek'){
+            delete options.top_k;
+            if(thinking)delete options.temperature;
+          }else if(c.preset!=='agnes')delete options.top_k;
+          Object.assign(body,options);
+          let protocol=c.settings.llmApiThinkingProtocol || 'auto';
+          if(protocol==='auto')protocol=c.preset==='deepseek'?'thinking':c.preset==='agnes'?'template':'none';
+          if(protocol==='thinking')body.thinking={type:thinking?'enabled':'disabled'};
+          if(protocol==='template'){body.chat_template_kwargs={enable_thinking:thinking};if(thinking)body.reasoning_effort='high';}
+          if(protocol==='reasoning_effort')body.reasoning_effort=thinking?'high':'none';
+        }
+        const response=await request(native?'/api/chat':'/chat/completions',body,signal,native);
         let text='',finished=false;
         onEvent?.({responseId,responseParentId:user.id});
         const receive=data=>{
-          if(data.error)throw new Error('兼容 API 返回错误，请检查模型、配额或服务端日志');
+          if(data.error)throw apiError(data,undefined,c.key);
+          if(native){
+            if(data.message?.thinking)onEvent?.({thinking:data.message.thinking});
+            const chunk=data.message?.content;if(chunk){text+=chunk;onEvent?.({text:chunk});}
+            if(data.done){finished=true;if(data.done_reason==='length')throw new Error('模型输出达到长度限制，请调整最大输出后重试');}
+            return;
+          }
           const choice=data.choices?.[0];
           const reasoning=choice?.delta?.reasoning_content || choice?.delta?.reasoning;
           if(reasoning)onEvent?.({thinking:reasoning});
@@ -66,18 +99,18 @@
           if(typeof chunk==='string'&&chunk){text+=chunk;onEvent?.({text:chunk});}
           if(choice?.finish_reason){finished=true;if(choice.finish_reason==='length')throw new Error('模型输出达到长度限制，请调整服务端限制后重试');}
         };
-        if((response.headers.get('content-type') || '').includes('application/json')) {receive(await response.json());finished=true;}
+        if((response.headers.get('content-type') || '').includes('application/json') && !native) {receive(await response.json());finished=true;}
         else {
           const reader=response.body?.getReader();if(!reader)throw new Error('API 未返回可读响应');
           const decoder=new TextDecoder();let buffer='';
-          const line=value=>{if(!value.startsWith('data:'))return;const payload=value.slice(5).trim();if(payload==='[DONE]'){finished=true;return;}if(payload)receive(JSON.parse(payload));};
+          const line=value=>{if(native){if(value.trim())receive(JSON.parse(value));return;}if(!value.startsWith('data:'))return;const payload=value.slice(5).trim();if(payload==='[DONE]'){finished=true;return;}if(payload)receive(JSON.parse(payload));};
           try {
             while(true){const {done,value}=await reader.read();buffer+=done?decoder.decode():decoder.decode(value,{stream:true});let i;while((i=buffer.indexOf('\n'))>=0){line(buffer.slice(0,i).replace(/\r$/,''));buffer=buffer.slice(i+1);}if(done){if(buffer.trim())line(buffer);break;}}
           } finally {await reader.cancel().catch(()=>{});reader.releaseLock();}
         }
         signal?.throwIfAborted();
         if(!finished)throw new Error('API 响应流意外中断，请重试');
-        await chrome.storage.local.set({[k]:{base:c.base,messages:[...history,user,{id:responseId,role:'assistant',content:text}]}});
+        await chrome.storage.local.set({[k]:{base:c.base,messages:[...history,user,{id:responseId,role:'assistant',content:text,timestamp:Math.floor(Date.now()/1000)}]}});
         return {text,responseId,responseParentId:user.id};
       }
     };

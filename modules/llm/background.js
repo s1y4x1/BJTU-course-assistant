@@ -3,7 +3,7 @@
   'use strict';
   if (!global.BJTUCA || !global.BjtuApiSettings) return;
 
-  const SETTINGS_KEYS = ['qwenEnabled', 'qwenProvider', 'qwenFabColorMode', 'qwenModelId', 'qwenThinkingEnabled', 'qwenMaxIterations', 'qwenAlwaysAllow', 'qwenApprovalNotificationMode', 'qwenCompletionNotificationMode', 'llmApiBaseUrl', 'llmApiKey', 'llmApiModel'];
+  const SETTINGS_KEYS = ['qwenEnabled', 'qwenProvider', 'qwenFabColorMode', 'qwenModelId', 'qwenThinkingEnabled', 'qwenMaxIterations', 'qwenAlwaysAllow', 'qwenApprovalNotificationMode', 'qwenCompletionNotificationMode', 'llmApiBaseUrl', 'llmApiKey', 'llmApiModel', 'llmApiPreset', 'llmApiTemperature', 'llmApiTopP', 'llmApiTopK', 'llmApiMaxTokens', 'llmApiThinkingProtocol'];
   const normalizeProvider = value => ['local','openai'].includes(value) ? value : 'qwen';
   const providerHistoryKey = value => ({local:'qwenLocalLastChatId',openai:'llmApiLastChatId',qwen:'qwenCloudLastChatId'})[normalizeProvider(value)];
   const providerForChat = id => String(id).startsWith('local-') ? 'local' : String(id).startsWith('compatible-') ? 'openai' : 'qwen';
@@ -329,12 +329,20 @@
   async function getSettings() {
     const stored = await chrome.storage.local.get(SETTINGS_KEYS).catch(() => ({}));
     const operationSettings = await global.BjtuApiSettings.get();
+    const modules=await global.BjtuModuleRegistry?.ready;
     return {
+      chatroomAvailable:modules?.chatroom===true,
       enabled: stored.qwenEnabled !== false,
       provider: normalizeProvider(stored.qwenProvider),
       apiBaseUrl: String(stored.llmApiBaseUrl || 'http://127.0.0.1:11434/v1'),
       apiKey: String(stored.llmApiKey || ''),
       apiModel: String(stored.llmApiModel || ''),
+      apiPreset: stored.llmApiPreset || (/agnes-ai\.(com|cn)/.test(stored.llmApiBaseUrl || '')?'agnes':/api\.deepseek\.com/.test(stored.llmApiBaseUrl || '')?'deepseek':/:11434/.test(stored.llmApiBaseUrl || 'http://127.0.0.1:11434')?'ollama':'custom'),
+      apiTemperature: stored.llmApiTemperature ?? '',
+      apiTopP: stored.llmApiTopP ?? '',
+      apiTopK: stored.llmApiTopK ?? '',
+      apiMaxTokens: stored.llmApiMaxTokens ?? '',
+      apiThinkingProtocol: stored.llmApiThinkingProtocol || 'auto',
       fabColorMode: ['dark', 'light', 'system', 'extension'].includes(stored.qwenFabColorMode)
         ? stored.qwenFabColorMode
         : 'extension',
@@ -354,6 +362,24 @@
 
   async function saveSettings(patch) {
     const next = {};
+    if(patch?.apiPreset!==undefined){
+      if(!['ollama','agnes','deepseek','custom'].includes(patch.apiPreset))throw new Error('服务预设无效');
+      next.llmApiPreset=patch.apiPreset;
+    }
+    if(patch?.apiThinkingProtocol!==undefined){
+      if(!['auto','none','thinking','template','reasoning_effort'].includes(patch.apiThinkingProtocol))throw new Error('思考参数格式无效');
+      next.llmApiThinkingProtocol=patch.apiThinkingProtocol;
+    }
+    for(const [field,key,min,max,integer]of [
+      ['apiTemperature','llmApiTemperature',0,2,false],['apiTopP','llmApiTopP',Number.MIN_VALUE,1,false],
+      ['apiTopK','llmApiTopK',1,Number.MAX_SAFE_INTEGER,true],['apiMaxTokens','llmApiMaxTokens',1,Number.MAX_SAFE_INTEGER,true]
+    ]){
+      if(patch?.[field]===undefined)continue;
+      if(patch[field]==='' || patch[field]===null){next[key]=null;continue;}
+      const n=Number(patch[field]);
+      if(!Number.isFinite(n)||n<min||n>max||(integer&&!Number.isSafeInteger(n)))throw new Error(`${field} 数值无效`);
+      next[key]=n;
+    }
     if (patch?.provider !== undefined) {
       const stored = await chrome.storage.local.get(['qwenProvider','qwenLastChatId','qwenLocalLastChatId','qwenCloudLastChatId','llmApiLastChatId']);
       const oldProvider = normalizeProvider(stored.qwenProvider);
@@ -409,6 +435,28 @@
   }
 
   const activeChatPorts = new Set();
+  const chatViews = new Map();
+  let activityQueue=Promise.resolve();
+  function updateAssistantActivity(operation) {
+    const task=activityQueue.then(async()=>{
+      const stored=await chrome.storage.local.get(['llmChatroomActivity','qwenEnabled']);
+      const previous=stored.llmChatroomActivity || {};
+      const next=await operation(previous,stored.qwenEnabled);
+      if(next)await chrome.storage.local.set({llmChatroomActivity:next});
+    });
+    activityQueue=task.catch(error=>console.warn('[llm] 无法更新会话提醒',error));return task;
+  }
+  const markAssistantRead=()=>updateAssistantActivity(previous=>previous.unread?{...previous,unread:0}:null);
+  async function recordAssistantReply(result) {
+    const text=String(result?.final || result?.text || '').trim();
+    if(!text || result?.stoppedByLimit)return;
+    await updateAssistantActivity(async(previous,enabled)=>{
+      if(previous.responseId && previous.responseId===result.responseId)return null;
+      let read=enabled!==false;
+      for(const [port,state]of chatViews)if(!await qwenViewIsInBackground(port,state())){read=true;break;}
+      return {unread:read?0:Math.max(0,Number(previous.unread)||0)+1,lastAt:Date.now(),lastText:text.slice(0,160),responseId:result.responseId || ''};
+    });
+  }
   const sharedChatCreationPromises = new Map();
   let sharedOpeningInFlight = null;
 
@@ -452,10 +500,10 @@
     const windowId = Number(senderTab?.windowId);
     if (Number.isInteger(windowId)) {
       const browserWindow = await chrome.windows.get(windowId).catch(() => null);
-      if (browserWindow?.state === 'minimized') return true;
+      if (browserWindow?.state === 'minimized' || browserWindow?.focused===false) return true;
     } else {
       const browserWindow = await chrome.windows.getLastFocused().catch(() => null);
-      if (browserWindow?.state === 'minimized') return true;
+      if (browserWindow?.state === 'minimized' || browserWindow?.focused===false) return true;
     }
     if (String(uiState?.context || '') === 'sidepanel') return false;
     const tabId = Number(senderTab?.id);
@@ -606,7 +654,8 @@
       let stopRequested = false;
       let loopSession = {};
       let activeThinkingEnabled = null;
-      let activeUiState = { context: '', visible: true };
+      let activeUiState = { context: '', visible: false };
+      chatViews.set(port,()=>activeUiState);
       const settlePendingAsk = (action = 'stop', count = 0, notifyPage = false) => {
         if (!pendingAsk) return;
         const current = pendingAsk;
@@ -635,6 +684,7 @@
       };
       port.onDisconnect.addListener(() => {
         activeChatPorts.delete(port);
+        chatViews.delete(port);
         resolveAskOnAbort();
         resolveRetryOnAbort();
         abortController.abort();
@@ -646,6 +696,7 @@
             viewId: String(message.viewId || activeUiState.viewId || ''),
             visible: message.visible === true
           };
+          if(message.visible===true)void qwenViewIsInBackground(port,activeUiState).then(hidden=>{if(!hidden)return markAssistantRead();}).catch(()=>{});
           return;
         }
         if (message?.type === 'thinkingChanged') {
@@ -856,6 +907,7 @@
               }
             }
             if (result.stoppedByLimit !== true) {
+              await recordAssistantReply(result);
               await notifyQwenBackgroundCompletion(port, activeUiState, result);
             }
             if (port.disconnected) return;
@@ -912,6 +964,10 @@
   if (typeof chrome === 'object' && chrome?.runtime?.onMessage) {
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const type = String(message?.type || '');
+      if(type==='LLM_MARK_CHATROOM_READ'){
+        void qwenViewIsInBackground({sender},{context:'chatroom',visible:true}).then(hidden=>hidden?null:markAssistantRead()).then(()=>sendResponse({ok:true}),error=>sendResponse({ok:false,message:String(error.message)}));
+        return true;
+      }
       if (type === 'QWEN_GET_STATUS') {
         void (async () => {
           const settings = await getSettings();

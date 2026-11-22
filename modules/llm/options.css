@@ -13,6 +13,9 @@
   width: min(32em, 100%);
   max-width: 100%;
 }
+#llmEntryChoices[hidden], #llmStandaloneToggle[hidden] { display:none !important; }
+.qwen-options-card [hidden] { display:none !important; }
+#llmEntryChoices { flex-wrap:wrap; gap:8px 18px; }
 
 html[data-color-scheme="dark"] .qwen-options-card {
   border-color: #334155;

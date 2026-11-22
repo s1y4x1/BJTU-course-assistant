@@ -1,0 +1,20 @@
+/* The actual message palette/typography comes from chatroom/chat.css. */
+html.llm-chatroom-view body.chatroom-page.qwen-chat-standalone {
+  margin:0; padding:0; height:100dvh; max-width:none;
+  background:var(--bjtu-card-background,#fff);
+}
+html.llm-chatroom-view .qwen-chat-panel { background:var(--bjtu-card-background,#fff); color:inherit; }
+html.llm-chatroom-view .qwen-chat-header { background:transparent; border-color:var(--chat-line); }
+html.llm-chatroom-view .qwen-chat-title { color:inherit; }
+html.llm-chatroom-view .qwen-chat-messages { gap:0; padding:18px; }
+html.llm-chatroom-view .qwen-chat-msg-row { margin-bottom:12px; width:fit-content; max-width:96%; }
+html.llm-chatroom-view .qwen-chat-msg-row > .qwen-chat-msg.message {
+  margin-bottom:0; max-width:100%; padding:10px 12px; border:1px solid var(--chat-line);
+  background:var(--chat-soft); color:inherit; border-radius:10px;
+  font-size:var(--bjtu-font-size-body,13px); white-space:normal;
+}
+html.llm-chatroom-view .qwen-chat-msg-row > .qwen-chat-msg.message.mine { border-color:var(--chat-accent); }
+html.llm-chatroom-view .qwen-chat-msg .message-author { font-size:var(--bjtu-font-size-auxiliary,11px); color:var(--chat-muted); }
+html.llm-chatroom-view .qwen-chat-msg .message-text { margin-top:5px; line-height:1.7; white-space:break-spaces; }
+html.llm-chatroom-view .qwen-chat-input-row { background:transparent; border-color:var(--chat-line); }
+html.llm-chatroom-view .qwen-chat-input { background:var(--bjtu-card-background,#fff); color:inherit; border-color:var(--chat-line); }

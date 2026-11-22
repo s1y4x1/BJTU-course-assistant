@@ -9,10 +9,14 @@
   'use strict';
   const backgroundMode = globalThis.BjtuChatroomBackgroundMode;
   const background = backgroundMode?.enabled === true;
+  let llmInstalled=false;
   if(!background) {
     try {
       const modules=await Promise.all(['llm','api'].map(id=>fetch(chrome.runtime.getURL(`modules/${id}/module.json`))));
-      globalThis.__bjtuChatroomLlmAvailable=modules.every(response=>response.ok);
+      llmInstalled=modules.every(response=>response.ok);
+      const settings=await chrome.storage.local.get(['qwenEnabled','llmChatroomActivity']);
+      globalThis.__bjtuChatroomLlmAvailable=llmInstalled && settings.qwenEnabled===false;
+      globalThis.__bjtuLlmActivity=settings.llmChatroomActivity || {};
     } catch {globalThis.__bjtuChatroomLlmAvailable=false;}
   }
   // When the background engine is available this page only renders its state
@@ -367,6 +371,10 @@
   }
   async function markConversationRead({interactive = false} = {}) {
     if (background) return;
+    if(selected==='llm'){
+      if(isChatroomActive())void chrome.runtime.sendMessage({type:'LLM_MARK_CHATROOM_READ'}).catch(()=>{});
+      return;
+    }
     const view = state.conversations?.[selected];
     let focused = document.hasFocus();
     if (embedded) { try { focused ||= parent.document.hasFocus(); } catch {} }
@@ -386,7 +394,7 @@
   }
   function chooseConversation(id, {interactive = false, focusComposer = true} = {}) {
     if (id === selected) {
-      if(id==='llm')return;
+      if(id==='llm'){void markConversationRead({interactive});return;}
       if (interactive) {
         if (focusComposer && !isLeftGroup()) $('message').focus();
         void markConversationRead({interactive:true});
@@ -417,7 +425,7 @@
     }
     if(frame){
       frame.hidden=!assistant;
-      const notify=()=>frame.contentWindow?.postMessage({type:'BJTU_LLM_VISIBILITY',visible:assistant && embeddedVisible && document.visibilityState==='visible'},location.origin);
+      const notify=()=>frame.contentWindow?.postMessage({type:'BJTU_LLM_VISIBILITY',visible:assistant && embeddedVisible && document.visibilityState==='visible',selfName:nameOf(state.self.id),assistantName:state.conversations?.llm?.remark || 'AI 助手'},location.origin);
       frame.onload=notify;notify();
     }
     if(assistant)return;
@@ -1510,7 +1518,14 @@
     if (event.data?.type !== 'BJTU_CHATROOM_WINDOW_VISIBILITY') return;
     if (event.data.visible === false) { embeddedVisible = false; stopCapture(); clearSharedDraft(); notifyPendingFileInvitations(); }
     else if (event.data.visible === true) { embeddedVisible = true; scheduleState(); if (online) {void action('scan').catch(report); publishDraft();} void markConversationRead(); }
+    if(selected==='llm')updateConversation();
   }, { signal: uiAbort.signal });
+  window.addEventListener('message',event=>{
+    const frame=$('chatroom-llm-frame');
+    if(!frame || event.source!==frame.contentWindow || event.origin!==location.origin || event.data?.type!=='BJTU_LLM_EDIT_NAME')return;
+    if(event.data.role==='user')sidebar.editPerson(state.self.id);
+    else sidebar.editAssistant();
+  },{signal:uiAbort.signal});
   window.addEventListener('bjtu-chatroom-transport-ready', () => attachTransport().catch(report), { signal: uiAbort.signal });
   window.addEventListener('focus', () => { void markConversationRead(); }, {signal:uiAbort.signal});
   const checkAfterBlur = () => setTimeout(() => { if (!stopped) notifyPendingFileInvitations(); }, 0);
@@ -1583,6 +1598,12 @@
     if (navigation?.tabId === tab?.id) chooseConversation(navigation.conversationId);
   };
   const onNavigation = (changes,area) => {
+    if(area==='local' && changes.qwenEnabled){
+      globalThis.__bjtuChatroomLlmAvailable=llmInstalled && changes.qwenEnabled.newValue===false;
+      if(!globalThis.__bjtuChatroomLlmAvailable && selected==='llm')chooseConversation('public');
+      renderState();
+    }
+    if(area==='local' && changes.llmChatroomActivity){globalThis.__bjtuLlmActivity=changes.llmChatroomActivity.newValue || {};sidebar.render();void markConversationRead();}
     if (area==='local' && changes.chatroomDraftPreviewEnabled) {$('draft-preview').checked = changes.chatroomDraftPreviewEnabled.newValue === true; updateDraftPreview();}
     if (area==='local' && changes.chatroomSendShortcut) updateSendShortcut(changes.chatroomSendShortcut.newValue);
     if (area==='local' && changes.chatroomNavigation) void consumeNavigation(changes.chatroomNavigation.newValue).catch(report);

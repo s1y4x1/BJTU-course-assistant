@@ -1,13 +1,14 @@
 (function (global) {
   'use strict';
 
-  function visibleConversations(state) {
+  function visibleConversations(state, {assistant} = {}) {
     const views = state?.conversations || {};
     const history = new Set((state?.messages || []).map(message => message.conversationId));
     const rooms = state?.rooms || [];
     const activeRooms = new Set(rooms.map(room => room.id));
     const entries = [
       {id: 'public', kind: 'group'},
+      ...(assistant?[{id:'llm',kind:'assistant',name:'AI 助手'}]:[]),
       ...rooms.map(room => ({...room, kind: 'group'})),
       ...Object.entries(views).flatMap(([id, view]) => view.leftGroupName && !activeRooms.has(id)
         ? [{id, name:view.leftGroupName, kind:'group', left:true}] : []),
@@ -17,7 +18,7 @@
       })
     ];
     return entries.flatMap(entry => {
-      const view = views[entry.id] || {};
+      const view = {...views[entry.id],...(entry.kind==='assistant'?assistant:{})};
       return view.hidden ? [] : [{...entry, view}];
     }).sort((a,b) => (b.view.pinnedAt || 0) - (a.view.pinnedAt || 0) || (b.view.lastAt || 0) - (a.view.lastAt || 0));
   }

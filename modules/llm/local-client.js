@@ -28,7 +28,7 @@
       newChat:async()=>{const id='local-'+crypto.randomUUID(); await chrome.storage.local.set({[key(id)]:[]}); return id;},
       fetchChatHistory,
       deleteChat:async id=>chrome.storage.local.remove(key(id)),
-      buildUserMessage:({content})=>({role:'user',content:String(content),id:crypto.randomUUID()}),
+      buildUserMessage:({content})=>({role:'user',content:String(content),id:crypto.randomUUID(),timestamp:Math.floor(Date.now()/1000)}),
       async streamCompletions({chatId,messages,parentId,onEvent,signal}) {
         if (!port) throw new Error('本地推理需要打开聊天页面');
         signal?.throwIfAborted();
@@ -54,7 +54,7 @@
             port.postMessage({type:'localModelPrompt',id,history:history.map(({role,content})=>({role,content})),text:user.content});
           });
           signal?.throwIfAborted();
-          await chrome.storage.local.set({[key(chatId)]:[...history,user,{role:'assistant',id:responseId,content:text}]});
+          await chrome.storage.local.set({[key(chatId)]:[...history,user,{role:'assistant',id:responseId,content:text,timestamp:Math.floor(Date.now()/1000)}]});
           return {text,responseId,responseParentId:user.id};
         } finally { pending.delete(id); signal?.removeEventListener('abort',abort); }
       }
