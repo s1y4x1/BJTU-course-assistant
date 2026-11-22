@@ -40,7 +40,15 @@
       <select id="qwenProvider">
         <option value="qwen">qwen.ai</option>
         <option value="local">浏览器本地模型（Prompt API）</option>
+        <option value="openai">OpenAI-compatible API（Ollama / Agnes AI / 自定义）</option>
       </select>
+    </div>
+    <div id="llmApiOptions" hidden>
+      <div class="qwen-setting-row"><label for="llmApiPreset">服务预设</label><select id="llmApiPreset"><option value="ollama">Ollama</option><option value="agnes">Agnes AI</option><option value="custom">自定义</option></select></div>
+      <div class="qwen-setting-row"><label for="llmApiBaseUrl">API 基础地址</label><input id="llmApiBaseUrl" type="url" placeholder="http://127.0.0.1:11434/v1" autocomplete="off"></div>
+      <div class="qwen-setting-row"><label for="llmApiKey">API Key</label><input id="llmApiKey" type="password" autocomplete="new-password" placeholder="本机 Ollama 可留空"></div>
+      <div class="qwen-setting-row"><label for="llmApiModel">模型 ID</label><input id="llmApiModel" type="text" placeholder="可从下方列表选择，也可直接填写" autocomplete="off"><button id="llmRefreshModels" class="btn" type="button">刷新模型</button></div>
+      <div class="tip">支持 /models 和 /chat/completions。密钥仅保存在本机扩展设置中；请求直接发送到填写的服务地址。模型能力及费用由服务商决定。更换地址后会开始新会话。</div>
     </div>
     <div id="qwenLocalModelOptions" hidden>
       <div class="qwen-setting-row"><button type="button" id="qwenPrepareLocalModel" class="btn">准备本地模型</button><button type="button" id="qwenLocalModelSettings" class="btn" title="在实验设置中搜索 Prompt API，设为 Enabled 并重启浏览器">打开 Prompt API 设置</button><span id="qwenLocalModelStatus" role="status"></span></div>

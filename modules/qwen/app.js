@@ -1449,6 +1449,9 @@
       status.loggedIn = lastKnownLoggedIn;
       setStatus(state === 'available' ? '本地模型已就绪' : ({downloadable:'请先在选项中准备本地模型',downloading:'本地模型正在下载',unavailable:'本地模型不可用'})[state] || state,state === 'available' ? 'ok' : 'error');
       showLoginHint(false);
+    } else if (status?.provider === 'openai') {
+      setStatus(status.apiModel || '请选择 API 模型', status.apiModel ? 'ok' : 'error');
+      showLoginHint(false);
     } else if (status?.loggedIn) {
       setStatus('已登录', 'ok');
       showLoginHint(false);
@@ -1458,9 +1461,9 @@
     }
     const thinking = el(THINKING_ID);
     if (thinking instanceof HTMLInputElement) thinking.checked = status?.thinkingEnabled === true;
-    if (thinking instanceof HTMLInputElement) thinking.disabled = status?.provider === 'local';
+    if (thinking instanceof HTMLInputElement) thinking.disabled = status?.provider !== 'qwen';
     const chatIdInput = el('qwen-chat-id');
-    if (chatIdInput instanceof HTMLInputElement) chatIdInput.disabled = status?.provider === 'local';
+    if (chatIdInput instanceof HTMLInputElement) chatIdInput.disabled = status?.provider !== 'qwen';
     if (allowOpening) maybeSendOpening();
     return status;
   }

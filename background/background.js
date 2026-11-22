@@ -378,6 +378,7 @@ tryImportModuleScripts('../modules/api/operations.js', '../modules/api/backgroun
 tryImportModuleScripts(
   '../modules/qwen/qwen-client.js',
   '../modules/qwen/local-client.js',
+  '../modules/qwen/compatible-client.js',
   '../modules/qwen/agent.js',
   '../modules/qwen/background.js'
 );

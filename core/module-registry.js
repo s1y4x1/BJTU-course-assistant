@@ -89,7 +89,7 @@
       label: '通义千问',
       dependencies: ['api'],
       styles: ['options.css', 'app.css', 'chat.css'],
-      files: ['background.js', 'qwen-client.js', 'local-client.js', 'local-model.js', 'agent.js', 'SystemPrompt.md', 'icon.svg', 'app.html', 'app.js', 'chat.html', 'chat.css', 'options.html', 'options.js'],
+      files: ['background.js', 'qwen-client.js', 'local-client.js', 'compatible-client.js', 'local-model.js', 'agent.js', 'SystemPrompt.md', 'icon.svg', 'app.html', 'app.js', 'chat.html', 'chat.css', 'options.html', 'options.js'],
       options: {
         fragment: 'options.html',
         style: 'options.css',

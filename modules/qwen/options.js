@@ -80,9 +80,15 @@
     const thinking = document.getElementById('qwenThinkingEnabled');
     if (thinking instanceof HTMLInputElement) thinking.checked = status.thinkingEnabled === true;
     const local = status.provider === 'local';
-    document.getElementById('qwenProvider').value = local ? 'local' : 'qwen';
+    document.getElementById('qwenProvider').value = status.provider || 'qwen';
     document.getElementById('qwenLocalModelOptions').hidden = !local;
-    if (thinking) thinking.disabled = local;
+    document.getElementById('llmApiOptions').hidden = status.provider !== 'openai';
+    for(const [id,value] of Object.entries({llmApiBaseUrl:status.apiBaseUrl,llmApiKey:status.apiKey,llmApiModel:status.apiModel})) {
+      const input=document.getElementById(id);if(input && document.activeElement!==input)input.value=value || '';
+    }
+    const base=status.apiBaseUrl || '';
+    document.getElementById('llmApiPreset').value = base.includes('apihub.agnes-ai.com')?'agnes':/^http:\/\/(localhost|127\.0\.0\.1):11434\/v1\/?$/.test(base)?'ollama':'custom';
+    if (thinking) thinking.disabled = status.provider !== 'qwen';
     if (local) {
       const localStatus = document.getElementById('qwenLocalModelStatus');
       localStatus.textContent = '正在检查本地模型…';
@@ -111,10 +117,10 @@
           const option = document.createElement('option');
           option.value = model.id;
           option.textContent = model.name;
-          if (model.id === status.modelId) option.selected = true;
+          if (model.id === (status.provider==='openai'?status.apiModel:status.modelId)) option.selected = true;
           select.appendChild(option);
         }
-        if (!status.modelId && !local) {
+        if (!(status.provider==='openai'?status.apiModel:status.modelId) && !local) {
           const first = modelsResponse.models[0];
           await send('QWEN_SETTINGS_SET', { modelId: first.id });
         }
@@ -133,6 +139,21 @@
     if (initialized) return;
     initialized = true;
     setMessage = typeof context?.setMessage === 'function' ? context.setMessage : setMessage;
+    for(const [id,field] of Object.entries({llmApiBaseUrl:'apiBaseUrl',llmApiKey:'apiKey',llmApiModel:'apiModel'})) {
+      document.getElementById(id)?.addEventListener('change',async event=>{
+        const result=await send('QWEN_SETTINGS_SET',{[field]:event.target.value});
+        if(result.ok===false)setMessage(result.message,false);
+        else {setMessage('已保存');if(field!=='apiKey')await refresh();}
+      });
+    }
+    document.getElementById('llmRefreshModels')?.addEventListener('click',()=>void refresh().catch(e=>setMessage(e.message,false)));
+    document.getElementById('llmApiPreset')?.addEventListener('change',async event=>{
+      const presets={ollama:{apiBaseUrl:'http://127.0.0.1:11434/v1',apiKey:'',apiModel:''},agnes:{apiBaseUrl:'https://apihub.agnes-ai.com/v1',apiKey:'',apiModel:'agnes-2.5-flash'}};
+      if(presets[event.target.value]){
+        const result=await send('QWEN_SETTINGS_SET',presets[event.target.value]);
+        if(result.ok===false)setMessage(result.message,false);else await refresh();
+      }
+    });
     document.getElementById('qwenLocalModelSettings')?.addEventListener('click', async () => {
       try {
         await loadLocalModel();

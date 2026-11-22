@@ -3,7 +3,11 @@
   'use strict';
   if (!global.BJTUCA || !global.BjtuApiSettings) return;
 
-  const SETTINGS_KEYS = ['qwenEnabled', 'qwenProvider', 'qwenFabColorMode', 'qwenModelId', 'qwenThinkingEnabled', 'qwenMaxIterations', 'qwenAlwaysAllow', 'qwenApprovalNotificationMode', 'qwenCompletionNotificationMode'];
+  const SETTINGS_KEYS = ['qwenEnabled', 'qwenProvider', 'qwenFabColorMode', 'qwenModelId', 'qwenThinkingEnabled', 'qwenMaxIterations', 'qwenAlwaysAllow', 'qwenApprovalNotificationMode', 'qwenCompletionNotificationMode', 'llmApiBaseUrl', 'llmApiKey', 'llmApiModel'];
+  const normalizeProvider = value => ['local','openai'].includes(value) ? value : 'qwen';
+  const providerHistoryKey = value => ({local:'qwenLocalLastChatId',openai:'llmApiLastChatId',qwen:'qwenCloudLastChatId'})[normalizeProvider(value)];
+  const providerForChat = id => String(id).startsWith('local-') ? 'local' : String(id).startsWith('compatible-') ? 'openai' : 'qwen';
+  const clientForChat = id => providerForChat(id) === 'local' ? global.BjtuQwenLocalClient.create() : providerForChat(id) === 'openai' ? global.BjtuLlmCompatibleClient.create() : global.BjtuQwenClient;
   const LOGIN_TAB_ID_KEY = 'qwenLoginTabId';
   const LOGIN_ORIGIN_KEY = 'qwenLoginOrigin';
   const WAF_NOTIFICATION_ID = 'bjtu-qwen-waf-verification';
@@ -327,7 +331,10 @@
     const operationSettings = await global.BjtuApiSettings.get();
     return {
       enabled: stored.qwenEnabled !== false,
-      provider: stored.qwenProvider === 'local' ? 'local' : 'qwen',
+      provider: normalizeProvider(stored.qwenProvider),
+      apiBaseUrl: String(stored.llmApiBaseUrl || 'http://127.0.0.1:11434/v1'),
+      apiKey: String(stored.llmApiKey || ''),
+      apiModel: String(stored.llmApiModel || ''),
       fabColorMode: ['dark', 'light', 'system', 'extension'].includes(stored.qwenFabColorMode)
         ? stored.qwenFabColorMode
         : 'extension',
@@ -348,14 +355,23 @@
   async function saveSettings(patch) {
     const next = {};
     if (patch?.provider !== undefined) {
-      const stored = await chrome.storage.local.get(['qwenProvider','qwenLastChatId','qwenLocalLastChatId','qwenCloudLastChatId']);
-      const oldProvider = stored.qwenProvider === 'local' ? 'local' : 'qwen';
-      next.qwenProvider = patch.provider === 'local' ? 'local' : 'qwen';
+      const stored = await chrome.storage.local.get(['qwenProvider','qwenLastChatId','qwenLocalLastChatId','qwenCloudLastChatId','llmApiLastChatId']);
+      const oldProvider = normalizeProvider(stored.qwenProvider);
+      next.qwenProvider = normalizeProvider(patch.provider);
       if (oldProvider !== next.qwenProvider) {
-        next[oldProvider === 'local' ? 'qwenLocalLastChatId' : 'qwenCloudLastChatId'] = String(stored.qwenLastChatId || '');
-        next.qwenLastChatId = String(stored[next.qwenProvider === 'local' ? 'qwenLocalLastChatId' : 'qwenCloudLastChatId'] || '');
+        next[providerHistoryKey(oldProvider)] = String(stored.qwenLastChatId || '');
+        next.qwenLastChatId = String(stored[providerHistoryKey(next.qwenProvider)] || '');
         next.qwenOpeningPendingChatId = '';
       }
+    }
+    for (const [field,key] of Object.entries({apiBaseUrl:'llmApiBaseUrl',apiKey:'llmApiKey',apiModel:'llmApiModel'})) {
+      if(patch?.[field]!==undefined)next[key]=String(patch[field] || '').trim();
+    }
+    if(patch?.apiBaseUrl!==undefined){
+      const url=new URL(next.llmApiBaseUrl);
+      if(!['http:','https:'].includes(url.protocol)||url.username||url.password||url.search||url.hash)throw new Error('请输入有效的 HTTP(S) API 基础地址');
+      const previous=await chrome.storage.local.get(['llmApiBaseUrl','qwenProvider']);
+      if(previous.llmApiBaseUrl!==next.llmApiBaseUrl){next.llmApiLastChatId='';if((next.qwenProvider || previous.qwenProvider)==='openai'){next.qwenLastChatId='';next.qwenOpeningPendingChatId='';}}
     }
     if (typeof patch?.enabled === 'boolean') next.qwenEnabled = patch.enabled;
     if (patch?.fabColorMode !== undefined) {
@@ -363,7 +379,10 @@
         ? patch.fabColorMode
         : 'extension';
     }
-    if (patch?.modelId !== undefined) next.qwenModelId = String(patch.modelId || '');
+    if (patch?.modelId !== undefined) {
+      if((await getSettings()).provider==='openai')next.llmApiModel=String(patch.modelId || '');
+      else next.qwenModelId = String(patch.modelId || '');
+    }
     if (patch?.enabledOperations !== undefined || patch?.alwaysAllowedOperations !== undefined) {
       await global.BjtuApiSettings.save(patch);
     }
@@ -391,10 +410,10 @@
   let sharedOpeningInFlight = null;
 
   async function resolveSharedChatId(client, modelId) {
+    const provider = (await getSettings()).provider;
     const stored = await chrome.storage.local.get('qwenLastChatId').catch(() => ({}));
     const existing = String(stored?.qwenLastChatId || '');
-    if (existing && existing.startsWith('local-') === (modelId === 'browser-local')) return existing;
-    const provider = modelId === 'browser-local' ? 'local' : 'qwen';
+    if (existing && providerForChat(existing) === provider) return existing;
     if (!sharedChatCreationPromises.has(provider)) {
       const promise = client.newChat(modelId).then(async (chatId) => {
         const id = String(chatId || '');
@@ -663,7 +682,7 @@
           stopRequested = true;
           resolveAskOnAbort();
           resolveRetryOnAbort();
-          if (turnRef.chatId?.startsWith('local-')) {
+          if (providerForChat(turnRef.chatId) !== 'qwen') {
             abortController.abort(new DOMException('生成中止', 'AbortError'));
             return;
           }
@@ -698,10 +717,10 @@
               viewId: String(message?.uiState?.viewId || ''),
               visible: message?.uiState?.visible === true
             };
-            const client = settings.provider === 'local' ? localClient : global.BjtuQwenClient;
+            const client = settings.provider === 'local' ? localClient : settings.provider === 'openai' ? global.BjtuLlmCompatibleClient.create() : global.BjtuQwenClient;
             const operations = global.BJTUCA;
             if (!settings.enabled) throw Object.assign(new Error('通义千问模块已禁用，请先在扩展选项中开启'), { code: 'DISABLED' });
-            const modelId = settings.provider === 'local' ? 'browser-local' : settings.modelId || await resolveDefaultModel(client);
+            const modelId = settings.provider === 'local' ? 'browser-local' : (settings.provider==='openai'?settings.apiModel:settings.modelId) || await resolveDefaultModel(client);
             const groups = await operations.groups();
             const sourceChatId = String(message.chatId || '');
             const requestedChatId = await resolveSharedChatId(client, modelId);
@@ -898,6 +917,10 @@
             sendResponse({ok:true,...settings,loggedIn:true,modelId:'browser-local',modelName:'浏览器本地模型（Prompt API）'});
             return;
           }
+          if(settings.provider==='openai') {
+            sendResponse({ok:true,...settings,loggedIn:true,modelId:settings.apiModel,modelName:settings.apiModel || 'OpenAI-compatible API'});
+            return;
+          }
           let loggedIn = false;
           let checkError = '';
           try {
@@ -919,7 +942,7 @@
       if (type === 'QWEN_GET_CHAT_HISTORY') {
         void (async () => {
           const chatId = String(message?.payload?.chatId || '');
-          const client = chatId.startsWith('local-') ? global.BjtuQwenLocalClient.create() : global.BjtuQwenClient;
+          const client = clientForChat(chatId);
           if (!chatId || !client?.fetchChatHistory) {
             sendResponse({ ok: false, message: '无会话或客户端未就绪' });
             return;
@@ -946,7 +969,7 @@
       if (type === 'QWEN_DELETE_CHAT') {
         void (async () => {
           const chatId = String(message?.payload?.chatId || '');
-          const client = chatId.startsWith('local-') ? global.BjtuQwenLocalClient.create() : global.BjtuQwenClient;
+          const client = clientForChat(chatId);
           if (!chatId || !client?.deleteChat) {
             sendResponse({ ok: false, message: '无会话或客户端未就绪' });
             return;
@@ -1002,7 +1025,7 @@
         void (async () => {
           try {
             const settings = await getSettings();
-            const client = settings.provider === 'local' ? global.BjtuQwenLocalClient.create() : global.BjtuQwenClient;
+            const client = settings.provider === 'local' ? global.BjtuQwenLocalClient.create() : settings.provider==='openai' ? global.BjtuLlmCompatibleClient.create() : global.BjtuQwenClient;
             if (!client) throw new Error('通义千问客户端未就绪');
             const models = await client.fetchModels();
             sendResponse({ ok: true, models });
@@ -1037,7 +1060,7 @@
         return true;
       }
       if (type === 'QWEN_SETTINGS_SET') {
-        void saveSettings(message?.payload || {}).then((settings) => sendResponse({ ok: true, ...settings }));
+        void saveSettings(message?.payload || {}).then((settings) => sendResponse({ ok: true, ...settings })).catch(error=>sendResponse({ok:false,message:String(error?.message || error)}));
         return true;
       }
       return false;
