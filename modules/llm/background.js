@@ -462,7 +462,8 @@
     });
   }
   const sharedChatCreationPromises = new Map();
-  const proactive=global.BjtuLlmProactive.create({getSettings,resolveSharedChatId,recordAssistantReply});
+  const proactive=global.BjtuLlmProactive.create({getSettings,resolveSharedChatId,recordAssistantReply,
+    notifyReply:result=>notifyQwenBackgroundCompletion(null,{},result,{proactive:true})});
   let sharedOpeningInFlight = null;
 
   async function resolveSharedChatId(client, modelId) {
@@ -517,15 +518,16 @@
     return tab?.active !== true;
   }
 
-  async function notifyQwenBackgroundCompletion(port, uiState, result) {
+  async function notifyQwenBackgroundCompletion(port, uiState, result, {proactive=false}={}) {
     const settings = await getSettings();
     if (settings.completionNotificationMode === 'never') return;
-    if (settings.completionNotificationMode === 'background'
+    if (!proactive && settings.completionNotificationMode === 'background'
       && !await qwenViewIsInBackground(port, uiState)) return;
     const responseId = String(result?.responseId || Date.now());
     const tabId = Number(port?.sender?.tab?.id);
     const windowId = Number(port?.sender?.tab?.windowId);
-    const context = ['app', 'standalone', 'sidepanel'].includes(String(uiState?.context || ''))
+    const integrated=settings.chatroomAvailable && settings.enabled===false;
+    const context = integrated?'chatroom':['app', 'standalone', 'sidepanel', 'chatroom'].includes(String(uiState?.context || ''))
       ? String(uiState.context)
       : 'standalone';
     const notificationId = [
@@ -540,11 +542,13 @@
       .replace(/```[\s\S]*?```/g, ' [代码] ')
       .replace(/\s+/g, ' ')
       .trim();
+    const stored=await chrome.storage.local.get('chatroomState');
+    const assistantName=String(stored.chatroomState?.conversations?.llm?.remark || '').trim() || 'AI 助手';
     await new Promise((resolve) => {
       chrome.notifications.create(notificationId, {
         type: 'basic',
         iconUrl: chrome.runtime.getURL('icons/128.png'),
-        title: 'AI 助手回复生成完毕',
+        title: assistantName,
         message: summary ? summary.slice(0, 180) : '回复已生成完毕，请返回AI 助手查看。'
       }, () => {
         void chrome.runtime.lastError;
@@ -558,6 +562,13 @@
     if (!id.startsWith(COMPLETION_NOTIFICATION_PREFIX)) return;
     const parts = id.slice(COMPLETION_NOTIFICATION_PREFIX.length).split(':');
     const context = String(parts[0] || 'standalone');
+    const settings=await getSettings();
+    if(settings.chatroomAvailable && (context==='chatroom'||settings.enabled===false)){
+      if(global.BjtuChatroomNavigation?.openConversation){await global.BjtuChatroomNavigation.openConversation('llm');return;}
+      const target=await chrome.tabs.create({url:chrome.runtime.getURL('modules/chatroom/chat.html?conversation=llm'),active:true});
+      if(target?.windowId!=null){const win=await chrome.windows.get(target.windowId);await chrome.windows.update(target.windowId,{focused:true,...(win.state==='minimized'?{state:'normal'}:{})});}
+      return;
+    }
     const tabId = Number(parts[1]);
     const windowId = Number(parts[2]);
     const viewId = decodeURIComponent(parts[3] || '');

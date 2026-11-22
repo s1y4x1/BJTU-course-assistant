@@ -57,7 +57,7 @@
     const rows=Object.values(snapshot?.rows||{}).filter(row=>row?.read===false);
     if(rows.length)return {account,source:'最近检查缓存中的未读邮件',updatedAt:snapshot.updatedAt,unreadCount:rows.length,rows};
   }
-  function create({getSettings,resolveSharedChatId,recordAssistantReply}){
+  function create({getSettings,resolveSharedChatId,recordAssistantReply,notifyReply}){
     const requests=new Map();let writes=Promise.resolve();
     const locked=task=>{const next=writes.then(task);writes=next.catch(()=>{});return next;};
     async function messages(chatId){const stored=await chrome.storage.local.get(KEY);return (stored[KEY]||[]).filter(row=>row.chatId===chatId);}
@@ -88,6 +88,8 @@
       const row={id:'proactive-'+id,chatId:request.chatId,role:'assistant',content,timestamp:Math.floor(Date.now()/1000),proactive:true};
       await locked(async()=>{const stored=await chrome.storage.local.get(KEY);await chrome.storage.local.set({[KEY]:[...(stored[KEY]||[]),row]});});
       await recordAssistantReply({text:content,responseId:row.id});
+      try{await notifyReply?.({text:content,responseId:row.id});}
+      catch(error){console.warn('[llm] 主动消息通知发送失败：',error);}
       void chrome.runtime.sendMessage({type:'LLM_PROACTIVE_MESSAGE',chatId:row.chatId,message:row}).catch(()=>{});
       return {ok:true,message:row};
     }

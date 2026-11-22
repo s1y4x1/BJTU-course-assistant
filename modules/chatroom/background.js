@@ -281,7 +281,8 @@
       const appTab = fullscreenEnabled ? (await chrome.tabs.query({url:appUrl + '*'}))[0] : null;
       if (appTab) {
         try {
-          await chrome.tabs.sendMessage(appTab.id, {type:'BJTU_OPEN_CHATROOM', conversationId});
+          const result=await chrome.tabs.sendMessage(appTab.id, {type:'BJTU_OPEN_CHATROOM', conversationId});
+          if(result?.ok!==true)throw new Error('聊天室窗口尚未就绪');
           await chrome.tabs.update(appTab.id, {active:true});
           await focusTab(appTab);
           return;
@@ -289,6 +290,7 @@
       }
       await createChatTab(conversationId);
   }
+  global.BjtuChatroomNavigation={openConversation};
   chrome.notifications.onClicked.addListener(id => {
     const isRequest = id.startsWith(requestPrefix);
     const isFile = id.startsWith(filePrefix);
