@@ -1,5 +1,5 @@
-/* 通义千问聊天客户端：读取登录令牌，并由扩展后台直接发送 API 与流式请求。
- * chat.qwen.ai 页面只用于登录及登录状态同步，不再承担普通 API 请求。 */
+/* 通义千问聊天客户端：普通请求优先在扩展后台发送。
+ * 必须依赖网页安全环境时仅复用已有 chat.qwen.ai 页面，不自动新建请求页。 */
 (function initBjtuQwenClient(global) {
   'use strict';
 
@@ -587,7 +587,7 @@
       });
     } catch (error) {
       if (error?.name === 'AbortError' || signal?.aborted) throw error;
-      if(String(error?.code || '').startsWith('QWEN_TAB_'))throw error;
+      if(/^QWEN_(TAB|BACKGROUND)_/.test(String(error?.code || '')))throw error;
       throw networkError(resumeId);
     }
     if (response.status === 401 || response.status === 403) throw notLoggedInError();

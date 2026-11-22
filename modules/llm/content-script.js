@@ -8,7 +8,7 @@
     const id=port.name.slice('bjtu-qwen-fetch:'.length);
     const forward=event=>{
       if(event.source!==window||event.origin!==location.origin||event.data?.source!=='BJTU_QWEN_PAGE_FETCH'||event.data.id!==id)return;
-      if(['headers','chunk','end','error','token'].includes(event.data.type)){
+      if(['headers','chunk','end','error','token','context'].includes(event.data.type)){
         try{port.postMessage(event.data);}catch{}
       }
     };

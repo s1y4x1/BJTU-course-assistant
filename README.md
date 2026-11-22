@@ -46,7 +46,7 @@ Ollama 返回空正文的 HTTP 403 时，通常是来源限制：将 `OLLAMA_ORI
 
 接口参考：[Ollama](https://docs.ollama.com/api/openai-compatibility)、[Agnes AI](https://github.com/AgnesAI-Labs/skills/blob/main/agnes-ai-models/references/agent_compatibility.md)。
 
-qwen.ai 的新建会话、生成请求会复用或打开一个不抢焦点的 `chat.qwen.ai` 标签页，并在页面内流式请求。发出请求前使用已加载的站点 token 管理器校验、必要时刷新令牌，沿用当前前端版本头及站点请求环境；不要在生成期间关闭该标签页。`thinking_format` 保持 `detail`。若仍返回 `Bad_Request`，可在该标签页的开发者工具中检查真实请求与响应；这一通用错误本身不能确定具体原因。
+qwen.ai 的新建会话、生成请求优先在扩展后台完成：读取当前网页版本，并通过官方刷新接口校验/刷新令牌。预检查无法完成时，仅尝试复用已打开的 `chat.qwen.ai` 页面，沿用站点 token 管理器及安全组件，不自动新建或跳转标签页；如果需要登录或验证，请手动在站点完成。生成请求已经发出后，不会因失败而静默重发。`thinking_format` 保持 `detail`；`Bad_Request` 这一通用错误本身不能确定具体原因。
 
 ## 快速开始
 
