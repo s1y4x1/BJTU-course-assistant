@@ -443,6 +443,18 @@ body.course-helper-focus .right-column {
     overflow-x: auto;
 }
 @media (min-width: 901px) and (orientation: landscape) {
+    body.page-columns-swapped .layout-container { flex-direction: row-reverse; }
+    body.page-columns-swapped.course-helper-focus .left-column { transform: translateX(100%); }
+    body.page-columns-swapped .column-collapse-toggle {
+        left: 8px;
+        right: auto;
+        border-radius: 0 19px 19px 0;
+    }
+    body.page-columns-swapped.course-helper-focus .column-collapse-toggle {
+        left: auto;
+        right: 0;
+        border-radius: 19px 0 0 19px;
+    }
     body:not(.course-helper-focus) :is(.left-column, .right-column) {
         min-width: 300px;
     }

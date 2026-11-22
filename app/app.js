@@ -1799,6 +1799,7 @@ function setupOptionsStorageLiveSync() {
     if (!popupMode && changes.courseHelperIndependentPlatformScroll) {
       document.body.classList.toggle('course-platform-independent-scroll', changes.courseHelperIndependentPlatformScroll.newValue !== false);
     }
+    if (changes.swapPageColumns) applyPageColumnsSwapped(changes.swapPageColumns.newValue);
     if (changes.platformButtonTextAction) applyPlatformButtonTextAction(changes.platformButtonTextAction.newValue);
     if (!popupMode && (changes[FULLSCREEN_TOP_BAR_FULL_WIDTH_KEY] || changes[STICKY_COURSE_HEADER_KEY])) {
       applyFullscreenHeaderLayout(
@@ -2056,6 +2057,16 @@ function getOrderedCoursePlatformColumns() {
 const COURSE_HELPER_EXPANDED_DEFAULT_KEY = 'courseHelperExpandedByDefault';
 const FULLSCREEN_TOP_BAR_FULL_WIDTH_KEY = 'fullscreenTopBarFullWidth';
 const STICKY_COURSE_HEADER_KEY = 'stickyCourseHeader';
+function arePageColumnsSwapped() {
+  return !isCourseHelperAdaptiveLayout() && document.body.classList.contains('page-columns-swapped');
+}
+function applyPageColumnsSwapped(enabled) {
+  if (popupMode) return;
+  document.body.classList.toggle('page-columns-swapped', enabled === true);
+  syncCourseHelperCollapseTogglePresentation();
+  window.syncRightColumnResizer?.();
+  window.trackRightColumnResizer?.();
+}
 const SHOW_COURSE_LIST_DURING_LAYOUT_TRANSITION_KEY = 'showCourseListDuringLayoutTransition';
 const COURSE_HELPER_PLATFORM_COLUMN_WEIGHTS_KEY = 'courseHelperPlatformColumnWeights';
 const COURSE_HELPER_PLATFORM_COLUMN_MIN_WIDTH = 240;
@@ -2136,8 +2147,9 @@ function syncCourseHelperCollapseTogglePresentation() {
   if (!(columnCollapseToggle instanceof HTMLButtonElement)) return;
   const focused = window.courseHelperPlatformSplitMode === true;
   const adaptive = isCourseHelperAdaptiveLayout();
-  const action = focused ? (adaptive ? '展开上方' : '折叠右栏') : (adaptive ? '折叠上方' : '展开右栏');
-  columnCollapseToggle.textContent = focused ? (adaptive ? '▼' : '▶') : (adaptive ? '▲' : '◀');
+  const swapped = arePageColumnsSwapped();
+  const action = focused ? (adaptive ? '展开上方' : swapped ? '折叠左栏' : '折叠右栏') : (adaptive ? '折叠上方' : swapped ? '展开左栏' : '展开右栏');
+  columnCollapseToggle.textContent = focused ? (adaptive ? '▼' : swapped ? '◀' : '▶') : (adaptive ? '▲' : swapped ? '▶' : '◀');
   columnCollapseToggle.title = action;
   columnCollapseToggle.setAttribute('aria-label', action);
   columnCollapseToggle.setAttribute('aria-expanded', focused ? 'false' : 'true');
@@ -2571,6 +2583,7 @@ async function loadCourseHelperLayoutSettings() {
   if (popupMode) return;
   const stored = await chrome.storage.local.get([
     COURSE_HELPER_EXPANDED_DEFAULT_KEY,
+    'swapPageColumns',
     'courseHelperIndependentPlatformScroll',
     FULLSCREEN_TOP_BAR_FULL_WIDTH_KEY,
     STICKY_COURSE_HEADER_KEY,
@@ -2589,6 +2602,7 @@ async function loadCourseHelperLayoutSettings() {
     await chrome.storage.local.remove(COURSE_HELPER_PLATFORM_COLUMN_WEIGHTS_KEY).catch(() => {});
   }
   window.showCourseListDuringLayoutTransition = stored[SHOW_COURSE_LIST_DURING_LAYOUT_TRANSITION_KEY] === true;
+  applyPageColumnsSwapped(stored.swapPageColumns);
   document.body.classList.toggle('course-platform-independent-scroll', stored.courseHelperIndependentPlatformScroll !== false);
   applyFullscreenHeaderLayout(
     stored[FULLSCREEN_TOP_BAR_FULL_WIDTH_KEY] === true,
@@ -2678,7 +2692,7 @@ function setupRightColumnResizer() {
     }
     columnResizer.style.display = 'block';
     const rect = rightColumn.getBoundingClientRect();
-    columnResizer.style.left = `${Math.round(rect.left)}px`;
+    columnResizer.style.left = `${Math.round(arePageColumnsSwapped() ? rect.right : rect.left)}px`;
     columnResizer.style.top = `${Math.round(rect.top)}px`;
     columnResizer.style.height = `${Math.max(0, Math.round(rect.height))}px`;
   };
@@ -2737,7 +2751,8 @@ function setupRightColumnResizer() {
     const available = rect.width - gap;
     if (available <= 0) return;
     const minimumRatio = Math.max(MIN_RATIO, Math.min(0.5, MIN_COLUMN_WIDTH / available));
-    activeLandscapeRatio = Math.max(minimumRatio, Math.min(1 - minimumRatio, (e.clientX - rect.left - gap) / available));
+    const filePaneWidth = arePageColumnsSwapped() ? rect.right - e.clientX - gap / 2 : e.clientX - rect.left - gap / 2;
+    activeLandscapeRatio = Math.max(minimumRatio, Math.min(1 - minimumRatio, filePaneWidth / available));
     applyLandscapeRatio();
     scheduleResizerSync();
     notifyCourseHelperLayoutChanged();
