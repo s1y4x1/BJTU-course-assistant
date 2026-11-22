@@ -8,7 +8,16 @@
     },
     async initAll(context) {
       await global.__bjtuOptionsModulesReady;
-      await Promise.all([...controllers.values()].map((controller) => controller.init?.(context)));
+      await Promise.all([...controllers.entries()].map(async ([id,controller]) => {
+        const host = document.querySelector(`[data-options-module="${id}"]`);
+        host?.setAttribute('aria-busy','true');
+        try { await controller.init?.(context); }
+        catch (error) {
+          const label = global.BjtuModuleRegistry.definitions[id]?.label || id;
+          console.error(`[bjtu] ${id} options initialization failed:`,error);
+          context?.setMessage?.(`${label}选项初始化失败：${String(error?.message || error)}`,false);
+        } finally { host?.removeAttribute('aria-busy'); }
+      }));
     },
     async resetAll() {
       await Promise.all([...controllers.values()].map((controller) => controller.reset?.()));

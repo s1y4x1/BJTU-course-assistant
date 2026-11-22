@@ -84,9 +84,11 @@
     document.getElementById('qwenLocalModelOptions').hidden = !local;
     if (thinking) thinking.disabled = local;
     if (local) {
-      await loadLocalModel();
-      const state = await global.BjtuQwenLocalModel.availability().catch(error => String(error.message));
-      document.getElementById('qwenLocalModelStatus').textContent = ({available:'本地模型已就绪',downloadable:'需要下载模型',downloading:'浏览器正在下载模型',unavailable:'当前设备或浏览器设置不支持本地模型'})[state] || state;
+      const localStatus = document.getElementById('qwenLocalModelStatus');
+      localStatus.textContent = '正在检查本地模型…';
+      void loadLocalModel().then(() => global.BjtuQwenLocalModel.availability()).then(state => {
+        localStatus.textContent = ({available:'本地模型已就绪',downloadable:'需要下载模型',downloading:'浏览器正在下载模型',unavailable:'当前设备或浏览器设置不支持本地模型'})[state] || state;
+      }).catch(error => {localStatus.textContent=String(error.message || error);});
     }
     const maxIterations = document.getElementById('qwenMaxIterations');
     if (maxIterations instanceof HTMLInputElement) maxIterations.value = String(Math.max(1, Number(status.maxIterations) || 6));

@@ -744,7 +744,11 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     await globalThis.BjtuModuleRegistry.loadScript('modules/ve/file-preview.js');
     await globalThis.BjtuVeFilePreview.initOptions();
   }
-  await globalThis.BjtuOptionsModules?.initAll({ setMessage: setMsg });
+  // Module contexts may wait on background requests; they must not hide all settings.
+  void globalThis.BjtuOptionsModules?.initAll({ setMessage: setMsg }).catch(error => {
+    console.error('[bjtu] options modules initialization failed:', error);
+    setMsg('模块选项初始化失败：' + String(error?.message || error),false);
+  });
   await setupInstalledModuleOptions();
   const storedUiOrder = await chrome.storage.local.get(['optionsSectionOrder', 'platformOrder']);
   setupUiOrderEditor(storedUiOrder.optionsSectionOrder, storedUiOrder.platformOrder);
@@ -2884,5 +2888,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     if (event.key === 'Escape' && resetConfirmModal?.style.display === 'flex') closeResetConfirmModal();
     if (event.key === 'Escape' && settingsImportModal?.style.display === 'flex') closeSettingsImportModal();
   });
+})().catch(error => {
+  console.error('[bjtu] options initialization failed:',error);
+  setMsg('扩展选项初始化失败：' + String(error?.message || error),false,{persistent:true});
+}).finally(() => {
   document.documentElement.classList.remove('options-loading');
-})();
+});
