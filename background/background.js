@@ -27,7 +27,7 @@ async function createBjtuBridgeActionIcons() {
     const connected = {};
     for (const size of [16, 32, 48, 128]) {
       const canvas = new OffscreenCanvas(size, size);
-      const context = canvas.getContext('2d');
+      const context = canvas.getContext('2d', { willReadFrequently: true });
       if (!context) throw new Error('无法创建扩展图标画布');
       const source = sources[size === 16 ? 'icons/16.png' : 'icons/128.png'];
       context.drawImage(source, 0, 0, size, size);
