@@ -2770,8 +2770,18 @@ async function startVersionDownloadWithFallback(downloadUrl, source = '', instal
   versionDownloadInProgress = true;
   syncVersionNoticeDownloadButton();
   try {
-    const writableDirectory = await globalThis.BjtuDirectoryPermission.request({audit:versionDownloadClean,forUpdate:true});
-    if (!writableDirectory) return;
+    suppressVersionNoticeForDownload();
+    setVersionDownloadBar({ visible: true, indeterminate: true });
+    const permissionProgress = status => setVersionDownloadProgressUi({
+      visible: true, status, title: '正在检查扩展安装目录权限',
+      body: '目录验证通过后开始下载更新文件。', phase: 'preparing', floating: versionDownloadClean
+    });
+    permissionProgress('正在准备目录权限验证…');
+    const writableDirectory = await globalThis.BjtuDirectoryPermission.request({audit:versionDownloadClean,forUpdate:true,onProgress:permissionProgress});
+    if (!writableDirectory) {
+      setVersionDownloadProgressUi({ visible: false, phase: 'cancelled' });
+      return;
+    }
     versionUpdateDirectoryHandle = writableDirectory;
     versionUpdateDirectoryHandleLoaded = true;
     suppressVersionNoticeForDownload();

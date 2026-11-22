@@ -147,7 +147,7 @@ async function check({ifAvailable = false, onProgress} = {}) {
   }
 }
 
-async function request({ startup = false, audit = false, forUpdate = false } = {}) {
+async function request({ startup = false, audit = false, forUpdate = false, onProgress } = {}) {
   if (startup && (dismissed || (await chrome.storage.local.get('updateDirectoryStartupCheckEnabled')).updateDirectoryStartupCheckEnabled === false)) return null;
   if (requestInProgress) {
     if (forUpdate) {
@@ -156,18 +156,40 @@ async function request({ startup = false, audit = false, forUpdate = false } = {
     return requestInProgress;
   }
   requestForUpdate = forUpdate;
+  let reporting = true;
   requestInProgress = (async () => {
-    const modal = await initialize();
-    let handle = await globalThis.BjtuUpdateFileSystem.readDirectoryHandle();
+    let phase = '正在加载目录授权组件…';
+    const report = text => { phase = text; if (reporting) onProgress?.(text); };
+    const inspectStep = async operation => {
+      let timer;
+      try {
+        return await Promise.race([
+          Promise.resolve().then(operation),
+          new Promise((resolve, reject) => {
+            timer = setTimeout(() => reject(Object.assign(new Error(`目录权限验证超时（${phase}），请关闭占用目录的其他页面后重试`), { code: 'PERMISSION_CHECK_TIMEOUT' })), 30000);
+          })
+        ]);
+      } finally { clearTimeout(timer); }
+    };
+    report(phase);
+    const modal = await inspectStep(() => initialize());
+    report('正在读取已保存的扩展目录…');
+    let handle = await inspectStep(() => globalThis.BjtuUpdateFileSystem.readDirectoryHandle());
     if (handle) {
-      try { return await verify(handle,false,{background:audit}); }
-      catch { handle = null; }
+      try {
+        report('正在验证扩展目录权限…');
+        return await inspectStep(() => verify(handle,false,{background:audit,ifAvailable:true,onProgress:report}));
+      } catch (error) {
+        if (error?.code === 'INSTALL_DIRECTORY_BUSY' || error?.code === 'PERMISSION_CHECK_TIMEOUT') throw error;
+        handle = null;
+      }
     }
     const choose = modal.querySelector('#version-directory-permission-choose');
     const later = modal.querySelector('#version-directory-permission-later');
     const never = modal.querySelector('#version-directory-permission-never');
     const message = modal.querySelector('#version-directory-permission-message');
     message.innerHTML = permissionMessageTemplate;
+    report('请授权扩展安装目录后继续下载');
     return new Promise(resolve => {
       const finish = result => {
         modal.classList.remove('show');
@@ -195,7 +217,8 @@ async function request({ startup = false, audit = false, forUpdate = false } = {
           let selected = handle;
           if (selected && await selected.requestPermission({mode:'readwrite'}) !== 'granted') selected = null;
           if (!selected) selected = await window.showDirectoryPicker({id:'bjtu-update-dir',mode:'readwrite'});
-          const verified = await verify(selected, true);
+          report('正在验证扩展目录权限…');
+          const verified = await inspectStep(() => verify(selected, true, {ifAvailable:true,onProgress:report}));
           dismissed = false;
           const reload = !requestForUpdate && window.confirm('目录验证成功。建议重新加载扩展。若再次提示授权，请重复完成授权，直到浏览器允许您选择「每次访问都允许」。现在重新加载吗？');
           if (reload) {
@@ -210,7 +233,7 @@ async function request({ startup = false, audit = false, forUpdate = false } = {
       };
       modal.classList.add('show');
     });
-  })().finally(() => { requestInProgress = null; requestForUpdate = false; });
+  })().finally(() => { reporting = false; requestInProgress = null; requestForUpdate = false; });
   return requestInProgress;
 }
 
