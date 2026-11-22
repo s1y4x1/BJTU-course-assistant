@@ -448,10 +448,20 @@ function setupVersionDirectoryPermissionCheck() {
     button.disabled = granted;
   };
   const check = async () => {
-    if (checking || versionDownloadInProgress) return;
+    if (checking) return;
+    if (versionDownloadInProgress) {
+      button.textContent = '正在更新，完成后检查目录权限';
+      button.disabled = true;
+      return;
+    }
     checking = true;
     try {
-      setPermissionButton(!!await globalThis.BjtuDirectoryPermission.check());
+      setPermissionButton(!!await globalThis.BjtuDirectoryPermission.check({ifAvailable:true}));
+      button.title = '';
+    } catch (error) {
+      button.textContent = error?.code === 'INSTALL_DIRECTORY_BUSY' ? '目录正在使用，稍后自动检查' : '权限检查未完成，点击重试';
+      button.disabled = error?.code === 'INSTALL_DIRECTORY_BUSY';
+      button.title = String(error?.message || error);
     } finally {
       checking = false;
     }

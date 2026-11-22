@@ -48,9 +48,12 @@ async function verifyVersionDirectoryWriteAccess(handle) {
 }
 
 async function verifyVersionBackgroundDirectoryWriteAccess(handle, foregroundProbe) {
-  const result = await chrome.runtime.sendMessage({
-    type: 'VERIFY_UPDATER_DIRECTORY_BACKGROUND_ACCESS',
-    expectedForegroundProbe: foregroundProbe
+  const result = await new Promise((resolve,reject) => {
+    const timeout = setTimeout(() => reject(Object.assign(new Error('后台目录权限验证未响应，请检查扩展后台是否正常运行后重试'),{code:'PERMISSION_CHECK_TIMEOUT'})),15000);
+    Promise.resolve().then(() => chrome.runtime.sendMessage({
+      type: 'VERIFY_UPDATER_DIRECTORY_BACKGROUND_ACCESS',
+      expectedForegroundProbe: foregroundProbe
+    })).then(resolve,reject).finally(() => clearTimeout(timeout));
   });
   if (!result?.ok || !result.probe) {
     throw new Error(`后台目录权限验证失败：${String(result?.message || '后台未返回验证结果')}`);
@@ -111,13 +114,13 @@ function initialize() {
   })().catch(error => { initialization = null; throw error; });
 }
 
-async function verify(handle, store = false) {
+async function verify(handle, store = false, { ifAvailable = false } = {}) {
   const fileSystem = globalThis.BjtuUpdateFileSystem;
   await fileSystem.withInstallLock(() => withVersionDirectoryPermissionAuditLock(async () => {
     const foregroundProbe = await verifyVersionDirectoryWriteAccess(handle);
     if (store) await fileSystem.storeDirectoryHandle(handle);
     await verifyVersionBackgroundDirectoryWriteAccess(handle, foregroundProbe);
-  }));
+  }), {ifAvailable});
   if (store) {
     const channel = new BroadcastChannel('bjtu-extension-downloads');
     channel.postMessage('changed'); channel.close();
@@ -125,12 +128,13 @@ async function verify(handle, store = false) {
   return handle;
 }
 
-async function check() {
+async function check({ifAvailable = false} = {}) {
   try {
     const handle = await globalThis.BjtuUpdateFileSystem.readDirectoryHandle();
     if (await handle?.queryPermission({mode:'readwrite'}) !== 'granted') return null;
-    return await verify(handle);
-  } catch {
+    return await verify(handle,false,{ifAvailable});
+  } catch (error) {
+    if (error?.code === 'INSTALL_DIRECTORY_BUSY' || error?.code === 'PERMISSION_CHECK_TIMEOUT') throw error;
     return null;
   }
 }

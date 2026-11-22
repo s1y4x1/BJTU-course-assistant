@@ -87,11 +87,14 @@
     throw lastError;
   }
 
-  async function withInstallLock(operation) {
+  async function withInstallLock(operation, { ifAvailable = false } = {}) {
     if (typeof operation !== 'function') throw new TypeError('更新安装任务无效');
     const lockManager = global.navigator?.locks;
     if (!lockManager || typeof lockManager.request !== 'function') return operation();
-    return lockManager.request(INSTALL_LOCK_NAME, { mode: 'exclusive' }, operation);
+    return lockManager.request(INSTALL_LOCK_NAME, { mode: 'exclusive', ifAvailable }, lock => {
+      if (!lock) throw Object.assign(new Error('扩展目录正在更新或处理文件，暂时无法检查权限'),{code:'INSTALL_DIRECTORY_BUSY'});
+      return operation();
+    });
   }
 
   async function fileMatchesBytes(file, bytes) {

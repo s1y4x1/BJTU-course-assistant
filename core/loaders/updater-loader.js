@@ -19,7 +19,8 @@
     await global.BjtuUpdateFileSystem.ensureFileConcurrencyDefaults();
     await global.BjtuModuleRegistry.loadScript('UI/marked.umd.js');
     await global.BjtuModuleRegistry.loadScript('UI/markdown.js');
-    await global.BjtuMarkdown.ready;
+    // Optional formula/highlighting components must not delay directory checks.
+    void global.BjtuMarkdown.ready?.catch(error => console.warn('[bjtu] optional Markdown components unavailable:',error));
     await global.BjtuModuleRegistry.loadScript('modules/updater/checker.js');
     return true;
   })().catch((error) => {
