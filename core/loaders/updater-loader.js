@@ -3,6 +3,9 @@
   global.__bjtuUpdaterReady = (async () => {
     const available = await global.BjtuModuleRegistry.ready;
     if (!available.updater) return false;
+    // Permission checks must start independently of the complete update UI.
+    await global.BjtuModuleRegistry.loadScript('modules/updater/filesystem.js');
+    await global.BjtuModuleRegistry.loadScript('modules/updater/directory-permission.js');
     await global.BjtuModuleRegistry.loadStyle('UI/file-size-emphasis.css');
     await global.BjtuModuleRegistry.loadStyle('UI/markdown.css');
     await global.BjtuModuleRegistry.loadScript('UI/file-size-emphasis.js');
@@ -14,8 +17,6 @@
     const holder = document.createElement('template');
     holder.innerHTML = await markupResponse.text();
     document.body.appendChild(holder.content.cloneNode(true));
-    await global.BjtuModuleRegistry.loadScript('modules/updater/filesystem.js');
-    await global.BjtuModuleRegistry.loadScript('modules/updater/directory-permission.js');
     await global.BjtuUpdateFileSystem.ensureFileConcurrencyDefaults();
     await global.BjtuModuleRegistry.loadScript('UI/marked.umd.js');
     await global.BjtuModuleRegistry.loadScript('UI/markdown.js');
@@ -25,6 +26,11 @@
     return true;
   })().catch((error) => {
     console.error('[bjtu] updater module failed to load:', error);
+    const permissionButton = document.getElementById('checkUpdateDirectoryPermission');
+    if (permissionButton && !permissionButton.dataset.permissionBound) {
+      permissionButton.textContent = '目录权限组件加载失败';
+      permissionButton.title = String(error?.message || error);
+    }
     const versionBtn = typeof document !== 'undefined' ? document.getElementById('version-btn') : null;
     if (versionBtn instanceof HTMLButtonElement) {
       versionBtn.style.display = '';

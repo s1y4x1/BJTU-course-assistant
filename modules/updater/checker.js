@@ -442,62 +442,17 @@ function initializeVersionReinstallCommand() {
 function setupVersionDirectoryPermissionCheck() {
   if (typeof popupMode !== 'undefined' && popupMode) return;
   const button = document.getElementById('checkUpdateDirectoryPermission');
-  let checking = false;
-  const setPermissionButton = (granted) => {
-    button.textContent = granted ? '已授权扩展安装目录' : '授权扩展安装目录';
-    button.disabled = granted;
-  };
-  const check = async () => {
-    if (checking) return;
-    if (versionDownloadInProgress) {
-      button.textContent = '正在更新，完成后检查目录权限';
-      button.disabled = true;
-      return;
-    }
-    checking = true;
-    try {
-      setPermissionButton(!!await globalThis.BjtuDirectoryPermission.check({ifAvailable:true}));
-      button.title = '';
-    } catch (error) {
-      button.textContent = error?.code === 'INSTALL_DIRECTORY_BUSY' ? '目录正在使用，稍后自动检查' : '权限检查未完成，点击重试';
-      button.disabled = error?.code === 'INSTALL_DIRECTORY_BUSY';
-      button.title = String(error?.message || error);
-    } finally {
-      checking = false;
-    }
-  };
+  if (button) {
+    globalThis.BjtuDirectoryPermission.setupOptionsButton();
+    return;
+  }
   const audit = () => {
-    if (button) {
-      if (document.visibilityState === 'visible') void check();
-    } else if (!versionDownloadInProgress) {
+    if (!versionDownloadInProgress) {
       void globalThis.BjtuDirectoryPermission.request({startup:true,audit:true})
         .catch(error => console.warn('[bjtu] updater directory permission audit failed:', error));
     }
   };
-  button?.addEventListener('click', async () => {
-    if (checking) return;
-    checking = true;
-    button.disabled = true;
-    let granted = false;
-    try {
-      granted = !!await globalThis.BjtuDirectoryPermission.request({audit:true});
-      if (granted) {
-        showToast('前台与后台的扩展安装目录写入权限均已验证通过', 'success');
-      }
-    } catch (error) {
-      showToast(`目录权限检查失败：${error?.message || error}`, 'error');
-    } finally {
-      checking = false;
-      setPermissionButton(granted);
-    }
-  });
-  if (button) {
-    void check();
-    document.addEventListener('visibilitychange', audit);
-    window.addEventListener('focus', audit);
-  } else {
-    audit();
-  }
+  audit();
   setInterval(audit, 30000);
 }
 

@@ -114,11 +114,13 @@ function initialize() {
   })().catch(error => { initialization = null; throw error; });
 }
 
-async function verify(handle, store = false, { ifAvailable = false } = {}) {
+async function verify(handle, store = false, { ifAvailable = false, onProgress } = {}) {
   const fileSystem = globalThis.BjtuUpdateFileSystem;
   await fileSystem.withInstallLock(() => withVersionDirectoryPermissionAuditLock(async () => {
+    onProgress?.('正在验证前台目录写入权限…');
     const foregroundProbe = await verifyVersionDirectoryWriteAccess(handle);
     if (store) await fileSystem.storeDirectoryHandle(handle);
+    onProgress?.('正在验证后台目录写入权限…');
     await verifyVersionBackgroundDirectoryWriteAccess(handle, foregroundProbe);
   }), {ifAvailable});
   if (store) {
@@ -128,11 +130,14 @@ async function verify(handle, store = false, { ifAvailable = false } = {}) {
   return handle;
 }
 
-async function check({ifAvailable = false} = {}) {
+async function check({ifAvailable = false, onProgress} = {}) {
   try {
+    onProgress?.('正在读取已保存的扩展目录…');
     const handle = await globalThis.BjtuUpdateFileSystem.readDirectoryHandle();
+    onProgress?.('正在查询扩展目录授权状态…');
     if (await handle?.queryPermission({mode:'readwrite'}) !== 'granted') return null;
-    return await verify(handle,false,{ifAvailable});
+    onProgress?.('正在等待目录权限验证…');
+    return await verify(handle,false,{ifAvailable,onProgress});
   } catch (error) {
     if (error?.code === 'INSTALL_DIRECTORY_BUSY' || error?.code === 'PERMISSION_CHECK_TIMEOUT') throw error;
     return null;
@@ -206,6 +211,63 @@ async function request({ startup = false, audit = false, forUpdate = false } = {
   return requestInProgress;
 }
 
-globalThis.BjtuDirectoryPermission = { check, request, validate: validateVersionUpdateDirectory };
+function setupOptionsButton() {
+  const button = document.getElementById('checkUpdateDirectoryPermission');
+  if (!button || button.dataset.permissionBound) return;
+  button.dataset.permissionBound = '1';
+  let checking = false;
+  const setGranted = granted => {
+    button.textContent = granted ? '已授权扩展安装目录' : '授权扩展安装目录';
+    button.disabled = granted;button.title = '';
+  };
+  const inspect = async () => {
+    if (checking) return;
+    if (typeof versionDownloadInProgress !== 'undefined' && versionDownloadInProgress) {
+      button.textContent = '正在更新，完成后检查目录权限';button.disabled=true;return;
+    }
+    checking = true;button.disabled = true;
+    let timer, active = true, phase = '';
+    try {
+      const result = await Promise.race([
+        check({ifAvailable:true,onProgress:text=>{phase=text;if(active)button.textContent=text;}}),
+        new Promise((resolve,reject) => {timer=setTimeout(()=>reject(new Error(`目录权限检查超时（${phase}），请关闭其他正在更新或占用目录的扩展页面后重试`)),30000);})
+      ]);
+      setGranted(!!result);
+    } catch (error) {
+      button.textContent = error?.code === 'INSTALL_DIRECTORY_BUSY' ? '目录正在使用，稍后自动检查' : '权限检查未完成，点击重试';
+      button.disabled = error?.code === 'INSTALL_DIRECTORY_BUSY';
+      button.title = String(error?.message || error);
+      console.warn('[bjtu] directory permission check:',error);
+    } finally {active=false;clearTimeout(timer);checking=false;}
+  };
+  button.addEventListener('click',async()=>{
+    if(checking)return;
+    checking=true;button.disabled=true;
+    let granted=false;
+    try {
+      granted=!!await request({audit:true});
+      if(granted){
+        const text='前台与后台的扩展安装目录写入权限均已验证通过';
+        if(globalThis.BjtuOptionsMessage)globalThis.BjtuOptionsMessage.show(text,true);
+        else globalThis.showToast?.(text,'success');
+      }
+    }
+    catch(error){
+      const text=`目录权限检查失败：${error?.message || error}`;
+      if(globalThis.BjtuOptionsMessage)globalThis.BjtuOptionsMessage.show(text,false);
+      else globalThis.showToast?.(text,'error');
+    } finally {checking=false;setGranted(granted);}
+  });
+  const audit=()=>{if(document.visibilityState==='visible')void inspect();};
+  document.addEventListener('visibilitychange',audit);
+  window.addEventListener('focus',audit);
+  const interval=setInterval(audit,30000);
+  window.addEventListener('pagehide',()=>clearInterval(interval),{once:true});
+  void inspect();
+}
+
+globalThis.BjtuDirectoryPermission = { check, request, validate: validateVersionUpdateDirectory, setupOptionsButton };
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',setupOptionsButton,{once:true});
+else setupOptionsButton();
 
 })();
