@@ -178,7 +178,12 @@ async function request({ startup = false, audit = false, forUpdate = false, onPr
     if (handle) {
       try {
         report('正在验证扩展目录权限…');
-        return await inspectStep(() => verify(handle,false,{background:audit,ifAvailable:true,onProgress:report}));
+        return await inspectStep(async () => {
+          if (audit) return verify(handle,false,{ifAvailable:true,onProgress:report});
+          report('正在查询扩展目录授权状态…');
+          if (await handle.queryPermission({mode:'readwrite'}) !== 'granted') throw new Error('扩展目录尚未授权');
+          return validateVersionUpdateDirectory(handle);
+        });
       } catch (error) {
         if (error?.code === 'INSTALL_DIRECTORY_BUSY' || error?.code === 'PERMISSION_CHECK_TIMEOUT') throw error;
         handle = null;
@@ -220,7 +225,8 @@ async function request({ startup = false, audit = false, forUpdate = false, onPr
           report('正在验证扩展目录权限…');
           const verified = await inspectStep(() => verify(selected, true, {ifAvailable:true,onProgress:report}));
           dismissed = false;
-          const reload = !requestForUpdate && window.confirm('目录验证成功。建议重新加载扩展。若再次提示授权，请重复完成授权，直到浏览器允许您选择「每次访问都允许」。现在重新加载吗？');
+          const settings = await chrome.storage.local.get('updateDirectoryStartupCheckEnabled');
+          const reload = !requestForUpdate && settings.updateDirectoryStartupCheckEnabled !== false && window.confirm('目录验证成功。建议重新加载扩展。若再次提示授权，请重复完成授权，直到浏览器允许您选择「每次访问都允许」。现在重新加载吗？');
           if (reload) {
             const result = await chrome.runtime.sendMessage({type:'RELOAD_EXTENSION_AND_OPEN_APP',payload:{reopenApp:true}});
             if (!result?.ok) throw new Error(result?.message || '无法安排重新加载扩展并恢复全屏页面');
