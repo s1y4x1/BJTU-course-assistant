@@ -5,6 +5,7 @@
 
   const SETTINGS_KEYS = ['qwenEnabled', 'qwenProvider', 'qwenFabColorMode', 'qwenModelId', 'qwenThinkingEnabled', 'qwenMaxIterations', 'qwenAlwaysAllow', 'qwenApprovalNotificationMode', 'qwenCompletionNotificationMode', 'llmApiBaseUrl', 'llmApiKey', 'llmApiModel', 'llmApiPreset', 'llmApiTemperature', 'llmApiTopP', 'llmApiTopK', 'llmApiMaxTokens', 'llmApiThinkingProtocol'];
   const normalizeProvider = value => ['local','openai'].includes(value) ? value : 'qwen';
+  SETTINGS_KEYS.push('llmProactiveEnabled');
   const providerHistoryKey = value => ({local:'qwenLocalLastChatId',openai:'llmApiLastChatId',qwen:'qwenCloudLastChatId'})[normalizeProvider(value)];
   const providerForChat = id => String(id).startsWith('local-') ? 'local' : String(id).startsWith('compatible-') ? 'openai' : 'qwen';
   const clientForChat = id => providerForChat(id) === 'local' ? global.BjtuQwenLocalClient.create() : providerForChat(id) === 'openai' ? global.BjtuLlmCompatibleClient.create() : global.BjtuQwenClient;
@@ -327,11 +328,13 @@
   }
 
   async function getSettings() {
+    await global.BjtuLlmDefaults?.ensure();
     const stored = await chrome.storage.local.get(SETTINGS_KEYS).catch(() => ({}));
     const operationSettings = await global.BjtuApiSettings.get();
     const modules=await global.BjtuModuleRegistry?.ready;
     return {
       chatroomAvailable:modules?.chatroom===true,
+      proactiveEnabled: stored.llmProactiveEnabled !== false,
       enabled: stored.qwenEnabled !== false,
       provider: normalizeProvider(stored.qwenProvider),
       apiBaseUrl: String(stored.llmApiBaseUrl || 'http://127.0.0.1:11434/v1'),
@@ -362,6 +365,7 @@
 
   async function saveSettings(patch) {
     const next = {};
+    if(typeof patch?.proactiveEnabled==='boolean')next.llmProactiveEnabled=patch.proactiveEnabled;
     if(patch?.apiPreset!==undefined){
       if(!['ollama','agnes','deepseek','custom'].includes(patch.apiPreset))throw new Error('服务预设无效');
       next.llmApiPreset=patch.apiPreset;
@@ -458,6 +462,7 @@
     });
   }
   const sharedChatCreationPromises = new Map();
+  const proactive=global.BjtuLlmProactive.create({getSettings,resolveSharedChatId,recordAssistantReply});
   let sharedOpeningInFlight = null;
 
   async function resolveSharedChatId(client, modelId) {
@@ -965,6 +970,12 @@
   if (typeof chrome === 'object' && chrome?.runtime?.onMessage) {
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const type = String(message?.type || '');
+      if(type==='LLM_PROACTIVE'||type==='LLM_PROACTIVE_RESULT'){
+        const id=String(message.payload?.id || '');
+        if(!id||!String(sender.url||'').startsWith(chrome.runtime.getURL('app/app.html'))){sendResponse({ok:false,message:'主动消息仅由全屏页面发起'});return false;}
+        const task=type==='LLM_PROACTIVE'?proactive.generate(id,message.payload?.snapshot):proactive.save(id,message.payload?.text);
+        void task.then(sendResponse,error=>sendResponse({ok:false,message:String(error.message||error)}));return true;
+      }
       if(type==='LLM_MARK_CHATROOM_READ'){
         void qwenViewIsInBackground({sender},{context:'chatroom',visible:true}).then(hidden=>hidden?null:markAssistantRead()).then(()=>sendResponse({ok:true}),error=>sendResponse({ok:false,message:String(error.message)}));
         return true;
@@ -1014,7 +1025,10 @@
               && lastMessage?.content_list === null
               ? String(lastMessage?.id || '')
               : '';
-            sendResponse({ ok: true, messages, pendingResponseId });
+            const proactiveMessages=await proactive.messages(chatId);
+            const stamp=message=>{const value=Number(message.timestamp)||0;return value>1e12?value/1000:value;};
+            const combined=[...messages,...proactiveMessages].sort((a,b)=>stamp(a)-stamp(b));
+            sendResponse({ ok: true, messages:combined, pendingResponseId });
           } catch (error) {
             sendResponse({
               ok: false,
@@ -1036,6 +1050,8 @@
           }
           try {
             await client.deleteChat(chatId);
+            await proactive.clear(chatId);
+            await markAssistantRead();
             await removeChatPermissionSession(chatId);
             sendResponse({ ok: true });
           } catch (error) {

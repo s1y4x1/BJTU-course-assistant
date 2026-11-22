@@ -37,7 +37,9 @@
     if(event.source!==global.parent || event.origin!==global.location.origin || event.data?.type!=='BJTU_LLM_VISIBILITY')return;
     chatroomVisible=event.data.visible===true;
     chatroomNames={user:String(event.data.selfName || '我'),assistant:String(event.data.assistantName || 'AI 助手')};
-    const title=document.querySelector('.llm-chat-title');if(title && title.textContent!==chatroomNames.assistant)title.textContent=chatroomNames.assistant;
+    const title=document.querySelector('.llm-chat-title');
+    if(title instanceof HTMLInputElement){if(document.activeElement!==title){title.value=chatroomNames.assistant;title.dataset.savedValue=title.value;}}
+    else if(title && title.textContent!==chatroomNames.assistant)title.textContent=chatroomNames.assistant;
     document.querySelectorAll('[data-llm-author]').forEach(name=>{const text=chatroomNames[name.dataset.llmAuthor];if(name.textContent!==text)name.textContent=text;});
     reportQwenViewState();
   });
@@ -648,6 +650,12 @@
     }
   }
 
+  function appendProactiveMessage(message){
+    const container=el(MESSAGES_ID);if(!container)return;
+    if([...container.querySelectorAll('[data-proactive-id]')].some(node=>node.dataset.proactiveId===message.id))return;
+    const bubble=appendMessage('assistant',message.content,'',message.timestamp);
+    bubble.dataset.proactiveId=message.id;
+  }
   function renderHistory(messages, { pendingResponseId = '' } = {}) {
     const messagesEl = el(MESSAGES_ID);
     if (!(messagesEl instanceof HTMLElement)) return;
@@ -658,6 +666,7 @@
     let lastExecutionBlocks = null;
     let lastHasFunctionCalls = false;
     for (const message of list) {
+      if(message.proactive){appendProactiveMessage(message);continue;}
       const role = String(message?.role || '');
       if (role === 'user') {
         suggestionCandidate = null;
@@ -1493,6 +1502,8 @@
       showLoginHint(true);
     }
     const thinking = el(THINKING_ID);
+    const proactive=el('llm-chat-proactive');
+    if(proactive)proactive.checked=status.proactiveEnabled!==false;
     if (thinking instanceof HTMLInputElement) thinking.checked = status?.thinkingEnabled === true;
     if (thinking instanceof HTMLInputElement) thinking.disabled = status?.provider === 'local';
     const chatIdInput = el('llm-chat-id');
@@ -2283,6 +2294,18 @@
   async function init() {
     await global.BjtuMarkdown.ready;
     if(CHATROOM_VIEW)await global.BjtuLlmComposer.mount();
+    if(CHATROOM_VIEW){
+      const header=document.querySelector('.llm-chat-header');header?.classList.add('conversation-header');
+      el(STATUS_ID)?.remove();
+      const oldTitle=header?.querySelector('.llm-chat-title');
+      if(oldTitle){
+        const title=document.createElement('input');title.className='llm-chat-title';title.type='text';title.value=chatroomNames.assistant;title.maxLength=80;title.autocomplete='off';title.setAttribute('aria-label','AI 助手会话备注');title.title='直接修改会话备注，回车或离开输入框保存';
+        title.dataset.savedValue=title.value;
+        const save=()=>{const remark=title.value.trim();if(remark===title.dataset.savedValue)return;title.dataset.savedValue=remark;global.parent.postMessage({type:'BJTU_LLM_RENAME',remark},global.location.origin);};
+        title.addEventListener('blur',save);title.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.isComposing){event.preventDefault();save();title.blur();}});
+        oldTitle.replaceWith(title);
+      }
+    }
     if (new URLSearchParams(global.location?.search || '').get('popup') === '1') {
       const fab = el(FAB_ID);
       if (fab instanceof HTMLElement) fab.style.display = 'none';
@@ -2344,6 +2367,7 @@
 
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
+      if(changes.llmProactiveEnabled){const checkbox=el('llm-chat-proactive');if(checkbox)checkbox.checked=changes.llmProactiveEnabled.newValue!==false;}
       if (changes.qwenProvider) {
         try {port?.postMessage({type:'stop'});port?.disconnect();} catch {}
         port=null;setBusy(false);
@@ -2357,6 +2381,10 @@
       if (panelActivated && !busy) void refreshStatus().catch(() => {});
     });
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      if(message?.type==='LLM_PROACTIVE_MESSAGE'){
+        if(String(message.chatId||'')===sessionChatId){appendProactiveMessage(message.message);maybeAutoScrollMessages(el(MESSAGES_ID));}
+        return false;
+      }
       if (message?.type === 'BJTUCA_LOCAL_APPROVAL_RESOLVED') {
         if (pendingAskFromLocalBridge && pendingAskId === String(message?.id || '')) hideAsk();
         return false;
@@ -2642,7 +2670,16 @@
     });
     const newChatBtn = el('llm-chat-new');
     if (newChatBtn instanceof HTMLButtonElement) {
+      if(CHATROOM_VIEW){
+        newChatBtn.textContent='清空记录';newChatBtn.title='清空记录';newChatBtn.setAttribute('aria-label','清空记录');newChatBtn.classList.add('secondary');
+        const label=document.createElement('label');label.className='llm-chat-proactive-toggle';
+        const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.id='llm-chat-proactive';checkbox.checked=true;
+        label.append(checkbox,document.createTextNode('主动消息'));newChatBtn.after(label);
+        void send('QWEN_GET_STATUS',{checkLogin:false}).then(status=>{checkbox.checked=status.proactiveEnabled!==false;});
+        checkbox.addEventListener('change',()=>void send('QWEN_SETTINGS_SET',{proactiveEnabled:checkbox.checked}));
+      }
       newChatBtn.addEventListener('click', () => {
+        if(busy)return;
         const currentId = sessionChatId;
         const doNew = async () => {
           await chrome.storage.local.remove(['qwenLastChatId', 'qwenOpeningPendingChatId']);
@@ -2659,7 +2696,8 @@
           if (messages instanceof HTMLElement) messages.replaceChildren();
           sendOpening();
         };
-        const deleteCurrent = global.confirm('是否删除当前会话？');
+        const deleteCurrent = global.confirm(CHATROOM_VIEW?'清空当前 AI 会话的全部记录？':'是否删除当前会话？');
+        if(CHATROOM_VIEW&&!deleteCurrent)return;
         if (deleteCurrent && currentId) {
           void send('QWEN_DELETE_CHAT', { chatId: currentId }).then(doNew).catch(doNew);
         } else {

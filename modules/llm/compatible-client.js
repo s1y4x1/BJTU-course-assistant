@@ -8,6 +8,7 @@
     return 'llmApiChat:' + id;
   };
   async function config() {
+    await global.BjtuLlmDefaults?.ensure();
     const s = await chrome.storage.local.get(['llmApiBaseUrl','llmApiKey','llmApiModel','llmApiPreset','llmApiTemperature','llmApiTopP','llmApiTopK','llmApiMaxTokens','llmApiThinkingProtocol']);
     const url = new URL(s.llmApiBaseUrl || 'http://127.0.0.1:11434/v1');
     if (!['http:','https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error('API 地址必须为不含账密、查询参数和片段的 HTTP(S) 地址');

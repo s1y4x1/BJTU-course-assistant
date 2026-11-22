@@ -27,3 +27,10 @@ html.llm-chatroom-view .llm-chat-composer button[type=submit] { background:var(-
 html.llm-chatroom-view .llm-chat-composer button:disabled { opacity:.5; cursor:default; }
 html.llm-chatroom-view .llm-chat-composer .composer-toggle { margin:0; display:inline-flex; align-items:center; gap:5px; }
 html.llm-chatroom-view .llm-chat-composer .composer-message-size { white-space:normal; }
+html.llm-chatroom-view .llm-chat-new { width:auto; height:auto; padding:6px 10px; font-size:var(--bjtu-font-size-body,13px); }
+html.llm-chatroom-view .llm-chat-proactive-toggle { display:inline-flex; align-items:center; gap:5px; margin:0; white-space:nowrap; font-size:var(--bjtu-font-size-body,13px); }
+html.llm-chatroom-view .llm-chat-header.conversation-header { padding:18px; gap:12px; flex-wrap:wrap; min-height:0; border-bottom:1px solid var(--chat-line); cursor:default; }
+html.llm-chatroom-view .llm-chat-header .llm-chat-title { font-size:var(--bjtu-font-size-secondaryTitle,16px); font-weight:600; }
+html.llm-chatroom-view .llm-chat-header .llm-chat-new.secondary { background:var(--chat-soft); color:inherit; border:1px solid var(--chat-line); border-radius:8px; padding:7px 12px; margin-left:auto; font-weight:400; line-height:normal; }
+html.llm-chatroom-view .llm-chat-header input.llm-chat-title { field-sizing:content; width:auto; flex:0 1 auto; max-width:100%; min-width:1em; margin:0; padding:2px 3px; border:1px solid transparent; border-radius:4px; background:transparent; color:inherit; }
+html.llm-chatroom-view .llm-chat-header input.llm-chat-title:focus { border-color:var(--chat-accent); outline:none; }

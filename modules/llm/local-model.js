@@ -52,5 +52,10 @@
     })();
     return true;
   }
-  global.BjtuQwenLocalModel = {availability,prepare,handlePort,settingsUrl};
+  async function generateText(text){
+    if(await availability()!=='available')throw new Error('本地模型尚未就绪');
+    const session=await api().create();
+    try{return await session.prompt(text);}finally{session.destroy();}
+  }
+  global.BjtuQwenLocalModel = {availability,prepare,handlePort,settingsUrl,generateText};
 })(globalThis);

@@ -83,6 +83,7 @@
     extensionThemeMode = global.BjtuTheme?.normalizeMode(themeSettings?.themeMode) || 'system';
     const toggle = document.getElementById('qwenEnabled');
     chatroomAvailable=status.chatroomAvailable===true;
+    document.getElementById('llmProactiveEnabled').checked=status.proactiveEnabled!==false;
     applyEntryChoice(status.enabled!==false);
     if (toggle instanceof HTMLInputElement) toggle.checked = status.enabled !== false;
     applyEnabledState(status.enabled !== false);
@@ -217,6 +218,9 @@
         });
       });
     }
+    document.getElementById('llmProactiveEnabled')?.addEventListener('change',event=>{
+      void send('QWEN_SETTINGS_SET',{proactiveEnabled:event.target.checked}).then(response=>{if(response?.ok===false)setMessage(response.message,false);});
+    });
 
     document.getElementById('qwenFabColorMode')?.addEventListener('click', (event) => {
       const button = event.target.closest('[data-value]');
@@ -289,13 +293,14 @@
   }
 
   async function reset() {
-    await send('QWEN_SETTINGS_SET', { provider:'qwen', enabled: true, fabColorMode: 'extension', modelId: '', thinkingEnabled: false, maxIterations: 6, alwaysAllow: false, approvalNotificationMode: 'background', completionNotificationMode: 'background' });
+    const defaults=global.BjtuLlmDefaults.values;
+    await send('QWEN_SETTINGS_SET', { provider:'openai',apiPreset:defaults.llmApiPreset,apiBaseUrl:defaults.llmApiBaseUrl,apiKey:defaults.llmApiKey,apiModel:defaults.llmApiModel, proactiveEnabled:true,enabled:!chatroomAvailable, fabColorMode: 'extension', modelId: '', thinkingEnabled: false, maxIterations: 6, alwaysAllow: false, approvalNotificationMode: 'background', completionNotificationMode: 'background' });
     void refresh();
   }
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== 'local') return;
-    if (changes.qwenProvider) void refresh().catch(error => setMessage(error.message,false));
+    if (changes.qwenProvider || changes.llmProactiveEnabled) void refresh().catch(error => setMessage(error.message,false));
     if (changes.qwenEnabled) {
       const enabled = changes.qwenEnabled.newValue !== false;
       applyEntryChoice(enabled);

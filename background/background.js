@@ -376,6 +376,8 @@ tryImportModuleScripts('../core/background-homework-platforms.js');
 tryImportModuleScripts('../core/module-registry.js');
 tryImportModuleScripts('../modules/api/operations.js', '../modules/api/background.js');
 tryImportModuleScripts(
+  '../modules/llm/defaults.js',
+  '../modules/llm/proactive.js',
   '../modules/llm/model-info.js',
   '../modules/llm/qwen-tab-transport.js',
   '../modules/llm/qwen-client.js',

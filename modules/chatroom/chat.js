@@ -1522,7 +1522,11 @@
   }, { signal: uiAbort.signal });
   window.addEventListener('message',event=>{
     const frame=$('chatroom-llm-frame');
-    if(!frame || event.source!==frame.contentWindow || event.origin!==location.origin || event.data?.type!=='BJTU_LLM_EDIT_NAME')return;
+    if(!frame || event.source!==frame.contentWindow || event.origin!==location.origin)return;
+    if(event.data?.type==='BJTU_LLM_RENAME'){
+      void mutate('conversation-remark',{conversationId:'llm',remark:String(event.data.remark||'').trim().slice(0,80)}).then(()=>refreshState()).then(()=>updateConversation()).catch(report);return;
+    }
+    if(event.data?.type!=='BJTU_LLM_EDIT_NAME')return;
     if(event.data.role==='user')sidebar.editPerson(state.self.id);
     else sidebar.editAssistant();
   },{signal:uiAbort.signal});

@@ -9,6 +9,7 @@
   let serial = 0;
   let loginDialog = null;
   let loginPromise = null;
+  let currentAccount=null;
   const expanded = new Set();
   const parse = (html) => new DOMParser().parseFromString(html, 'text/html');
   const text = (node) => String(node?.textContent || '').replace(/\s+/g, ' ').trim();
@@ -207,6 +208,7 @@
       .map((link) => safeUrl(link.getAttribute('href')))
       .find((url) => /\/user\/(profile|view)\.php(?:\?|$)/.test(url));
     global.BjtuCitelParticipants?.setAccount(profile);
+    currentAccount={username:stored.citelUsername || stored.citelLoginUsername || '',name:text(home.doc.querySelector('.logininfo a[href*="/user/"]'))};
     const result = [];
     const ids = new Set();
     let offset = 0;
@@ -542,6 +544,7 @@
     load, render, login, openLogin,
     clear() { serial++; courses = []; expanded.clear(); if (!global.isPlatformEnabled?.('citel')) loginDialog?.close(); clearCards(); global.BjtuCitelParticipants?.clear(); env?.setProgress?.(0, 0); },
     getCourses: () => courses,
+    currentAccount:()=>currentAccount,
     async fetchBackgroundCourses(stored = {}) {
       const version = ++serial;
       // Offscreen documents only expose chrome.runtime; keep settings and writes

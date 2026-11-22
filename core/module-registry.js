@@ -89,7 +89,7 @@
       label: 'AI 助手（LLM）',
       dependencies: ['api'],
       styles: ['options.css', 'app.css', 'chat.css'],
-      files: ['background.js', 'model-info.js', 'composer.js', 'qwen-client.js', 'qwen-tab-transport.js', 'content-script.js', 'local-client.js', 'compatible-client.js', 'local-model.js', 'agent.js', 'SystemPrompt.md', 'icon.svg', 'app.html', 'app.js', 'chat.html', 'chat.css', 'chatroom.css', 'options.html', 'options.js'],
+      files: ['background.js', 'defaults.js', 'proactive.js', 'proactive-app.js', 'model-info.js', 'composer.js', 'qwen-client.js', 'qwen-tab-transport.js', 'content-script.js', 'local-client.js', 'compatible-client.js', 'local-model.js', 'agent.js', 'SystemPrompt.md', 'icon.svg', 'app.html', 'app.js', 'chat.html', 'chat.css', 'chatroom.css', 'options.html', 'options.js'],
       options: {
         fragment: 'options.html',
         style: 'options.css',
@@ -149,6 +149,10 @@
       if ([...withDependencies([id])].some((dependency) => !available[dependency])) available[id] = false;
     }
     global.__bjtuAvailableModules = available;
+    if(available.llm){
+      if(typeof document!=='undefined')await loadScript('modules/llm/defaults.js');
+      await global.BjtuLlmDefaults?.ensure();
+    }
     if (available.llm && available.chatroom) {
       const state = await chrome.storage.local.get('llmChatroomIntegrated');
       if (!state.llmChatroomIntegrated) await chrome.storage.local.set({qwenEnabled:false,llmChatroomIntegrated:true});
