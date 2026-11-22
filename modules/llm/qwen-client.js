@@ -291,6 +291,7 @@
   // requests must not replace it. Release the lock once response headers arrive,
   // not after the entire EventStream has finished.
   async function fetchCompletion(url, options) {
+    if(global.BjtuQwenTabTransport)return global.BjtuQwenTabTransport.fetch(url,options);
     return navigator.locks.request('bjtu-qwen-completion-headers', options.signal ? { signal: options.signal } : {}, async () => {
       const chatId = new URL(url).searchParams.get('chat_id');
       const regexFilter = `^${url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`;
@@ -408,7 +409,9 @@
   async function requestJsonDirect(url, options = {}) {
     await ensureDirectRequestHeaders();
     const token = await getStoredToken();
-    const response = await fetch(url, {
+    const requestFetch=url===`${CHAT_BASE}/api/v2/chats/new` && global.BjtuQwenTabTransport
+      ? global.BjtuQwenTabTransport.fetch : fetch;
+    const response = await requestFetch(url, {
       method: options.method || 'GET',
       headers: {
         Accept: 'application/json, text/plain, */*',
@@ -584,6 +587,7 @@
       });
     } catch (error) {
       if (error?.name === 'AbortError' || signal?.aborted) throw error;
+      if(String(error?.code || '').startsWith('QWEN_TAB_'))throw error;
       throw networkError(resumeId);
     }
     if (response.status === 401 || response.status === 403) throw notLoggedInError();
