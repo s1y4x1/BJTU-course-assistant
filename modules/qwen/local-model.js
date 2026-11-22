@@ -2,8 +2,11 @@
 (function(global) {
   'use strict';
   const requests = new WeakMap();
+  function settingsUrl() { return /Edg\//.test(global.navigator?.userAgent || '') ? 'edge://flags' : 'chrome://flags'; }
   function api() {
-    if (!global.LanguageModel?.create) throw new Error('当前浏览器未提供 Prompt API，请检查浏览器版本、Prompt API 开关及设备支持情况');
+    if (typeof global.LanguageModel?.create !== 'function') {
+      throw Object.assign(new Error(`当前扩展页面未启用 Prompt API。微软演示页可通过仅限该网站的来源试用启用，不代表扩展也已启用。请在 ${settingsUrl()} 中搜索「Prompt API」，设为 Enabled 并重启浏览器后重试。`),{code:'PROMPT_API_NOT_EXPOSED'});
+    }
     return global.LanguageModel;
   }
   async function availability() { return await api().availability(); }
@@ -11,7 +14,10 @@
     const model = api();
     if (await model.availability() === 'unavailable') throw new Error('浏览器本地模型不可用，请检查设备、浏览器设置及可用磁盘空间');
     const session = await model.create({monitor(monitor) {
-      monitor.addEventListener('downloadprogress', event => onProgress?.(Math.min(1, Math.max(0, Number(event.loaded) || 0))));
+      monitor.addEventListener('downloadprogress', event => {
+        const total = Number(event.total) || 1;
+        onProgress?.(Math.min(1, Math.max(0, (Number(event.loaded) || 0) / total)));
+      });
     }});
     session.destroy();
   }
@@ -46,5 +52,5 @@
     })();
     return true;
   }
-  global.BjtuQwenLocalModel = {availability,prepare,handlePort};
+  global.BjtuQwenLocalModel = {availability,prepare,handlePort,settingsUrl};
 })(globalThis);

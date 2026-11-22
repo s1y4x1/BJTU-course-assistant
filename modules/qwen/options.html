@@ -43,8 +43,9 @@
       </select>
     </div>
     <div id="qwenLocalModelOptions" hidden>
-      <div class="qwen-setting-row"><button type="button" id="qwenPrepareLocalModel" class="btn">准备本地模型</button><span id="qwenLocalModelStatus" role="status"></span></div>
+      <div class="qwen-setting-row"><button type="button" id="qwenPrepareLocalModel" class="btn">准备本地模型</button><button type="button" id="qwenLocalModelSettings" class="btn" title="在实验设置中搜索 Prompt API，设为 Enabled 并重启浏览器">打开 Prompt API 设置</button><span id="qwenLocalModelStatus" role="status"></span></div>
       <div class="tip">首次使用由浏览器下载模型，之后在本机生成回复，不登录或发送对话到 qwen.ai。需浏览器启用 Prompt API 且设备满足要求；中文和操作调用能力取决于浏览器模型。不支持独立思考开关。</div>
+      <div class="tip">Edge 官方演示页包含仅限微软网站的来源试用令牌；即使演示页能用，扩展来源仍可能需要在 edge://flags 中搜索「Prompt API」、启用并重启。扩展不能自动更改此浏览器设置。</div>
     </div>
     <div class="qwen-setting-row">
       <label class="qwen-setting-label" for="qwenModelSelect">模型</label>

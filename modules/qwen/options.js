@@ -133,6 +133,12 @@
     if (initialized) return;
     initialized = true;
     setMessage = typeof context?.setMessage === 'function' ? context.setMessage : setMessage;
+    document.getElementById('qwenLocalModelSettings')?.addEventListener('click', async () => {
+      try {
+        await loadLocalModel();
+        await chrome.tabs.create({url:global.BjtuQwenLocalModel.settingsUrl(),active:true});
+      } catch (error) {setMessage(String(error.message || error),false);}
+    });
     document.getElementById('qwenProvider')?.addEventListener('change', async event => {
       const result = await send('QWEN_SETTINGS_SET',{provider:event.target.value});
       if (result.ok === false) setMessage(result.message,false);
