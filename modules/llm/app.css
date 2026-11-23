@@ -336,6 +336,7 @@ html[data-color-scheme="dark"] .llm-chat-history-loading {
 }
 
 .llm-chat-suggestions {
+  margin-bottom: 12px;
   align-self: flex-start;
   display: flex;
   flex-wrap: wrap;

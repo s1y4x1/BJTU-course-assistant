@@ -37,6 +37,7 @@
     if(event.source!==global.parent || event.origin!==global.location.origin || event.data?.type!=='BJTU_LLM_VISIBILITY')return;
     chatroomVisible=event.data.visible===true;
     chatroomNames={user:String(event.data.selfName || '我'),assistant:String(event.data.assistantName || 'AI 助手')};
+    global.BjtuLlmComposer.setSelfName(chatroomNames.user);
     const title=document.querySelector('.llm-chat-title');
     if(title instanceof HTMLInputElement){if(document.activeElement!==title){title.value=chatroomNames.assistant;title.dataset.savedValue=title.value;}}
     else if(title && title.textContent!==chatroomNames.assistant)title.textContent=chatroomNames.assistant;

@@ -1,6 +1,6 @@
 (function(global){
   'use strict';
-  let files=[],info={},revision=0,preview=null,parser=null;
+  let files=[],info={},revision=0,preview=null,parser=null,selfName='我',draftStartedAt=0;
   const node=id=>document.getElementById(`llm-chat-${id}`);
   function update(){
     const text=node('input')?.value || '',bytes=new TextEncoder().encode(text).length+files.reduce((n,f)=>n+f.size,0);
@@ -10,7 +10,19 @@
     const list=node('attachments');
     if(list){list.replaceChildren();files.forEach((file,i)=>{const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent=`${file.name} ×`;button.addEventListener('click',()=>{files.splice(i,1);update();});list.append(button);});}
     if(preview)preview.remove();preview=null;
-    if(node('preview')?.checked&&text){preview=document.createElement('article');preview.className='message mine llm-chat-draft';const body=document.createElement('div');body.className='message-text bjtu-markdown';parser ||= global.BjtuMarkdown.createChatParser();body.innerHTML=parser.parse(text);preview.append(body);node('messages').append(preview);}
+    if(!text)draftStartedAt=0;
+    if(node('preview')?.checked&&text){
+      draftStartedAt ||= Date.now();
+      preview=document.createElement('article');preview.className='message mine message-draft llm-chat-draft';preview.dataset.draft='true';
+      const label=document.createElement('div');label.className='message-draft-label';label.textContent='预览 · 未发送';
+      const header=document.createElement('div');header.className='muted message-author';
+      const name=document.createElement('strong');name.className='message-author-name';name.dataset.llmAuthor='user';name.textContent=selfName;name.tabIndex=0;name.setAttribute('role','button');name.title='修改昵称';
+      const edit=()=>global.parent.postMessage({type:'BJTU_LLM_EDIT_NAME',role:'user'},global.location.origin);
+      name.addEventListener('click',edit);name.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();edit();}});
+      const time=document.createElement('span');global.BjtuDateTime.set(time,draftStartedAt);header.append(name,document.createTextNode(' · '),time);
+      const body=document.createElement('div');body.className='message-text bjtu-markdown';parser ||= global.BjtuMarkdown.createChatParser();body.innerHTML=parser.parse(text);
+      preview.append(label,header,body);node('messages').append(preview);
+    }
   }
   async function refresh(){
     const version=++revision,button=node('pick-file');if(!button)return;
@@ -48,5 +60,5 @@
     });
     void refresh();update();
   }
-  global.BjtuLlmComposer={mount,refresh,update,files:()=>files.slice(),clear:()=>{files=[];update();}};
+  global.BjtuLlmComposer={mount,refresh,update,setSelfName:value=>{selfName=String(value||'我');},files:()=>files.slice(),clear:()=>{files=[];update();}};
 })(globalThis);
