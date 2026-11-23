@@ -32,6 +32,7 @@ export function createChatroomTerminal(output=process.stdout){
       const details=[];
       if(peer.accounts?.ve)details.push(`智慧课程平台${peer.accounts.veRecent?'（最近登录）':''}：${clean(peer.accounts.ve)}`);
       if(peer.accounts?.mis)details.push(`MIS：${clean(peer.accounts.mis)}`);
+      if(!peer.accounts?.ve&&!peer.accounts?.mis)details.push('账号信息尚未发布（旧版扩展需重新加载）');
       const device=[peer.device?.os,peer.device?.browser].filter(Boolean).map(clean).join(' · ');
       if(device)details.push(`设备：${device}`);
       if(peer.extensionVersion)details.push(`扩展版本：${clean(peer.extensionVersion)}`);

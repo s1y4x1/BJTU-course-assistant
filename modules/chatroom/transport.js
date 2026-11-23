@@ -81,8 +81,6 @@
     const device = { os: clean(source.os, 40), browser: clean(source.browser, 40), platform: clean(source.platform, 40) };
     return device.os || device.browser || device.platform ? device : null;
   }
-  const accountKeys = ['popupFullscreenCourseCache', 'username', 'casLoginName', 'academicSystemStudentId',
-    'loginAccountHistory'];
   const profileVersion = value => typeof value === 'string' ? value.trim().slice(0, 32) : '';
   async function readLocalVersion() {
     const runtime = G.chrome?.runtime;
@@ -103,23 +101,22 @@
   }
   async function readLocalAccounts() {
     const store = G.browser?.storage?.local || G.chrome?.storage?.local;
-    if (!store) return null;
-    try {
-      const stored = await store.get(accountKeys);
-      const cache = stored?.popupFullscreenCourseCache || {};
-      const clean = (value, max) => typeof value === 'string' ? value.trim().slice(0, max) : '';
-      const accounts = {
-        ve: clean(stored.username, 80) || clean(cache.currentAccountLoginName, 80),
-        mis: clean(stored.casLoginName, 80) || clean(stored.academicSystemStudentId, 80)
-      };
-      if (!accounts.ve && Array.isArray(stored.loginAccountHistory)) {
-        const latest = stored.loginAccountHistory.reduce((best, entry) =>
-          Number(entry?.lastLoginAt) > Number(best?.lastLoginAt || 0) ? entry : best, null);
-        accounts.ve = clean(latest?.loginName, 80) || clean(latest?.userId, 80);
-        if (accounts.ve) accounts.veRecent = true;
-      }
-      return accounts.ve || accounts.mis ? accounts : null;
-    } catch { return null; }
+    if (!store) throw new Error('账号存储尚未就绪');
+    const stored = await store.get(['username','casLoginName','academicSystemStudentId']);
+    const clean = (value, max) => typeof value === 'string' ? value.trim().slice(0, max) : '';
+    const accounts = {
+      ve: clean(stored.username, 80),
+      mis: clean(stored.casLoginName, 80) || clean(stored.academicSystemStudentId, 80)
+    };
+    if(!accounts.ve){const cached=await store.get(['popupFullscreenCourseCache']);accounts.ve=clean(cached.popupFullscreenCourseCache?.currentAccountLoginName,80);}
+    if (!accounts.ve) {
+      const history=await store.get(['loginAccountHistory']);
+      const latest = (Array.isArray(history.loginAccountHistory)?history.loginAccountHistory:[]).reduce((best, entry) =>
+        Number(entry?.lastLoginAt) > Number(best?.lastLoginAt || 0) ? entry : best, null);
+      accounts.ve = clean(latest?.loginName, 80) || clean(latest?.userId, 80);
+      if (accounts.ve) accounts.veRecent = true;
+    }
+    return accounts.ve || accounts.mis ? accounts : null;
   }
   function publicAccounts(value) {
     const source = value?.accounts;
@@ -620,7 +617,7 @@
     if (data.settings.nickname === '设备-' + fingerprint.slice(0, 6)) data.settings.nickname = '';
     publicIdentity = { id: fingerprint, fingerprint, nickname: data.settings.nickname, publicKey: data.identity.publicKey,
       version: await readLocalVersion(),
-      background: G.BjtuChatroomBackgroundMode?.enabled === true, device: detectDevice(), accounts: await readLocalAccounts() };
+      background: G.BjtuChatroomBackgroundMode?.enabled === true, device: detectDevice(), accounts: await readLocalAccounts().catch(()=>null) };
     removeStoredPresenceMessages();
     await importIdentity(publicIdentity);
     const proof = encoder.encode('bjtu-chatroom-identity-check');

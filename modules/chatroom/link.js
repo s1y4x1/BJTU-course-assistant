@@ -40,7 +40,7 @@
   function makeSession(id = crypto.randomUUID()) {
     if (sessions.size >= MAX_LINKS) throw new Error('直连数量已达上限，请先断开部分连接。');
     if (typeof RTCPeerConnection !== 'function') throw new Error('当前浏览器不支持 WebRTC。');
-    const s = { id, pc: new RTCPeerConnection({ iceServers: [] }), closed: false, chain: Promise.resolve(), count: 0 };
+    const s = { id, pc: new RTCPeerConnection({ iceServers: [] }), closed: false, chain: Promise.resolve(), count: 0, createdAt:Date.now() };
     sessions.set(id, s); s.timer = setTimeout(() => drop(s), TTL);
     s.pc.onconnectionstatechange = () => {
       const status = s.pc.connectionState;
@@ -143,7 +143,8 @@
     s.expectedIdentity = value.identity;
     try { await s.pc.setRemoteDescription({ type: 'answer', sdp: value.sdp }); return { sessionId: s.id }; } catch (e) { drop(s); throw e; }
   }
-  async function publicInfo() {
+  async function publicInfo(refresh=false) {
+    if(refresh)try{await engine().refreshAccounts?.();}catch{}
     const info = await identity();
     return { alias: info.nickname || localIP || '默认IP', identityId: info.id, version: '1', deviceModel: VERSION, deviceType: 'WEB', device: info.device || null, accounts:info.accounts || null, extensionVersion:info.version || '', token: crypto.randomUUID() };
   }
@@ -159,14 +160,14 @@
       if (typeof message.client?.ip === 'string') {
         localIP = message.client.ip;
         await engine().setLocalIP?.(localIP);
-        signalSend({type:'UPDATE', info:await publicInfo()});
+        signalSend({type:'UPDATE', info:await publicInfo(true)});
       }
       for (const p of (message.peers || []).slice(0, 500)) remember(p);
       emit('scanning', { deviceId: socketId });
     }
     else if (message.type === 'CONNECT') { remember(message.peer); await connect(message.peer?.id); }
     else if (message.type === 'JOIN' || message.type === 'UPDATE') remember(message.peer);
-    else if (message.type === 'LEFT') { discovered.delete(message.peerId); emit('discovery', { peers: [...discovered.values()], deviceId: socketId }); }
+    else if (message.type === 'LEFT') { discovered.delete(message.peerId); for(const s of [...sessions.values()])if(s.target===message.peerId&&!s.authenticated)drop(s);emit('discovery', { peers: [...discovered.values()], deviceId: socketId }); }
     else if (message.type === 'OFFER' && message.peer?.deviceModel === VERSION) {
       if (typeof message.sessionId !== 'string' || message.sessionId.length > 80 || sessions.has(message.sessionId)) return;
       if (message.peer.identityId && isConnected(message.peer.identityId)) return;
@@ -206,7 +207,7 @@
         emit('scan-closed');
       }
       emit('scan-start');
-      const info = await publicInfo();
+      const info = await publicInfo(true);
       if (epoch !== generation) throw new Error('发现已取消。');
       const attach = target => {
         target.searchParams.set('d', b64(new TextEncoder().encode(JSON.stringify(info))));
@@ -247,12 +248,19 @@
       if (epoch !== generation || socket !== ws || ws.readyState !== 1) { ws.close(); throw new Error('发现已取消。'); }
       configuredAddress = url.href;
       ping = setInterval(() => { if (ws.readyState === 1) ws.send(''); }, 120000);
-      let profileSignature='',lastProfileAt=0,updatingProfile=false;
+      let profileSignature='',lastProfileAt=0,lastAccountReadAt=0,lastDiscoverAt=Date.now(),updatingProfile=false;
       rotate = setInterval(async()=>{
         if(updatingProfile||ws!==socket||ws.readyState!==1)return;
         updatingProfile=true;
         try{
-          const next=await publicInfo(),{token:_token,...profile}=next,signature=JSON.stringify(profile);
+          const now=Date.now(),refresh=now-lastAccountReadAt>=10000;
+          const next=await publicInfo(refresh),{token:_token,...profile}=next,signature=JSON.stringify(profile);
+          if(refresh)lastAccountReadAt=now;
+          for(const s of [...sessions.values()])if(s.target&&!s.authenticated&&now-s.createdAt>=45000)drop(s);
+          const missing=[...discovered.values()].some(peer=>peer.identityId!==next.identityId&&(!peer.identityId||!isConnected(peer.identityId)));
+          if(ws===socket&&ws.readyState===1&&missing&&sessions.size<MAX_LINKS&&now-lastDiscoverAt>=10000){
+            ws.send(JSON.stringify({type:'DISCOVER'}));lastDiscoverAt=now;
+          }
           if(ws===socket&&ws.readyState===1&&(signature!==profileSignature||Date.now()-lastProfileAt>=30*60*1000)){
             ws.send(JSON.stringify({type:'UPDATE',info:next}));profileSignature=signature;lastProfileAt=Date.now();
           }
