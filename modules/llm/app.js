@@ -25,6 +25,7 @@
   const CHATROOM_VIEW = new URLSearchParams(global.location?.search || '').get('view') === 'chatroom';
   let chatroomVisible = !CHATROOM_VIEW;
   let chatroomNames={user:'我',assistant:'AI 助手'};
+  let composerHiddenContext=[];
   if(CHATROOM_VIEW){
     document.documentElement.classList.add('llm-chatroom-view');
     const applyChatroomStyle=()=>{
@@ -667,6 +668,7 @@
     if (!(messagesEl instanceof HTMLElement)) return;
     messagesEl.replaceChildren();
     const list = Array.isArray(messages) ? messages : [];
+    composerHiddenContext=list.filter(message=>!message.proactive && (message.role==='system' || String(message.content || '').includes('你是「BJTU 课程助手」的智能代理'))).map(message=>String(message.content));
     let lastAssistantResponseId = '';
     let suggestionCandidate = null;
     let lastExecutionBlocks = null;
@@ -719,6 +721,7 @@
     collapseRenderedOperationTurns(messagesEl);
     sessionParentId = lastAssistantResponseId;
     scrollMessagesToBottom(messagesEl, { force: true });
+    if(CHATROOM_VIEW)global.BjtuLlmComposer.scheduleContextUpdate();
   }
 
   // 历史记录渲染完成后滚动到最后一条消息（Markdown 可能异步渲染，多拍几次确保到位）
@@ -764,6 +767,7 @@
 
   function maybeAutoScrollMessages(container) {
     scrollMessagesToBottom(container, { settle: false });
+    if(CHATROOM_VIEW)global.BjtuLlmComposer.scheduleContextUpdate();
   }
 
   const HISTORY_LOADING_ID = 'llm-chat-history-loading';
@@ -2186,6 +2190,7 @@
     void send('QWEN_BUILD_SYSTEM_PROMPT').then((response) => {
       const text = String(response?.text || '').trim();
       if (!text) throw new Error('系统提示词为空');
+      composerHiddenContext=[text];
       startStream({ text, showUserBubble: false });
     }).catch((error) => {
       openingStarted = false;
@@ -2299,7 +2304,15 @@
 
   async function init() {
     await global.BjtuMarkdown.ready;
-    if(CHATROOM_VIEW)await global.BjtuLlmComposer.mount();
+    if(CHATROOM_VIEW){
+      await global.BjtuLlmComposer.mount();
+      global.BjtuLlmComposer.setContextReader(()=>[
+        ...composerHiddenContext,
+        ...Array.from(el(MESSAGES_ID)?.querySelectorAll('.llm-chat-md, .llm-chat-op') || [])
+          .filter(node=>!node.closest('[data-proactive-id], [data-draft], .llm-chat-msg.error, .llm-chat-thinking') && (node.matches('.llm-chat-op') || !node.closest('.llm-chat-op')))
+          .map(node=>node._mdText ?? node.textContent ?? '')
+      ]);
+    }
     if(CHATROOM_VIEW){
       const header=document.querySelector('.llm-chat-header');header?.classList.add('conversation-header');
       el(STATUS_ID)?.remove();
@@ -2719,6 +2732,7 @@
           hideAsk();
           const messages = el(MESSAGES_ID);
           if (messages instanceof HTMLElement) messages.replaceChildren();
+          composerHiddenContext=[];
           sendOpening();
         };
         const deleteCurrent = global.confirm(CHATROOM_VIEW?'清空当前 AI 会话的全部记录？':'是否删除当前会话？');
