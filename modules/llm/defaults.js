@@ -5,7 +5,7 @@
     llmApiPreset:'agnes',
     llmApiBaseUrl:'https://apihub.agnes-ai.com/v1',
     llmApiModel:'agnes-3.0-flash',
-    llmApiKey:'sk-tsbVn7M0TQ7qcvMb3FgQlKdXE6TqhxyuJh5MEqZJuWunlb1W',
+    llmApiKey:'sk-mGhEkoGrulPEPWxOcbpXPdSKMJLkuNpAkF770nbBU6CjE8t7',
     llmProactiveEnabled:true
   });
   let pending;

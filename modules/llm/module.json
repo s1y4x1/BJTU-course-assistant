@@ -1,1 +1,1 @@
-{"id":"llm","name":"AI 助手（LLM）","dependencies":["api"]}
+{"id":"llm","name":"AI 助手","dependencies":["api"]}

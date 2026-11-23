@@ -27,9 +27,9 @@
 
 不同平台和账号支持的功能不同，具体以扩展界面为准。部分系统需要校园网或 VPN。
 
-### AI 助手（LLM）
+### AI 助手
 
-在扩展选项的「AI 助手（LLM）」中选择模型来源：qwen.ai、浏览器 Prompt API，或 OpenAI-compatible API。
+在扩展选项的「AI 助手」中选择模型来源：qwen.ai、浏览器 Prompt API，或 OpenAI-compatible API。
 
 - Ollama：先启动本机 Ollama 并下载模型，选择预设（`http://127.0.0.1:11434/v1`），API Key 可留空，刷新并选择已安装模型。
 - Agnes AI：选择预设，填写在 Agnes 平台申请的 API Key，默认选择 `agnes-3.0-flash`（若模型列表包含它）。限流或额度不足时会显示服务返回的具体原因。
