@@ -14,6 +14,10 @@
     resource: '#1e3a8a', replay: '#9c27b0', assessment: '#0f766e', archive: '#0369a1',
     copy: '#45a049', download: '#1e3a8a', teacherPendingCard: '#dbeafe', teacherOverdueCard: '#ede9fe'
   });
+  if(typeof document==='undefined'){
+    global.BjtuColors=Object.freeze({storageKey,defaults,normalize});
+    return;
+  }
   const labels = {
     background: '背景',
     card: '卡片',

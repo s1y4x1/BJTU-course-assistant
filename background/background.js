@@ -350,6 +350,7 @@ const veBackgroundReady = tryImportModuleScripts(
 tryImportModuleScripts('../core/captcha-assets.js');
 tryImportModuleScripts('../core/page-toast.js');
 tryImportModuleScripts('../core/homework-reminders.js');
+tryImportModuleScripts('../UI/theme.js','../UI/colors.js');
 tryImportModuleScripts('../modules/captcha/mis-assets.js');
 tryImportModuleScripts('../modules/captcha/recognizer.js');
 if (veBackgroundReady) tryImportModuleScripts('../modules/ve/login-service.js');

@@ -37,7 +37,7 @@
   const BACKGROUND_DEFAULTS = Object.freeze({ light: '#f9f9f9', dark: '#0f172a' });
   const CARD_DEFAULTS = Object.freeze({ light: '#ffffff', dark: '#000000' });
   let backgroundColors = {};
-  const media = window.matchMedia?.('(prefers-color-scheme: dark)');
+  const media = globalThis.matchMedia?.('(prefers-color-scheme: dark)');
   const ANIMATION_STORAGE_KEY = 'animationMode';
   const ANIMATION_SPEED_STORAGE_KEY = 'animationSpeed';
   const FONT_SIZE_STORAGE_KEY = 'fontSizeSettings';
@@ -49,6 +49,11 @@
     body: 13,
     auxiliary: 11
   });
+  if(typeof document==='undefined'){
+    globalThis.BjtuTheme=Object.freeze({backgroundDefaults:BACKGROUND_DEFAULTS,cardDefaults:CARD_DEFAULTS,normalizeMode});
+    globalThis.BjtuTypography=Object.freeze({storageKey:FONT_SIZE_STORAGE_KEY,defaults:FONT_SIZE_DEFAULTS,normalizeSettings:normalizeFontSizeSettings});
+    return;
+  }
   const DEFAULT_ANIMATION_MODE = 'system';
   const DEFAULT_ANIMATION_SPEED = 1;
   const reducedMotionMedia = window.matchMedia?.('(prefers-reduced-motion: reduce)');

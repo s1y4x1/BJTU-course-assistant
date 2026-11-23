@@ -831,6 +831,21 @@
     return {operation,doc};
   }
 
+  async function appearanceSettings(kind,args={}){
+    const fonts=kind==='fontSizes',component=requireGlobal(fonts?'BjtuTypography':'BjtuColors');
+    const key=fonts?'fontSizeSettings':'colorSettings',defaults=component.defaults;
+    const stored=await chrome.storage.local.get(key);
+    const current=fonts?component.normalizeSettings(stored[key]):{...defaults,...component.normalize(stored[key])};
+    for(const [name,value]of Object.entries(args)){
+      if(!Object.hasOwn(defaults,name))throw new Error('未知外观分类：'+name+'；可选：'+Object.keys(defaults).join(', '));
+      if(value===null){current[name]=defaults[name];continue;}
+      if(fonts){if(typeof value!=='number'||!Number.isFinite(value)||value<=0)throw new Error(name+' 字号必须是大于 0 的有限数字');current[name]=value;}
+      else{if(typeof value!=='string'||!/^#[0-9a-f]{6}$/i.test(value))throw new Error(name+' 颜色必须为 #RRGGBB');current[name]=value.toLowerCase();}
+    }
+    if(Object.keys(args).length)await chrome.storage.local.set({[key]:current});
+    return current;
+  }
+
   const OPERATIONS = [
     {
       module: 've',
@@ -2839,18 +2854,25 @@ name: 've.teachers_of_',
       }
     },
     {
-      module: 'theme',
-      name: 'theme.get',
-      summary: '获取扩展当前外观颜色模式（light/dark/system）',
+      module: 'appearance',
+      name: 'appearance.theme',
+      summary: '获取或设置扩展主题模式（light/dark/system）',
       doc: {
-        title: '获取外观颜色模式',
+        title: '获取或设置主题模式',
         blocks: [
-          '获取扩展当前的外观颜色模式。未设置时为 system（跟随系统）。',
-          ['example', '`theme.get()`'],
+          '无参数时获取当前主题模式，默认 system；传入 mode 时设置，所有扩展页面立即应用。',
+          ['parameters', '`{"mode":"可选，light / dark / system"}`'],
+          ['example', '`appearance.theme()`；`appearance.theme({"mode":"dark"})`'],
           ['returnExample', '`{"mode":"system"}`']
         ]
       },
-      async run() {
+      async run(args) {
+        if(args?.mode!==undefined){
+          const key=String(args.mode).trim(),aliases={light:'light',亮色:'light',浅色:'light',dark:'dark',暗色:'dark',深色:'dark',system:'system',系统:'system',auto:'system',跟随系统:'system'};
+          const mode=aliases[key]||aliases[key.toLowerCase()];
+          if(!mode)throw new Error('mode 仅支持 light / dark / system');
+          await chrome.storage.local.set({themeMode:mode});return {mode};
+        }
         const stored = await chrome.storage.local.get(['themeMode']).catch(() => ({}));
         const mode = ['light', 'dark'].includes(String(stored?.themeMode))
           ? String(stored.themeMode)
@@ -2859,30 +2881,26 @@ name: 've.teachers_of_',
       }
     },
     {
-      module: 'theme',
-      name: 'theme.set',
-      summary: '设置扩展外观颜色模式，所有扩展页面立即应用',
+      module: 'appearance',
+      name: 'appearance.fontSizes',
+      summary: '获取或按分类设置字号',
       doc: {
-        title: '设置外观颜色模式',
+        title: '获取或设置字号',
         blocks: [
-          '设置扩展的外观颜色模式，所有扩展页面会立即应用。',
-          ['parameters', '`{"mode":"必填，light（亮色）/ dark（暗色）/ system（跟随系统）"}`'],
-          ['example', '`theme.set({"mode": "dark"})`；`theme.set({"mode": "system"})`'],
-          ['returnExample', '`{"mode":"dark"}`']
+          '无参数获取所有分类（包含默认值）；传入部分字段只修改对应分类，所有页面实时应用。值为大于 0 的数字（px），null 重置该项。',
+          ['parameters', '`zeroTitle` 〇级标题、`icon` 图标、`primaryTitle` 一级标题、`secondaryTitle` 二级标题、`body` 正文、`auxiliary` 辅助文字，均可选。'],
+          ['example', '`appearance.fontSizes()`；`appearance.fontSizes({"body":14,"primaryTitle":22})`；`appearance.fontSizes({"body":null})`']
         ]
       },
-      async run(args) {
-        const key = String(args?.mode ?? '').trim();
-        const aliases = {
-          light: 'light', 亮色: 'light', 浅色: 'light',
-          dark: 'dark', 暗色: 'dark', 深色: 'dark',
-          system: 'system', 系统: 'system', auto: 'system', 跟随系统: 'system'
-        };
-        const mode = aliases[key] || aliases[key.toLowerCase()];
-        if (!mode) throw new Error('mode 仅支持 light / dark / system');
-        await chrome.storage.local.set({ themeMode: mode });
-        return { mode };
-      }
+      run:args=>appearanceSettings('fontSizes',args)
+    },
+    {
+      module:'appearance',name:'appearance.colors',summary:'获取或按组件设置颜色',
+      doc:{title:'获取或设置组件颜色',blocks:[
+        '无参数获取全部有效颜色（包含默认值）。传入部分字段只修改对应组件；颜色为 #RRGGBB，null 重置该项。所有页面实时应用。',
+        ['parameters','可选键：`backgroundLight`、`backgroundDark`、`cardLight`、`cardDark`、`button`、`courseCard`、`fileCard`、`platformVe`、`platformYkt`、`platformMrjzy`、`platformJlgj`、`platformMooc`、`platformXuetangx`、`platformCitel`、`pendingCard`、`overdueCard`、`doneCard`、`resource`、`replay`、`assessment`、`archive`、`copy`、`download`、`teacherPendingCard`、`teacherOverdueCard`。'],
+        ['example','`appearance.colors()`；`appearance.colors({"backgroundDark":"#111827","button":"#1976d2"})`；`appearance.colors({"button":null})`']
+      ]},run:args=>appearanceSettings('colors',args)
     },
     {
       module: 'reminder',
@@ -3063,7 +3081,7 @@ name: 've.teachers_of_',
     { id: 'citel', label: 'CITEL', operations: OPERATIONS.filter((op) => op.module === 'citel') },
     { id: 'campusnet', label: '校园网重连', operations: OPERATIONS.filter((op) => op.module === 'campusnet') },
     { id: 'captcha', label: '本地验证码识别', operations: OPERATIONS.filter((op) => op.module === 'captcha') },
-    { id: 'theme', label: '外观', operations: OPERATIONS.filter((op) => op.module === 'theme') },
+    { id: 'appearance', label: '外观', operations: OPERATIONS.filter((op) => op.module === 'appearance') },
     { id: 'reminder', label: '作业截止提醒', operations: OPERATIONS.filter((op) => op.module === 'reminder') },
     { id: 'api', label: '扩展接口', operations: OPERATIONS.filter((op) => op.module === 'api') }
   ];
@@ -3141,13 +3159,13 @@ name: 've.teachers_of_',
 
   // 非模块区块与操作分组的对应关系：「外观」即外观颜色模式，「作业截止提醒」即提醒设置。
   const SECTION_GROUP_IDS = {
-    appearance: 'theme',
+    appearance: 'appearance',
     reminders: 'reminder'
   };
 
   // 分组顺序遵循选项页「排序」编辑器（ui-order-groups）：
   // 先按「扩展选项模块」的区块顺序，遇到「平台显示与加载」（platforms）时按「平台」顺序展开其中的课程平台分组，
-  // 「外观」（appearance）、「作业截止提醒」（reminders）分别对应 theme、reminder 分组，
+  // 「外观」（appearance）、「作业截止提醒」（reminders）分别对应 appearance、reminder 分组，
   // 其余（未出现在两块中的）分组按默认顺序追加到末尾。
   async function orderedGroups() {
     const stored = await chrome.storage.local.get(['optionsSectionOrder', 'platformOrder']).catch(() => ({}));
