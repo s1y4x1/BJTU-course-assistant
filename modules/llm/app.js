@@ -198,11 +198,9 @@
       const language = languageInfo.split(/\s+/)[0];
       if (language.toLowerCase() === 'suggestions') return '';
       const resultMode = /^res: (sandbox|app|background)$/.exec(languageInfo)?.[1] || '';
-      if (resultMode) {
-        const jsonText = String(text || '').trim();
-        return `<div class="llm-chat-op llm-inline-res"><div class="llm-chat-op-name">操作结果（${escapeHtmlQwen(resultMode)}）</div><div class="llm-chat-op-result">${escapeHtmlQwen(jsonText)}</div></div>`;
-      }
-      return global.BjtuMarkdown.renderCodeBlock(text, language);
+      // Quoted/generated res fences are Markdown, not authenticated operation
+      // events. Actual results are rendered separately by appendResCard/events.
+      return global.BjtuMarkdown.renderCodeBlock(text, resultMode ? 'json' : language);
     };
     renderer.blockquote = function renderBlockquote({ tokens }) {
       return `<blockquote class="llm-md-blockquote">${this.parser.parse(tokens || [])}</blockquote>`;
