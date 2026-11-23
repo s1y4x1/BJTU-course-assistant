@@ -105,6 +105,8 @@
       appendAccounts(container, {ve, mis});
       if (previousVe) container.append(node('p', `智慧课程平台（最近登录）：${previousVe}`, 'editor-info'));
       if (!container.childElementCount) container.textContent = '未找到本机账号记录';
+      const device=deviceText(state.self.device);
+      if(device)container.append(node('p',`设备：${device}`,'editor-info'));
       const version = global.chrome.runtime.getManifest?.()?.version;
       if (version) container.append(node('p', `扩展版本：${version}`, 'editor-info'));
     }
@@ -112,11 +114,13 @@
       const id = container.dataset.peerId;
       const peer = state.peers.find(peer => peer.id === id);
       const info = peer?.accounts;
-      const signature = JSON.stringify([info, peer?.version]);
+      const signature = JSON.stringify([info, peer?.device, peer?.version]);
       if (container.dataset.accounts === signature) return;
       container.dataset.accounts = signature;
       container.replaceChildren();
       if (!appendAccounts(container, info)) container.textContent = '未收到对方的账号信息';
+      const device=deviceText(peer?.device);
+      if(device)container.append(node('p',`设备：${device}`,'editor-info'));
       if (peer?.version) container.append(node('p', `扩展版本：${peer.version}`, 'editor-info'));
     }
     async function action(name, args = {}) {
@@ -371,8 +375,6 @@
   function editSelf() {
     openEditor('个人信息', fields => {
       if (state.self.ip) fields.append(node('p', state.self.ip, 'editor-ip'));
-      const device = deviceText(state.self.device);
-      if (device) fields.append(node('p', `设备：${device}`, 'editor-info'));
       const accounts = node('div', undefined, 'editor-accounts');
       accounts.textContent = '正在读取本机账号…';
       fields.append(accounts);
@@ -397,8 +399,6 @@
     openEditor(peer.remark || peer.nickname || peer.ip || peer.id, fields => {
       const meta = node('div', undefined, 'editor-personal');
       if (peer.ip) meta.append(node('p', peer.ip, 'editor-ip'));
-      const device = deviceText(peer.device);
-      if (device) meta.append(node('p', `设备：${device}`, 'editor-info'));
       if (meta.childElementCount) fields.append(meta);
       const accounts = node('div', undefined, 'editor-accounts');
       accounts.dataset.peerId = peer.id;
