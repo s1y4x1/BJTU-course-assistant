@@ -615,14 +615,21 @@ async function saveHomeworkReminderSnapshotNow() {
   const reminders = window.BjtuHomeworkReminders;
   return reminders.update(async ({ snapshot }) => {
     // Read the latest DOM only after acquiring the lock, not before waiting for it.
-    const now = Date.now();
     const account = String(window.currentAccountLoginName || '').trim();
     const currentItems = collectHomeworkReminderSnapshot();
     for (const [platform, label] of Object.entries(reminders.labels)) {
       const loaded = window.platformLoadedOnce?.[platform] === true;
       if (window.platformLoginState?.[platform] !== 'online' || !loaded) continue;
-      if (platform === 've' && (!account || !await window.BjtuAccountStore.get(account))) continue;
-      reminders.replaceSnapshot(snapshot, platform, account, currentItems.filter((item) => item.platform === label), now);
+      if (platform === 've') {
+        const source=window.veCacheCourseSource;
+        if(!fullscreenCourseCacheComplete.has('ve') || !source || source.account!==account
+            || source.version!==window.courseListLoadVersion)continue;
+        if(!account || !await window.BjtuAccountStore.get(account))continue;
+        if(source!==window.veCacheCourseSource || source.version!==window.courseListLoadVersion
+            || account!==String(window.currentAccountLoginName||'').trim()
+            || !fullscreenCourseCacheComplete.has('ve'))continue;
+      }
+      reminders.replaceSnapshot(snapshot, platform, account, currentItems.filter((item) => item.platform === label), Date.now());
     }
     return snapshot;
   });
@@ -643,6 +650,7 @@ async function notifyForegroundNewHomework() {
   }
   for (const [platform, label] of Object.entries(window.BjtuHomeworkReminders.labels)) {
     if (!isPlatformEnabled(platform) || !getEnabledPlatformLoginResult(platform).ready) continue;
+    if(platform==='ve'&&!fullscreenCourseCacheComplete.has('ve'))continue;
     if (platform === 've' && !account) continue;
     await chrome.runtime.sendMessage({ type: 'HOMEWORK_FOREGROUND_DISCOVERED',
       payload: { platform, account: platform === 've' ? account : '', assignments: items.filter((item) => item.platform === label) } });

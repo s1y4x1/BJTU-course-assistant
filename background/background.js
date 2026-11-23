@@ -1101,6 +1101,9 @@ async function checkHomeworkDeadlineReminders() {
     }
     for (const { platform, account, entry } of reminders.snapshots(state.snapshot)) {
       if (platform === 've' && onlySelectedAccount && account !== selectedAccount) continue;
+      // A successful login selects the account before its courses and homework
+      // finish refreshing. Never notify from that account's pre-login snapshot.
+      if(!reminders.isSnapshotCurrent(platform,account,entry,data.loginAccountHistory))continue;
       const items = (Array.isArray(entry.items) ? entry.items : []).filter((item) => Number(item.deadline) > now);
       entry.items = items;
       const notified = reminders.scope(state.notified, platform, account, true);

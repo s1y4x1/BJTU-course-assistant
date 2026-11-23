@@ -80,6 +80,14 @@
     });
   }
 
+  function isSnapshotCurrent(platform, account, entry, history) {
+    if(platform!=='ve')return true;
+    const lastLoginAt=Math.max(0,...(Array.isArray(history)?history:[])
+      .filter(record=>String(record?.loginName || record?.userId || '').trim()===String(account||'').trim())
+      .map(record=>Number(record.lastLoginAt)||0));
+    return Number(entry?.updatedAt||0)>=lastLoginAt;
+  }
+
   function notificationId(kind, platform, account, key) {
     let hash = 2166136261;
     for (const character of String(key)) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
@@ -107,5 +115,5 @@
         : entities[entity.toLowerCase()]).trim();
   }
 
-  global.BjtuHomeworkReminders = { labels, keys, scope, snapshots, replaceSnapshot, update, notificationId, notificationTarget, plainText, selectedVeAccount };
+  global.BjtuHomeworkReminders = { labels, keys, scope, snapshots, replaceSnapshot, update, isSnapshotCurrent, notificationId, notificationTarget, plainText, selectedVeAccount };
 })(globalThis);
