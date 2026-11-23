@@ -19,6 +19,7 @@ html.llm-chatroom-view .llm-chat-msg .message-text { margin-top:5px; line-height
 html.llm-chatroom-view .llm-chat-input-row { background:transparent; border-color:var(--chat-line); }
 html.llm-chatroom-view .llm-chat-input { background:var(--bjtu-card-background,#fff); color:inherit; border-color:var(--chat-line); }
 html.llm-chatroom-view :is(.llm-chat-operation-history,.llm-chat-thinking) { border-top:0; margin-top:0; padding-top:0; }
+html.llm-chatroom-view .llm-chat-operation-history { margin-bottom:0; padding-bottom:0; }
 html.llm-chatroom-view .llm-chat-msg.error { margin-bottom:12px; }
 html.llm-chatroom-view .llm-chat-composer { padding:12px; margin:0; border-top:1px solid var(--chat-line); background:var(--bjtu-card-background,#fff); }
 html.llm-chatroom-view .llm-chat-composer textarea { width:100%; min-height:75px; max-height:200px; box-sizing:border-box; padding:10px; resize:vertical; border:1px solid var(--chat-line); border-radius:8px; font:inherit; }

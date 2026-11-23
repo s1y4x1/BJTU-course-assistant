@@ -564,6 +564,7 @@ html[data-color-scheme="dark"] .llm-chat-copy-btn {
 }
 
 .llm-chat-operation-history {
+  margin-bottom: 0;
   align-self: stretch;
   min-width: 0;
 }

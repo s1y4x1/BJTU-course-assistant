@@ -630,8 +630,9 @@
     const finalReply = [...nodes].reverse().find((node) => node.matches?.('.llm-chat-msg-row.assistant'));
     if (!(finalReply instanceof HTMLElement) || isOperationCallMessage(finalReply)) return;
     const beforeFinalReply = nodes.slice(0, nodes.indexOf(finalReply));
-    if (!beforeFinalReply.some(isOperationCallMessage)) return;
-    const collapsible = beforeFinalReply.filter((node) =>
+    const firstOperation=beforeFinalReply.findIndex(isOperationCallMessage);
+    if (firstOperation<0) return;
+    const collapsible = beforeFinalReply.slice(firstOperation).filter((node) =>
       node.matches?.('.llm-chat-op, .llm-chat-msg-row.assistant')
     );
     if (!collapsible.length) return;
@@ -644,10 +645,12 @@
     const children = [...messages.children];
     let segmentStart = 0;
     for (let index = 0; index <= children.length; index += 1) {
-      const atBoundary = index === children.length || children[index]?.matches?.('.llm-chat-msg-row.user');
+      // Proactive greetings are independent messages, not another reply in the
+      // preceding operation turn. Previously folded turns are boundaries too.
+      const atBoundary = index === children.length || children[index]?.matches?.('.llm-chat-msg-row.user, .llm-chat-operation-history, [data-proactive-id]');
       if (!atBoundary) continue;
       if (index > segmentStart) collapseOperationSegment(children.slice(segmentStart, index));
-      segmentStart = index;
+      segmentStart = index+1;
     }
   }
 
@@ -656,6 +659,7 @@
     if([...container.querySelectorAll('[data-proactive-id]')].some(node=>node.dataset.proactiveId===message.id))return;
     const bubble=appendMessage('assistant',message.content,'',message.timestamp);
     bubble.dataset.proactiveId=message.id;
+    messageDisplayNode(bubble).dataset.proactiveId=message.id;
   }
   function renderHistory(messages, { pendingResponseId = '' } = {}) {
     const messagesEl = el(MESSAGES_ID);
