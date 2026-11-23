@@ -472,6 +472,7 @@ html[data-color-scheme="dark"] .llm-chat-msg.error {
 }
 
 .llm-chat-op {
+  margin-bottom: 12px;
   align-self: flex-start;
   max-width: 100%;
   border: 1px solid rgba(97, 92, 237, 0.4);
@@ -934,6 +935,15 @@ html[data-color-scheme="dark"] .llm-chat-thinking-body {
 
 .llm-chat-md > *:last-child {
   margin-bottom: 0;
+}
+
+.llm-chat-md > .llm-chat-op:last-child {
+  margin-bottom: 12px;
+}
+
+.llm-chat-msg.assistant .bjtu-md-codeblock-toolbar {
+  background: #334155;
+  color: #e2e8f0;
 }
 
 .llm-chat-md p {
