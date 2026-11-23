@@ -24,6 +24,14 @@
 ## app
 
 - `app` 的代码仍由隔离执行器求值，但可以直接调用 app.html 上的全局函数；执行前需要用户授权。
+- 可以通过异步 `dom` 桥接读取和修改真实 app 页面：`dom.query(selector)`、`dom.queryAll(selector)` 返回元素快照；`dom.get(selector, property)` 读取属性，`dom.set(selector, property, value)` 修改属性，`dom.call(selector, method, ...args)` 调用元素方法。属性和方法支持点分路径，如 `style.color`。所有操作都应 `await`，参数必须可序列化；快照不是 DOM 节点，直接修改快照不会修改页面。不要使用沙箱自身的 DOM 代替目标页面。
+
+```app
+await dom.set('#username-input', 'value', '24281271');
+await dom.call('#username-input', 'focus');
+return await dom.get('#username-input', 'value');
+```
+
 - 各模块操作已作为页面全局命名空间提供，例如 `ve.login()`、`ve.assignments({status:"pending"})`；调用前先用 `api.getDocs()` 查参数。
 - 单个函数调用可以直接作为表达式，扩展会自动等待 Promise，不必额外写 `await`。也支持把一个操作的结果直接组合进另一个操作。
 

@@ -155,6 +155,14 @@
       .map((name) => String(name || '').trim())
       .filter((name) => /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name))
       .filter((name) => !LOCAL_LANGUAGE_ROOTS.has(name)));
+    if (mode === 'app') roots.add('dom');
+    const dom = Object.freeze({
+      query: (selector) => callBridge(executionId, 'dom.query', { selector }),
+      queryAll: (selector) => callBridge(executionId, 'dom.queryAll', { selector }),
+      get: (selector, property) => callBridge(executionId, 'dom.get', { selector, property }),
+      set: (selector, property, value) => callBridge(executionId, 'dom.set', { selector, property, value }),
+      call: (selector, method, ...args) => callBridge(executionId, 'dom.call', { selector, method, args })
+    });
     return new Proxy(Object.create(null), {
       has(_target, property) {
         return typeof property === 'string' && roots.has(property);
@@ -162,6 +170,7 @@
       get(_target, property) {
         if (property === Symbol.unscopables) return undefined;
         if (typeof property !== 'string' || !roots.has(property)) return undefined;
+        if (mode === 'app' && property === 'dom') return dom;
         return remotePathProxy(executionId, property);
       }
     });
