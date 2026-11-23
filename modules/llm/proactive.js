@@ -7,7 +7,7 @@
     if(typeof value==='string')return value.slice(0,12000);
     if(typeof value!=='object'||depth>10||seen.has(value))return undefined;
     seen.add(value);
-    const result=Array.isArray(value)?value.map(item=>sanitize(item,depth+1,seen)):Object.fromEntries(Object.entries(value).filter(([key])=>!/(password|passwd|token|cookie|session|authorization|secret|api.?key|quickUsername)/i.test(key)).map(([key,item])=>[key,sanitize(item,depth+1,seen)]));
+    const result=Array.isArray(value)?value.map(item=>sanitize(item,depth+1,seen)):Object.fromEntries(Object.entries(value).filter(([key])=>!/(password|passwd|token|cookie|session|authorization|secret|api.?key|quickUsername)/i.test(key)&&!/^(actionUrl|key|metadata)$/i.test(key)).map(([key,item])=>[key,sanitize(item,depth+1,seen)]));
     seen.delete(value);return result;
   }
   const termId=value=>String(value||'').trim().match(/^(\d{4})-(\d{4})-(\d+)/)?.[0] || '';
@@ -70,10 +70,18 @@
       const user=stored.casAccounts?.[stored.casLoginName];
       const online=id=>snapshot?.platforms?.some(platform=>platform.id===id&&platform.enabled&&platform.state==='online');
       const mrjzy=online('mrjzy')?stored.mrjzyAccounts?.[stored.mrjzyAutoLoginAccount]:null;
-      const homework=Object.fromEntries((snapshot?.platforms||[]).filter(platform=>platform.enabled&&platform.state==='online').map(platform=>[platform.id,platform.id==='ve'?stored.homeworkReminderSnapshot?.ve?.[snapshot.currentVeAccount?.loginName]:stored.homeworkReminderSnapshot?.[platform.id]]));
+      const labels=global.BjtuHomeworkReminders?.labels || {ve:'智慧课程平台',ykt:'雨课堂',mrjzy:'每日交作业',jlgj:'接龙管家',mooc:'中国大学MOOC',xuetangx:'学堂在线',citel:'CITEL'};
+      const assignments=Object.fromEntries((snapshot?.platforms||[]).filter(platform=>platform.enabled&&platform.state==='online').map(({id})=>{
+        const cache=id==='ve'?stored.homeworkReminderSnapshot?.ve?.[snapshot.currentVeAccount?.loginName]:stored.homeworkReminderSnapshot?.[id];
+        const items=Array.isArray(snapshot?.assignments)?snapshot.assignments.filter(item=>item.platform===id||item.platform===labels[id]):snapshot?.assignments?.[id] ?? cache?.items ?? [];
+        const seen=new Set();
+        return [id,items.map(item=>({courseName:item.courseName,title:item.title,deadline:item.deadline,detail:item.detail,overdue:item.overdue ?? (!!item.deadline&&Number(item.deadline)<=now.getTime())}))
+          .filter(item=>{const key=JSON.stringify([item.courseName,item.title,item.deadline]);if(seen.has(key))return false;seen.add(key);return true;})];
+      }));
       const academic=academicContext(stored,account,now),mail=unreadMailContext(stored,mailKey);
-      const data={...sanitize(snapshot),clock:{date:now.toLocaleDateString('sv-SE'),time:now.toLocaleTimeString(),iso:now.toISOString(),timestamp:now.getTime(),unixTimestamp:Math.floor(now.getTime()/1000),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone},
-        identity:{account:stored.casLoginName,name:user?.userName || user?.name},homework,
+      const {assignments:_assignments,homework:_homework,...page}=snapshot || {};
+      const data={...sanitize(page),clock:{date:now.toLocaleDateString('sv-SE'),time:now.toLocaleTimeString(),iso:now.toISOString(),timestamp:now.getTime(),unixTimestamp:Math.floor(now.getTime()/1000),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone},
+        identity:{account:stored.casLoginName,name:user?.userName || user?.name},assignments,
         platformAccounts:{ve:snapshot?.currentVeAccount,mrjzy:mrjzy&&{phone:mrjzy.phone || stored.mrjzyAutoLoginAccount,name:mrjzy.userName,identities:mrjzy.identities},citel:online('citel')?snapshot?.citelAccount || {username:stored.citelUsername}:undefined},
         ...(academic?{academic}:{}),...(mail?{mail}:{})};
       // The page snapshot contains the current visible account; do not send other

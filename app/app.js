@@ -7662,15 +7662,15 @@ const appInitializationPromise = (async function init() {
 });
 void appInitializationPromise.then(() => consumePendingHomeworkReminder());
 globalThis.__bjtuAppInitialization=appInitializationPromise;
-globalThis.__bjtuLlmPageSnapshot=()=>({
+globalThis.__bjtuLlmPageSnapshot=()=>{
+  const pending=collectPendingHomeworkItems();
+  return {
   platforms:PLATFORM_IDS.map(id=>({id,enabled:isPlatformEnabled(id),state:window.platformLoginState?.[id],loaded:window.platformLoadedOnce?.[id]})),
   currentVeAccount:currentVeAccountInfo && Object.fromEntries(['loginName','userName','userId','roleName','roleCode'].map(key=>[key,currentVeAccountInfo[key]])),
   citelAccount:window.BjtuCitelPlatform?.currentAccount?.(),
   courses:[...document.querySelectorAll('.course-card-title')].map(el=>el.textContent.replace(/\s+/g,' ').trim()).filter(Boolean),
-  assignments:[...document.querySelectorAll('[data-homework-done]')].filter(el=>el.dataset.homeworkDone!=='1').map(el=>({
-    title:el.querySelector('.homework-card-title')?.textContent.trim(),
-    overdue:el.dataset.homeworkOverdue==='1',deadline:el.dataset.homeworkDeadline,
-    metadata:el.querySelector('.homework-deadline-meta,.homework-card-meta')?.textContent.trim(),
-    detail:el.querySelector('.homework-detail,.expandable-content')?.textContent.trim()
-  }))
-});
+  assignments:Object.fromEntries(PLATFORM_IDS.map(id=>[id,pending
+    .filter(item=>item.platform===window.BjtuHomeworkReminders.labels[id])
+    .map(({courseName,title,deadline,detail})=>({courseName,title,deadline,detail,overdue:!!deadline&&deadline<=Date.now()}))]))
+  };
+};
