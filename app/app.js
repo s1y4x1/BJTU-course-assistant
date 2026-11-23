@@ -5012,6 +5012,34 @@ function getEnabledPlatformLoginResult(platform) {
 }
 window.getEnabledPlatformLoginResult = getEnabledPlatformLoginResult;
 
+const platformApiRefreshes=new Map();
+async function applyPlatformLoginOptions(platform,args={}){
+  const p=normalizePlatformId(platform);
+  if(!PLATFORM_IDS.includes(p))throw new Error('未知课程平台');
+  if(args.status===false){
+    platformApiRefreshes.delete(p);
+    if(isPlatformEnabled(p))togglePlatformSelection(p,{interactive:false,persist:false});
+    await savePlatformEnabledToStorage();
+    return {ok:true};
+  }
+  if(!isPlatformEnabled(p))return {ok:false,message:'平台已关闭，请重新登录'};
+  if(platformApiRefreshes.has(p))return platformApiRefreshes.get(p);
+  const promise=(async()=>{
+    invalidateFullscreenCourseCacheCompletion(p);
+    const loading=p==='ve'?loadCourses():triggerExternalPlatformLoad(p,true);
+    const version=window.platformLoadVersion?.[p];
+    await loading;
+    if(p==='ve')await window.veHomeworkLoadPromise;
+    if(!isPlatformEnabled(p)||version!==window.platformLoadVersion?.[p])return {ok:false,message:'平台刷新已取消或被新的加载取代'};
+    const result=await waitForPlatformLoginResult(p,args.timeoutMs);
+    if(!result.ok)return result;
+    if(!fullscreenCourseCacheComplete.has(p))return {ok:false,message:'课程或作业未全部加载成功，请重试'};
+    return {ok:true};
+  })().finally(()=>{if(platformApiRefreshes.get(p)===promise)platformApiRefreshes.delete(p);});
+  platformApiRefreshes.set(p,promise);return promise;
+}
+globalThis.applyPlatformLoginOptions=applyPlatformLoginOptions;
+
 // 等待某个平台登录流程结束，登录成功后还要等课程和作业数据完全加载。
 // 供各平台页面桥的 login 操作调用。
 async function waitForPlatformLoginResult(platform, timeoutMs = 120000) {

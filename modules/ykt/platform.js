@@ -1281,6 +1281,7 @@ async function yktPageLogin(args = {}) {
 }
 
 globalThis.BjtuYktPageApi = Object.freeze({
+  loginOptions:args=>globalThis.applyPlatformLoginOptions('ykt',args),
   courseList: () => yktPageCourseList(),
   courseHomework: (args) => yktPageCourseHomework(String(args?.classroomId || '').trim()),
   assignmentSnapshot: () => yktPageAssignmentSnapshot(),

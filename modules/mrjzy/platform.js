@@ -1001,6 +1001,7 @@ async function mrjzyPageLogin(args = {}) {
 }
 
 globalThis.BjtuMrjzyPageApi = Object.freeze({
+  loginOptions:args=>globalThis.applyPlatformLoginOptions('mrjzy',args),
   courseList: () => mrjzyPageCourseList(),
   homework_of_: (args) => mrjzyPageHomeworkOf(String(args?.classNum || args?.courseId || '').trim()),
   status: () => mrjzyPageLoginStatus(),

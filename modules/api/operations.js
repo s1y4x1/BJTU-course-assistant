@@ -799,6 +799,38 @@
   const CITEL_ASSIGNMENT_DOC = '只读已加载的活动缓存，不自动登录；请先调用 `citel.login()` 或在 CITEL 网页登录后启用平台。互评、编程练习默认显示；文件、网页地址、讨论区默认隐藏，按扩展选项加载。互评须本人提交区有明确证据，编程按页面结果导航链接判断；无法确认时为 `unknown`。无提交状态的资源为 `resource`。时间戳单位为毫秒：`startTime` 为开始时间，`deadline` 为截止时间（编程采用关闭时间），`assessmentEnd` 为评分结束时间，`discountTime` 为折扣时间；未提供的时间为 0。';
   const docJson = (value) => '`' + JSON.stringify(value) + '`';
 
+  const COURSE_LOGIN_PLATFORMS=new Set(['ve','ykt','mrjzy','jlgj','mooc','xuetangx','citel']);
+  function withLoginOptions(operation,doc){
+    if(!operation.name.endsWith('.login'))return {operation,doc};
+    const coursePlatform=COURSE_LOGIN_PLATFORMS.has(operation.module),run=operation.run;
+    const refreshDescription=coursePlatform
+      ? '传入 refresh:true 时，登录成功后强制重新获取课程和作业，并等待全部加载成功才返回 {ok:true}；失败或取消不返回成功。'
+      : operation.module==='academic'?'传入 refresh:true 时，登录后重新获取当前学期课表、考试和成绩，并等待全部请求完成才返回成功。'
+      : '传入 refresh:true 时，登录后重新获取所选认证平台的个人信息，成功后才返回。统一身份认证没有课程作业列表。';
+    const blocks=[['refresh','可选，布尔值，默认 false。'+refreshDescription],
+      ['status',coursePlatform?'可选，布尔值，默认 true；status:false 关闭 app.html 中的平台，不登录、不刷新；再次获取课程或作业前需调用 login()。status:false 优先于 refresh:true。':'本模块没有 app.html 课程平台启用开关，不支持 status:false。'],
+      ['example','`'+operation.name+'({"refresh":true})`'+(coursePlatform?'；`'+operation.name+'({"status":false})`':'')]];
+    doc=typeof doc==='string'?doc+'\n\n'+blocks.map(([title,text])=>title+'：'+text).join('\n\n'):{...doc,blocks:[...(doc?.blocks||[]),...blocks]};
+    operation={...operation,async run(args={}){
+      for(const name of ['refresh','status'])if(args[name]!==undefined&&typeof args[name]!=='boolean')throw new Error(name+' 必须是布尔值');
+      if(args.status===false){
+        if(!coursePlatform)throw new Error('该模块没有可关闭的课程平台');
+        return compactLoginResult(await pageInvoke(operation.module,'loginOptions',{status:false},Number.POSITIVE_INFINITY));
+      }
+      const result=await run(args);
+      if(args.refresh!==true||result?.ok===false)return result;
+      if(coursePlatform){
+        const refreshed=compactLoginResult(await pageInvoke(operation.module,'loginOptions',{refresh:true,status:true},Number.POSITIVE_INFINITY));
+        return refreshed.ok?result:refreshed;
+      }
+      if(operation.module==='academic'){
+        for(const value of await Promise.all(['schedule','scores','exams'].map(kind=>academicInvoke(kind,{fresh:true},120000))))throwOperationFailure(value,'教务数据刷新失败');
+      }else if(operation.module==='sso')throwOperationFailure(await findOperation('sso.profile').run({}),'认证用户信息刷新失败');
+      return result;
+    }};
+    return {operation,doc};
+  }
+
   const OPERATIONS = [
     {
       module: 've',
@@ -3013,7 +3045,10 @@ name: 've.teachers_of_',
         return { enabled: raw };
       }
     }
-  ].map(({ doc, ...operation }) => ({ ...operation, doc: renderOperationDoc(operation.name, doc) }));
+  ].map(({ doc, ...operation }) => {
+    const prepared=withLoginOptions(operation,doc);
+    return {...prepared.operation,doc:renderOperationDoc(operation.name,prepared.doc)};
+  });
 
   const OPERATION_GROUPS = [
     { id: 've', label: '智慧课程平台', operations: OPERATIONS.filter((op) => op.module === 've') },
@@ -3072,8 +3107,7 @@ name: 've.teachers_of_',
   async function assertPlatformEnabledForOperation(op) {
     const platform = String(op?.module || '');
     const shortName = String(op?.name || '').split('.').slice(1).join('.');
-    const requiresEnabledPlatform = shortName === 'assignments'
-      || (platform === 'jlgj' && shortName === 'courseList');
+    const requiresEnabledPlatform = /^(courseList|assignments|assignments_of_|homework_of_|courseHomework|assignmentSnapshot)$/.test(shortName);
     if (!requiresEnabledPlatform || !Object.hasOwn(PLATFORM_ENABLED_DEFAULTS, platform)) return;
     const stored = await chrome.storage.local.get(['platformEnabled']).catch(() => ({}));
     const configured = stored?.platformEnabled?.[platform];

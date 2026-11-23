@@ -985,6 +985,7 @@ async function moocPageLogin(args = {}) {
 }
 
 globalThis.BjtuMoocPageApi = Object.freeze({
+  loginOptions:args=>globalThis.applyPlatformLoginOptions('mooc',args),
   login: (args) => moocPageLogin(args),
   status: () => ({
     loginState: String(window.platformLoginState?.mooc || 'checking'),

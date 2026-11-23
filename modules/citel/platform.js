@@ -563,6 +563,7 @@
     // Pure parsers are also used by offline fixture tests.
     parsers: Object.freeze({ parseDate, readDates, parseActivities, readSesskey, isLoginPage, hasProfile, status })
   };
+  pageApi.loginOptions=args=>global.applyPlatformLoginOptions('citel',args);
   global.BjtuCitelPageApi = Object.freeze(pageApi);
   if (typeof document !== 'undefined' && global.chrome?.runtime?.onMessage) {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {

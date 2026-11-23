@@ -3379,6 +3379,7 @@ function downloadVeBatchFromUi(url) {
 }
 
 globalThis.BjtuVePageApi = Object.freeze({
+  loginOptions:args=>globalThis.applyPlatformLoginOptions('ve',args),
   semester: async (args) => {
     const core = globalThis.BjtuVeHomeworkCore;
     if (!core?.fetchTerms || !core?.chooseTermCode) throw new Error('智慧课程平台学期接口尚未就绪');

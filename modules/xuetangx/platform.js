@@ -1606,6 +1606,7 @@
   }
 
   globalThis.BjtuXuetangxPageApi = Object.freeze({
+    loginOptions:args=>globalThis.applyPlatformLoginOptions('xuetangx',args),
     courseList: () => xuetangxPageCourseList(),
     homework_of_: (args) => xuetangxPageHomeworkOf(String(args?.classroomId || args?.courseId || '').trim()),
     status: () => xuetangxPageLoginStatus(),

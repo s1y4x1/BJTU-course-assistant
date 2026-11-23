@@ -614,6 +614,7 @@ async function jlgjPageLogin(args = {}) {
 }
 
 globalThis.BjtuJlgjPageApi = Object.freeze({
+  loginOptions:args=>globalThis.applyPlatformLoginOptions('jlgj',args),
   courseList: () => jlgjPageCourseList(),
   homework_of_: (args) => jlgjPageHomeworkOf(String(args?.groupId || args?.courseId || '').trim()),
   status: () => jlgjPageLoginStatus(),
