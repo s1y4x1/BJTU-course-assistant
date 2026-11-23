@@ -7,6 +7,9 @@ html.llm-chatroom-view .llm-chat-panel { background:var(--bjtu-card-background,#
 html.llm-chatroom-view .llm-chat-header { background:transparent; border-color:var(--chat-line); }
 html.llm-chatroom-view .llm-chat-title { color:inherit; }
 html.llm-chatroom-view .llm-chat-messages { gap:0; padding:18px; }
+html.llm-chatroom-view .llm-chat-messages-wrap,
+html.llm-chatroom-view .llm-chat-messages-scroll { flex:1 1 0; }
+html.llm-chatroom-view .llm-chat-messages > * { flex-shrink:0; }
 html.llm-chatroom-view .llm-chat-msg-row { margin-bottom:12px; width:fit-content; max-width:96%; }
 html.llm-chatroom-view .llm-chat-msg-row > .llm-chat-msg.message {
   margin-bottom:0; max-width:100%; padding:10px 12px; border:1px solid var(--chat-line);

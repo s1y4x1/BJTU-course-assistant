@@ -27,7 +27,10 @@
   let chatroomNames={user:'我',assistant:'AI 助手'};
   if(CHATROOM_VIEW){
     document.documentElement.classList.add('llm-chatroom-view');
-    const applyChatroomStyle=()=>document.body.classList.add('chatroom-page');
+    const applyChatroomStyle=()=>{
+      document.body.classList.add('chatroom-page');
+      document.getElementById(SCROLL_BOTTOM_ID)?.remove();
+    };
     if(document.body)applyChatroomStyle();else document.addEventListener('DOMContentLoaded',applyChatroomStyle,{once:true});
     for(const path of ['options/options.css','modules/chatroom/chat.css','modules/llm/chatroom.css']){
       const link=document.createElement('link');link.rel='stylesheet';link.href=chrome.runtime.getURL(path);document.head.append(link);
@@ -2509,6 +2512,25 @@
         lastMessagesScrollTop = current;
         updateScrollBottomButton(messagesScroller);
       }, { passive: true });
+      // Markdown、图片及输入区可在初次渲染很久后改变高度。
+      // 保持正在跟随的视图贴底，但不打断用户向上翻阅历史。
+      if (typeof ResizeObserver === 'function' && messages instanceof HTMLElement) {
+        let scrollFrame = null;
+        const observer = new ResizeObserver(() => {
+          if (!autoScrollEnabled || scrollFrame !== null) return;
+          scrollFrame = requestAnimationFrame(() => {
+            scrollFrame = null;
+            maybeAutoScrollMessages(messagesScroller);
+          });
+        });
+        observer.observe(messages);
+        observer.observe(messagesScroller);
+        global.addEventListener('pagehide', (event) => {
+          if (event.persisted) return;
+          observer.disconnect();
+          if (scrollFrame !== null) cancelAnimationFrame(scrollFrame);
+        }, { once: true });
+      }
     }
     if (scrollBottomBtn instanceof HTMLButtonElement) {
       scrollBottomBtn.addEventListener('click', () => {
