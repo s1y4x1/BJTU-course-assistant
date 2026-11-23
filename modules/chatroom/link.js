@@ -145,7 +145,7 @@
   }
   async function publicInfo() {
     const info = await identity();
-    return { alias: info.nickname || localIP || '默认IP', identityId: info.id, version: '1', deviceModel: VERSION, deviceType: 'WEB', device: info.device || null, token: crypto.randomUUID() };
+    return { alias: info.nickname || localIP || '默认IP', identityId: info.id, version: '1', deviceModel: VERSION, deviceType: 'WEB', device: info.device || null, accounts:info.accounts || null, extensionVersion:info.version || '', token: crypto.randomUUID() };
   }
   function signalSend(message) { if (socket?.readyState !== 1) throw new Error('请先点击扫描设备，启用在线发现。'); socket.send(JSON.stringify(message)); }
   function remember(peer) {
@@ -247,7 +247,17 @@
       if (epoch !== generation || socket !== ws || ws.readyState !== 1) { ws.close(); throw new Error('发现已取消。'); }
       configuredAddress = url.href;
       ping = setInterval(() => { if (ws.readyState === 1) ws.send(''); }, 120000);
-      rotate = setInterval(() => { publicInfo().then(next => { if (ws.readyState === 1) ws.send(JSON.stringify({ type: 'UPDATE', info: next })); }).catch(() => {}); }, 30 * 60 * 1000);
+      let profileSignature='',lastProfileAt=0,updatingProfile=false;
+      rotate = setInterval(async()=>{
+        if(updatingProfile||ws!==socket||ws.readyState!==1)return;
+        updatingProfile=true;
+        try{
+          const next=await publicInfo(),{token:_token,...profile}=next,signature=JSON.stringify(profile);
+          if(ws===socket&&ws.readyState===1&&(signature!==profileSignature||Date.now()-lastProfileAt>=30*60*1000)){
+            ws.send(JSON.stringify({type:'UPDATE',info:next}));profileSignature=signature;lastProfileAt=Date.now();
+          }
+        }catch{}finally{updatingProfile=false;}
+      },1000);
       emit('scanning', { deviceId: socketId });
       return { peers: [...discovered.values()], deviceId: socketId };
     })();

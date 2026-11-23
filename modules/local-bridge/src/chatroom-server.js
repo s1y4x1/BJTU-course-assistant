@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
 import { WebSocket, WebSocketServer } from 'ws';
 import { createChatroomFederation } from './chatroom-federation.js';
+import { createChatroomTerminal } from './chatroom-terminal.js';
 
 export const DEFAULT_CHATROOM_PORT = 1897;
 export const CHATROOM_LIMITS = Object.freeze({
@@ -24,6 +25,14 @@ function publicInfo(info) {
     if (!/^[a-f0-9]{64}$/.test(info.identityId)) throw new Error('Invalid identity');
     result.identityId = info.identityId;
   }
+  for(const [key,fields]of Object.entries({device:{os:80,browser:80},accounts:{ve:80,mis:80}})){
+    if(info[key] && typeof info[key]==='object' && !Array.isArray(info[key])){
+      result[key]={};
+      for(const [field,max]of Object.entries(fields))if(typeof info[key][field]==='string')result[key][field]=info[key][field].slice(0,max);
+      if(key==='accounts'&&info[key].veRecent===true)result[key].veRecent=true;
+    }
+  }
+  if(typeof info.extensionVersion==='string')result.extensionVersion=info.extensionVersion.slice(0,32);
   // The directory is untrusted discovery metadata, never an identity authority.
   return result;
 }
@@ -42,7 +51,7 @@ export function parseChatroomPort(args = []) {
  * No process signal handlers or bridge configuration are touched here.
  * Returns { server, wss, port, host, close }, where close() is idempotent.
  */
-export async function startChatroomServer({ port = DEFAULT_CHATROOM_PORT, host = '0.0.0.0', limits: overrides = {}, discovery = host === '0.0.0.0', discoveryOptions = {}, onWarning = message => console.warn(message) } = {}) {
+export async function startChatroomServer({ port = DEFAULT_CHATROOM_PORT, host = '0.0.0.0', limits: overrides = {}, discovery = host === '0.0.0.0', discoveryOptions = {}, onWarning = message => console.warn(message), onPeersChanged = () => {} } = {}) {
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new RangeError('Invalid chatroom port');
   const limits = { ...CHATROOM_LIMITS, ...overrides };
   for (const value of Object.values(limits)) {
@@ -51,6 +60,12 @@ export async function startChatroomServer({ port = DEFAULT_CHATROOM_PORT, host =
   const peers = new Map(), sessions = new Map(), sockets = new Set(), ipCounts = new Map(), upgradeRates = new Map();
   const serverId = randomUUID(), remotePeers = new Map();
   let closing = false, closePromise, heartbeat, federation;
+  let peersNotificationPending=false;
+  const listPeers=()=>[...peers.values(),...remotePeers.values()].map(describe);
+  function peersChanged(){
+    if(peersNotificationPending)return;peersNotificationPending=true;
+    queueMicrotask(()=>{peersNotificationPending=false;if(!closing)try{onPeersChanged(listPeers());}catch(error){onWarning(error.message);}});
+  }
   const server = http.createServer({ maxHeaderSize: 16384, headersTimeout: 10000, requestTimeout: 10000 }, (req, res) => {
     if (req.method === 'GET' && req.url === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', Connection: 'close' });
@@ -70,6 +85,7 @@ export async function startChatroomServer({ port = DEFAULT_CHATROOM_PORT, host =
       if (session.from === peer.id || session.to === peer.id) sessions.delete(id);
     }
     if (!closing) broadcast({ type: 'LEFT', peerId: peer.id });
+    peersChanged();
     federation?.publish();
   }
   function disconnect(peer, code, reason) {
@@ -172,6 +188,7 @@ export async function startChatroomServer({ port = DEFAULT_CHATROOM_PORT, host =
       const peer = { id: `${serverId}:${randomUUID()}`, info, ws, ip: clientIP, alive: true, count: 0, windowStart: now };
       const existing = [...peers.values(), ...remotePeers.values()].map(describe);
       peers.set(peer.id, peer);
+      peersChanged();
       ws.on('error', () => {
         remove(peer);
         peer.closeTimer ||= setTimeout(() => ws.terminate(), 1000);
@@ -196,6 +213,7 @@ export async function startChatroomServer({ port = DEFAULT_CHATROOM_PORT, host =
           catch { fail(peer, 'INVALID_INFO'); return; }
           broadcast({ type: 'UPDATE', peer: describe(peer) }, peer);
           federation?.publish();
+          peersChanged();
           return;
         }
         if (message.type === 'DISCOVER') {
@@ -247,6 +265,7 @@ export async function startChatroomServer({ port = DEFAULT_CHATROOM_PORT, host =
           broadcast({type:existed ? 'UPDATE' : 'JOIN', peer:describe(remote)});
           if (!existed) for (const local of peers.values()) arrangeConnection(local, remote);
         }
+        peersChanged();
       },
       onSignal(source, message) {
         const remote = remotePeers.get(source.id);
@@ -278,18 +297,22 @@ export async function startChatroomServer({ port = DEFAULT_CHATROOM_PORT, host =
     for (const [ip, rate] of upgradeRates) if (rate.until <= Date.now()) upgradeRates.delete(ip);
   }, limits.heartbeatMs);
   heartbeat.unref();
-  return { server, wss, host, port: server.address().port, close };
+  return { server, wss, host, port: server.address().port, close, listPeers };
 }
 
 export async function runChatroomServer(args = process.argv.slice(2)) {
   process.title = 'BJTUCA-chatroom';
-  const service = await startChatroomServer({ port: parseChatroomPort(args) });
+  let terminal;
+  const service = await startChatroomServer({ port: parseChatroomPort(args),
+    onPeersChanged:peers=>terminal?.update(peers),onWarning:message=>terminal?terminal.log(message):console.warn(message) });
   const addresses = new Set(['127.0.0.1']);
   for (const entries of Object.values(networkInterfaces())) {
     for (const item of entries || []) if (item.family === 'IPv4' && !item.internal) addresses.add(item.address);
   }
   process.stdout.write(`聊天室 LAN 信令服务已启动（独立于 Bridge，无需扩展连接）\n${[...addresses].map(ip => `  ws://${ip}:${service.port}/chatroom`).join('\n')}\n已启用局域网组播发现（UDP 1898）和服务器互联；扩展无需更改地址。\n仅用于可信局域网；不转发聊天或文件内容。按 Ctrl+C 关闭。\n`);
+  terminal=createChatroomTerminal(process.stdout);terminal.update(service.listPeers());
   const shutdown = () => {
+    terminal.close();
     process.off('SIGINT', shutdown); process.off('SIGTERM', shutdown);
     void service.close().catch(error => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });
   };

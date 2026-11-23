@@ -106,7 +106,7 @@
       dependencies: ['api'],
       files: [
         'client.js', 'README.md', 'install.ps1', 'package.json', 'package-lock.json',
-        'src/config.js', 'src/server.js', 'src/chatroom-server.js', 'src/check-dependencies.js', 'options.html', 'options.css', 'options.js'
+        'src/config.js', 'src/server.js', 'src/chatroom-server.js', 'src/chatroom-federation.js', 'src/chatroom-terminal.js', 'src/check-dependencies.js', 'options.html', 'options.css', 'options.js'
       ],
       options: { fragment: 'options.html', style: 'options.css', script: 'options.js' }
     }
