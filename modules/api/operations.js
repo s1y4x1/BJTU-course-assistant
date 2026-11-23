@@ -2898,7 +2898,7 @@ name: 've.teachers_of_',
       module:'appearance',name:'appearance.colors',summary:'获取或按组件设置颜色',
       doc:{title:'获取或设置组件颜色',blocks:[
         '无参数获取全部有效颜色（包含默认值）。传入部分字段只修改对应组件；颜色为 #RRGGBB，null 重置该项。所有页面实时应用。',
-        ['parameters','可选键：`backgroundLight`、`backgroundDark`、`cardLight`、`cardDark`、`button`、`courseCard`、`fileCard`、`platformVe`、`platformYkt`、`platformMrjzy`、`platformJlgj`、`platformMooc`、`platformXuetangx`、`platformCitel`、`pendingCard`、`overdueCard`、`doneCard`、`resource`、`replay`、`assessment`、`archive`、`copy`、`download`、`teacherPendingCard`、`teacherOverdueCard`。'],
+        ['parameters','可选键：`backgroundLight`、`backgroundDark`、`cardLight`、`cardDark`、`courseCardLight`、`courseCardDark`、`fileCardLight`、`fileCardDark`、`button`、`platformVe`、`platformYkt`、`platformMrjzy`、`platformJlgj`、`platformMooc`、`platformXuetangx`、`platformCitel`、`pendingCard`、`overdueCard`、`doneCard`、`resource`、`replay`、`assessment`、`archive`、`copy`、`download`、`teacherPendingCard`、`teacherOverdueCard`。课程卡片和文件卡片按深浅色分别设置，未自定义时跟随「卡片」颜色。'],
         ['example','`appearance.colors()`；`appearance.colors({"backgroundDark":"#111827","button":"#1976d2"})`；`appearance.colors({"button":null})`']
       ]},run:args=>appearanceSettings('colors',args)
     },

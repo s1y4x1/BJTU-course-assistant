@@ -7,7 +7,9 @@
   const defaults = Object.freeze({
     backgroundLight: global.BjtuTheme.backgroundDefaults.light, backgroundDark: global.BjtuTheme.backgroundDefaults.dark,
     cardLight: global.BjtuTheme.cardDefaults.light, cardDark: global.BjtuTheme.cardDefaults.dark,
-    button: '#1976d2', courseCard: '#ffffff', fileCard: '#ffffff',
+    courseCardLight:global.BjtuTheme.cardDefaults.light,courseCardDark:global.BjtuTheme.cardDefaults.dark,
+    fileCardLight:global.BjtuTheme.cardDefaults.light,fileCardDark:global.BjtuTheme.cardDefaults.dark,
+    button: '#1976d2',
     platformVe:'#1565c0', platformYkt:'#5096f5', platformMrjzy:'#29a9fc',
     platformJlgj:'#ffd243', platformMooc:'#00cc7e', platformXuetangx:'#1769fe', platformCitel:'#f98012',
     pendingCard: '#fff5e6', overdueCard: '#ffe6e6', doneCard: '#e6ffe6',
@@ -21,9 +23,10 @@
   const labels = {
     background: '背景',
     card: '卡片',
+    courseCard:'课程卡片',fileCard:'文件卡片',
     platformVe:'智慧课程平台', platformYkt:'雨课堂', platformMrjzy:'每日交作业',
     platformJlgj:'接龙管家', platformMooc:'中国大学MOOC', platformXuetangx:'学堂在线', platformCitel:'CITEL',
-    button: '操作按钮', courseCard: '课程卡片', fileCard: '文件卡片',
+    button: '操作按钮',
     pendingCard: '未交作业', overdueCard: '逾期作业', doneCard: '已交作业',
     resource: '资源下载', replay: '回放下载', assessment: '课程考核记录表下载', archive: '归档下载',
     copy: '复制', download: '下载', teacherPendingCard: '未了作业（教师）', teacherOverdueCard: '过时作业（教师）'
@@ -148,9 +151,13 @@
     });
   }
   function normalize(value) {
+    const source = { ...value };
+    for (const key of ['courseCard', 'fileCard']) {
+      if (source[key+'Light'] === undefined && /^#[0-9a-f]{6}$/i.test(source[key] || '')) source[key+'Light'] = source[key];
+    }
     return Object.fromEntries(Object.keys(defaults)
-      .filter((key) => /^#[0-9a-f]{6}$/i.test(String(value?.[key] || '')))
-      .map((key) => [key, value[key].toLowerCase()]));
+      .filter((key) => /^#[0-9a-f]{6}$/i.test(String(source[key] || '')))
+      .map((key) => [key, source[key].toLowerCase()]));
   }
 
   function interpolate(from, to, weight) {
@@ -295,14 +302,15 @@
   function refreshEditor() {
     document.querySelectorAll('[data-component-color]').forEach((input) => {
       const previousKey = input.dataset.componentColor;
-      const surface = previousKey.match(/^(background|card)(Light|Dark)$/);
+      const surface = previousKey.match(/^(background|card|courseCard|fileCard)(Light|Dark)$/);
       const key = surface ? currentSurfaceKey(surface[1]) : previousKey;
       input.dataset.componentColor = key;
-      const value = settings[key] || defaults[key];
+      const inheritsCard = surface && ['courseCard','fileCard'].includes(surface[1]) && (!settings[key] || settings[key]===defaults[key]);
+      const value = inheritsCard ? (settings[currentSurfaceKey('card')] || defaults[key]) : (settings[key] || defaults[key]);
       if (key !== previousKey || document.activeElement !== input) input.value = value;
       const reset = input.closest('label').querySelector('button');
       reset.dataset.resetColor = key;
-      reset.hidden = !settings[key];
+      reset.hidden = !settings[key] || settings[key]===defaults[key];
     });
     const toggle = document.getElementById('homeworkDeadlineGradientEnabled');
     if (toggle) toggle.checked = gradientEnabled;
@@ -312,6 +320,17 @@
 
   function currentSurfaceKey(category) {
     return category + (document.documentElement.dataset.colorScheme === 'dark' ? 'Dark' : 'Light');
+  }
+
+  function applySurfaceColors() {
+    for (const category of ['courseCard','fileCard']) {
+      const key = currentSurfaceKey(category);
+      const custom = !!settings[key] && settings[key] !== defaults[key];
+      const color = custom ? settings[key] : (settings[currentSurfaceKey('card')] || defaults[key]);
+      document.documentElement.toggleAttribute(`data-custom-color-${category.toLowerCase()}`, custom);
+      setProperty(document.documentElement, `--bjtu-color-${category}`, color);
+      setProperty(document.documentElement, `--bjtu-color-${category}-foreground`, foreground(color));
+    }
   }
 
   function apply(value = settings, gradient = gradientEnabled, marquee = marqueeEnabled) {
@@ -330,6 +349,7 @@
         document.documentElement.style.removeProperty(`--bjtu-color-${key}-foreground`);
       }
     });
+    applySurfaceColors();
     refreshCards();
     refreshEditor();
   }
@@ -338,7 +358,7 @@
     const grid = document.getElementById('componentColorGrid');
     if (grid) {
       grid.innerHTML = Object.keys(labels).map((name) => {
-        const key = name === 'background' || name === 'card' ? currentSurfaceKey(name) : name;
+        const key = ['background','card','courseCard','fileCard'].includes(name) ? currentSurfaceKey(name) : name;
         return `<label class="component-color-item"><span>${labels[name]}</span><input type="color" data-component-color="${key}" value="${defaults[key]}" aria-label="${labels[name]}颜色"><button class="font-size-default" type="button" data-reset-color="${key}" hidden>默认</button></label>`;
       }).join('');
       grid.addEventListener('input', (event) => {
@@ -414,7 +434,10 @@
       changes[gradientKey] ? changes[gradientKey].newValue !== false : gradientEnabled,
       changes[marqueeKey] ? changes[marqueeKey].newValue !== false : marqueeEnabled);
   });
-  global.addEventListener('bjtu-theme-change', refreshEditor);
+  global.addEventListener('bjtu-theme-change', () => {
+    applySurfaceColors();
+    refreshEditor();
+  });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
   else init();
 })(globalThis);
