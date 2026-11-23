@@ -2402,27 +2402,33 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     const teacherBar = document.getElementById('account-init-teacher-progress-bar');
     if (button instanceof HTMLButtonElement) button.disabled = true;
     if (progressTitle instanceof HTMLElement) progressTitle.textContent = '导出 MIS 绑定数据';
-    if (progressStatus instanceof HTMLElement) progressStatus.textContent = '正在读取绑定账号…';
+    if (progressStatus instanceof HTMLElement) progressStatus.textContent = '正在读取登录历史…';
     if (teacherLabel instanceof HTMLElement) teacherLabel.textContent = '已读取 0 个';
     if (teacherBar instanceof HTMLElement) teacherBar.style.width = '0%';
     if (teacherRow instanceof HTMLElement) teacherRow.style.display = '';
     if (studentRow instanceof HTMLElement) studentRow.style.display = 'none';
     if (progressModal instanceof HTMLElement) progressModal.style.display = 'flex';
     try {
-      const withQuick = await globalThis.BjtuAccountStore.getQuickAccounts({
-        limit: 10000,
-        onProgress: ({ read, total }) => {
-          if (teacherLabel instanceof HTMLElement) teacherLabel.textContent = `已读取 ${read} / ${total} 个`;
-          if (teacherBar instanceof HTMLElement) teacherBar.style.width = `${total > 0 ? 90 * read / total : 0}%`;
-        }
-      });
-      if (progressStatus instanceof HTMLElement) progressStatus.textContent = '正在核对登录历史并整理绑定数据…';
       const context = await chrome.runtime.sendMessage({ type: 'PORTAL_LOGIN_CONTEXT' }).catch(() => null);
+      if(!context)throw new Error('读取登录历史失败');
       const history = Array.isArray(context?.history) ? context.history : [];
       const historyIdSet = new Set(history
         .map((it) => String(it?.loginName || it?.userId || '').trim())
         .filter(Boolean));
       const lines = [];
+      const ids=[...historyIdSet],withQuick=[];
+      const updateProgress=read=>{
+        const percent=Number((100*read/(ids.length+1)).toFixed(1));
+        if(teacherLabel instanceof HTMLElement)teacherLabel.textContent=`已读取 ${read} / ${ids.length} 个 · 总进度 ${percent.toFixed(1)}%`;
+        if(teacherBar instanceof HTMLElement)teacherBar.style.width=percent+'%';
+      };
+      if(progressStatus instanceof HTMLElement)progressStatus.textContent='正在读取并整理绑定账号…';
+      updateProgress(0);
+      for(let index=0;index<ids.length;index+=16){
+        const batch=await Promise.all(ids.slice(index,index+16).map(id=>globalThis.BjtuAccountStore.get(id)));
+        withQuick.push(...batch.filter(Boolean));updateProgress(Math.min(ids.length,index+16));
+        await new Promise(resolve=>setTimeout(resolve,0));
+      }
       for (const acc of withQuick) {
         const loginName = String(acc.loginName || acc.userId || '').trim();
         const quickUsername = String(acc.quickUsername || '').trim();
@@ -2435,7 +2441,6 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
         return;
       }
       const content = lines.join('\n');
-      if (teacherBar instanceof HTMLElement) teacherBar.style.width = '95%';
       if (progressStatus instanceof HTMLElement) progressStatus.textContent = lines.length > 128 ? '正在保存导出文件…' : '正在复制到剪贴板…';
       let savedToFile = false;
       if (lines.length > 128) {
@@ -2457,6 +2462,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       }
       if (exportModal instanceof HTMLElement) exportModal.style.display = 'flex';
       if (teacherBar instanceof HTMLElement) teacherBar.style.width = '100%';
+      if(teacherLabel instanceof HTMLElement)teacherLabel.textContent=`已读取 ${ids.length} / ${ids.length} 个 · 总进度 100.0%`;
     } catch (error) {
       setMsg('导出失败：' + String(error?.message || error), false);
     } finally {
@@ -2836,9 +2842,9 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       return;
     }
     try {
-      const settings = await chrome.storage.local.get(null);
+      const settings = await globalThis.BjtuSettingsTransfer.collect(chrome.storage.local);
       await navigator.clipboard.writeText(JSON.stringify(settings, null, 2));
-      setMsg('已将全部扩展设置复制到剪贴板');
+      setMsg('已将扩展设置复制到剪贴板（不含缓存）');
     } catch (error) {
       setMsg(`导出设置失败：${String(error?.message || error)}`, false);
     }
