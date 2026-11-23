@@ -804,7 +804,7 @@
     if(!operation.name.endsWith('.login'))return {operation,doc};
     const coursePlatform=COURSE_LOGIN_PLATFORMS.has(operation.module),run=operation.run;
     const refreshDescription=coursePlatform
-      ? '传入 refresh:true 时，登录成功后强制重新获取课程和作业，并等待全部加载成功才返回 {ok:true}；失败或取消不返回成功。'
+      ? '传入 refresh:true 时，登录成功后强制重新获取课程和作业列表，等待本轮加载结束后才返回 {ok:true}；列表获取失败或刷新取消不返回成功。附件预取、成绩等可选详情失败不影响登录成功。'
       : operation.module==='academic'?'传入 refresh:true 时，登录后重新获取当前学期课表、考试和成绩，并等待全部请求完成才返回成功。'
       : '传入 refresh:true 时，登录后重新获取所选认证平台的个人信息，成功后才返回。统一身份认证没有课程作业列表。';
     const blocks=[['refresh','可选，布尔值，默认 false。'+refreshDescription],

@@ -5033,7 +5033,11 @@ async function applyPlatformLoginOptions(platform,args={}){
     if(!isPlatformEnabled(p)||version!==window.platformLoadVersion?.[p])return {ok:false,message:'平台刷新已取消或被新的加载取代'};
     const result=await waitForPlatformLoginResult(p,args.timeoutMs);
     if(!result.ok)return result;
-    if(!fullscreenCourseCacheComplete.has(p))return {ok:false,message:'课程或作业未全部加载成功，请重试'};
+    // Cache completeness also includes optional scores/attachment prefetches;
+    // it is not the success condition of a course/homework-list refresh.
+    if(p==='ve'&&window.veCacheCourseSource?.homeworkListFailures?.size){
+      return {ok:false,message:`有 ${window.veCacheCourseSource.homeworkListFailures.size} 门课程的作业列表获取失败，请重试`};
+    }
     return {ok:true};
   })().finally(()=>{if(platformApiRefreshes.get(p)===promise)platformApiRefreshes.delete(p);});
   platformApiRefreshes.set(p,promise);return promise;

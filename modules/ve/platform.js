@@ -2110,7 +2110,8 @@ async function loadCourses({ knownUserInfo } = {}) {
     const cacheSource = window.veCacheCourseSource = {
       version:courseLoadVersion,
       account:String(userInfo.loginName || userInfo.userId || window.currentAccountLoginName || '').trim(),
-      homeworkCourseIds:new Set()
+      homeworkCourseIds:new Set(),
+      homeworkListFailures:new Set()
     };
     rematchExternalByVeCourses();
     renderCourseList(list, { progressGroups: directProgressGroups });
@@ -2964,6 +2965,10 @@ async function checkHomework(courseId, progress, loadVersion = window.courseList
       }
     });
     if (!isCurrent()) return false;
+    if(cacheSource===window.veCacheCourseSource){
+      if(allTypesLoaded)cacheSource?.homeworkListFailures?.delete(String(courseId));
+      else cacheSource?.homeworkListFailures?.add(String(courseId));
+    }
     delete window.veHomeworkPendingTypesByCourse[courseId];
     window.courseHomeworkData[courseId] = { list, showOverdue: !!window.courseShowOverdueById[courseId], showDone: !!window.courseShowDoneById[courseId] };
     renderHomeworkList(courseId);
@@ -2982,6 +2987,7 @@ async function checkHomework(courseId, progress, loadVersion = window.courseList
     return isCurrent() && allTypesLoaded && details.every(result => result.status === 'fulfilled' && result.value !== false);
   } catch (e) {
     if (!isCurrent()) return false;
+    if(cacheSource===window.veCacheCourseSource)cacheSource?.homeworkListFailures?.add(String(courseId));
     delete window.veHomeworkPendingTypesByCourse[courseId];
     if (e?.loginRequired || String(e?.message || '') === 'LOGIN_REQUIRED') {
       await restartVePlatformForLoginExpired('作业列表登录已失效，正在重启智慧课程平台…');
