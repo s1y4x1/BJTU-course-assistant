@@ -14,8 +14,8 @@
   const SCROLL_BOTTOM_ID = 'llm-chat-scroll-bottom';
   const MODEL_ID = 'llm-chat-model';
   const THINKING_ID = 'llm-chat-thinking';
-  const OPERATION_RESULTS_STORAGE_KEY = 'qwenOperationResults';
-  const OPERATION_RESULTS_LIMIT = 20;
+  const EXECUTION_HISTORY_STORAGE_KEY = 'llmExecutionHistory';
+  const EXECUTION_HISTORY_LIMIT = 20;
   const QWEN_VIEW_ID = global.crypto?.randomUUID?.() || `qwen-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   // 独立页面模式（modules/llm/chat.html）：面板直接展开铺满窗口。
@@ -548,7 +548,7 @@
       if (!parsed?.code) return;
       setBusy(true);
       setStatus('操作中…');
-      const card = appendOperationCard({ name: `code.${parsed.mode}`, mode: parsed.mode });
+      const card = appendOperationCard({ name: `code.${parsed.mode}`, mode: parsed.mode, code: parsed.code });
       let outcome;
       try {
         const value = await global.BjtuApiPage.executeCode(parsed.code, parsed.mode);
@@ -1276,6 +1276,7 @@
     if (!(messages instanceof HTMLElement)) return;
     const card = document.createElement('div');
     card.className = 'llm-chat-op';
+    card._execution = { mode: String(operation?.mode || ''), code: String(operation?.code || '') };
     const name = document.createElement('div');
     name.className = 'llm-chat-op-name';
     const nameText = document.createElement('span');
@@ -1432,15 +1433,17 @@
     return formatResult(outcome);
   }
 
-  function rememberOperationResult(result) {
+  function rememberExecution(result, execution = {}) {
     try {
       const normalized = global.BjtuApiPage.serializeValue(result);
-      const previous = JSON.parse(localStorage.getItem(OPERATION_RESULTS_STORAGE_KEY) || '[]');
+      const previous = JSON.parse(localStorage.getItem(EXECUTION_HISTORY_STORAGE_KEY) || '[]');
       const list = Array.isArray(previous) ? previous : [];
+      const mode = String(execution.mode || result?.name?.replace(/^code\./, '') || '');
+      const code = String(execution.code || '');
       const last = list.at(-1);
-      if (last && JSON.stringify(last.outcome) === JSON.stringify(normalized)) return;
-      list.push({ recordedAt: Date.now(), outcome: normalized });
-      localStorage.setItem(OPERATION_RESULTS_STORAGE_KEY, JSON.stringify(list.slice(-OPERATION_RESULTS_LIMIT)));
+      if (last && last.mode === mode && last.code === code && JSON.stringify(last.outcome) === JSON.stringify(normalized)) return;
+      list.push({ recordedAt: Date.now(), mode, code, outcome: normalized });
+      localStorage.setItem(EXECUTION_HISTORY_STORAGE_KEY, JSON.stringify(list.slice(-EXECUTION_HISTORY_LIMIT)));
     } catch {
       // 操作结果历史仅用于后续工作流复用，写入失败不影响当前操作。
     }
@@ -1455,7 +1458,7 @@
     content.textContent = formatOutcomeText(result);
     card.appendChild(content);
     completeOperationCard(card);
-    if (remember) rememberOperationResult(result);
+    if (remember) rememberExecution(result, card._execution);
     const messages = el(MESSAGES_ID);
     maybeAutoScrollMessages(messages);
   }

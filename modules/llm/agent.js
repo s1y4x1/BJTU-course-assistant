@@ -300,7 +300,7 @@
       const outcomes = [];
       for (const execution of parsedExecution.executions) {
         const operationNames = operationNamesInCode(execution.code, operations, groups);
-        onEvent?.({ operation: { name: execution.name, mode: execution.mode, description: execution.description, operationNames }, iteration });
+        onEvent?.({ operation: { name: execution.name, mode: execution.mode, code: execution.code, description: execution.description, operationNames }, iteration });
         let outcome;
         if (execution.mode !== 'sandbox') {
           const sessionAllowedModes = loopSession.alwaysAllowedModes || (loopSession.alwaysAllowedModes = {});

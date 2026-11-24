@@ -1,6 +1,6 @@
 (function(global){
   'use strict';
-  const dataKeys=new Set(['chatroomState','llmProactiveMessages','qwenOperationResults','homeworkBackgroundKnownAssignments','versionAutoReloadCompleted','savedUploads','savedUploadedFiles','extensionDownloads']);
+  const dataKeys=new Set(['chatroomState','llmProactiveMessages','llmExecutionHistory','homeworkBackgroundKnownAssignments','versionAutoReloadCompleted','savedUploads','savedUploadedFiles','extensionDownloads']);
   function isSetting(key){
     return !dataKeys.has(key)
       && !/(?:cache|snapshots?)(?::|$)/i.test(key)
