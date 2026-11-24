@@ -6,7 +6,7 @@ html.llm-chatroom-view body.chatroom-page.llm-chat-standalone {
 html.llm-chatroom-view .llm-chat-panel { background:var(--bjtu-card-background,#fff); color:inherit; }
 html.llm-chatroom-view .llm-chat-header { background:transparent; border-color:var(--chat-line); }
 html.llm-chatroom-view .llm-chat-title { color:inherit; }
-html.llm-chatroom-view .llm-chat-messages { gap:0; padding:18px; }
+html.llm-chatroom-view .llm-chat-messages { gap:0; padding:18px 18px 0; }
 html.llm-chatroom-view .llm-chat-messages-wrap,
 html.llm-chatroom-view .llm-chat-messages-scroll { flex:1 1 0; }
 html.llm-chatroom-view .llm-chat-messages > * { flex-shrink:0; }
