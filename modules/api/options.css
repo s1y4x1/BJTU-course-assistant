@@ -22,6 +22,8 @@ html[data-color-scheme="dark"] .api-options-card {
 .api-startup-toggle input { width:auto; margin:0; }
 .api-code-editor { display:block; width:100%; box-sizing:border-box; margin:8px 0; padding:8px; resize:vertical; border:1px solid #cbd5e1; border-radius:6px; background:var(--bjtu-card-background,#fff); color:inherit; font-family:Consolas,monospace; font-size:var(--bjtu-font-size-body,13px); }
 .api-history-heading { display:flex; align-items:center; flex-wrap:wrap; gap:8px; justify-content:space-between; }
+.api-history-title { display:inline-flex; align-items:center; }
+.api-history-heading > button { margin-left:auto; }
 .api-history-heading h3 { margin:0; font-size:var(--bjtu-font-size-secondaryTitle,16px); }
 .api-startup-status { font-size:var(--bjtu-font-size-auxiliary,11px); color:#64748b; }
 html[data-color-scheme="dark"] .api-startup-status { color:#94a3b8; }

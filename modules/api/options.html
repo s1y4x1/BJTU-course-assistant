@@ -27,8 +27,7 @@
   <textarea id="apiStartupCode" class="api-code-editor" rows="7" aria-label="启动时执行的 JavaScript 代码" placeholder="例如：await dom.set('#username-input', 'title', '账号');" spellcheck="false" disabled></textarea>
   <div id="apiStartupStatus" class="api-startup-status" role="status">正在读取…</div>
   <div class="option-divider"></div>
-  <div class="api-history-heading"><h3>执行历史</h3><button id="apiExecutionHistoryClear" class="api-history-delete" type="button">清空历史</button></div>
-  <div class="tip">llmExecutionHistory：最近 20 条执行代码和结果。</div>
+  <div class="api-history-heading"><div class="api-history-title"><h3>执行历史</h3><span class="tip">llmExecutionHistory：最近 20 条执行代码和结果。</span></div><button id="apiExecutionHistoryClear" class="api-history-delete" type="button">清空历史</button></div>
   <div id="apiExecutionHistory"></div>
 </section>
 
