@@ -523,7 +523,7 @@
 
   function parseExecutionBlock(block) {
     const match = /^```(sandbox|app|background)[ \t]*\r?\n([\s\S]*?)```$/i.exec(String(block || '').trim());
-    return match ? { mode: match[1], code: String(match[2] || '').trim() } : null;
+    return match ? { mode: match[1].toLowerCase(), code: String(match[2] || '').trim() } : null;
   }
 
   function hideHistoryExecuteButton() {
@@ -542,7 +542,7 @@
     button.addEventListener('click', async () => {
       if (busy) return;
       hideHistoryExecuteButton();
-      const parsed = parseExecutionBlock(blocks[0]);
+      const parsed = parseExecutionBlock(blocks.at(-1));
       if (!parsed?.code) return;
       setBusy(true);
       setStatus('操作中…');

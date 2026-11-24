@@ -43,15 +43,16 @@
         code: String(match[2] || '')
       });
     }
-    if (matches.length !== 1) return null;
+    const item = matches.at(-1);
+    if (!item) return null;
     return {
-      cleanText: text.slice(0, matches[0].index).trimEnd(),
-      executions: matches.map((item, index) => ({
+      cleanText: text.slice(0, item.index).trimEnd(),
+      executions: [{
         mode: item.mode,
         code: item.code,
         name: `code.${item.mode}`,
-        description: text.slice(item.end, matches[index + 1]?.index ?? text.length).trim()
-      }))
+        description: text.slice(item.end).trim()
+      }]
     };
   }
 
