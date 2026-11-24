@@ -21,6 +21,15 @@
     使用 <code>api.operationList()</code> 获取操作列表、<code>api.getDocs()</code> 查询说明。</p>
   <p><a class="option-action-link" href="/modules/api/run.html">打开命令控制台</a></p>
   <div data-operation-ui-mount></div>
+  <div class="option-divider"></div>
+  <label class="api-startup-toggle"><input id="apiStartupEnabled" type="checkbox" disabled><span>启动时执行 JS 代码</span></label>
+  <div class="tip">每次打开 app.html，页面初始化完成后在 app 环境执行一次；可使用 dom 和扩展接口。保存修改不会立即执行。</div>
+  <textarea id="apiStartupCode" class="api-code-editor" rows="7" aria-label="启动时执行的 JavaScript 代码" placeholder="例如：await dom.set('#username-input', 'title', '账号');" spellcheck="false" disabled></textarea>
+  <div id="apiStartupStatus" class="tip" role="status">正在读取…</div>
+  <div class="option-divider"></div>
+  <div class="api-history-heading"><h3>执行历史</h3><button id="apiExecutionHistoryClear" class="api-history-delete" type="button">清空历史</button></div>
+  <div class="tip">llmExecutionHistory：最近 20 条执行代码和结果。</div>
+  <div id="apiExecutionHistory"></div>
 </section>
 
 <div id="msg" role="status" aria-live="polite"></div>

@@ -91,6 +91,8 @@ return history.slice(-3);
 
 `dom.query/queryAll` 返回快照，不是可直接赋值的节点；`tagName` 为小写，快照也不包含 `style`、`children`。例如读取叶子状态应使用 `await dom.get(selector, 'children.length')`，修改样式应使用 `await dom.set(selector, 'style.color', 'red')`，而不是对快照赋值。批量操作需使用各目标的唯一选择器。可以结合沙箱中的 `setTimeout` 实现逐帧效果，但必须等待所有异步 DOM 操作完成再返回。`dom.call(selector, 'click')` 是程序点击，不会获得浏览器要求的真实用户激活权限。
 
+用户明确要求每次启动自动执行某段代码时，可以调用 `api.startupScript()` 读取配置，并用 `api.startupScript({code, enabled})` 修改。应先查阅其说明；这是持续生效的启动行为，不要把一次性操作擅自设为启动脚本。用户也可在扩展接口选项中编辑、启停脚本及删除执行历史。
+
 # 回答要求
 
 - 使用与用户问题相同的语言回答。

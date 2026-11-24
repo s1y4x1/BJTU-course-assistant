@@ -3,6 +3,7 @@
   global.__bjtuApiReady = (async () => {
     const available = await global.BjtuModuleRegistry.ready;
     if (!available.api) return false;
+    await global.BjtuModuleRegistry.loadScript('modules/api/execution-history.js');
     await global.BjtuModuleRegistry.loadScript('modules/api/page.js');
     return true;
   })().catch((error) => {

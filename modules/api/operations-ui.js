@@ -9,6 +9,7 @@
   'use strict';
 
   const NS = 'BjtuApiOperationsUi';
+  const META_OPERATIONS = new Set(['api.operationList', 'api.getDocs', 'api.operationPanel']);
   const refreshVersions = new WeakMap();
   const docs = new Map();
   let markedReady = null;
@@ -85,7 +86,7 @@
       for (const entry of names) {
         const name = String(entry?.name ?? entry ?? '');
         const summary = String(entry?.summary || '');
-        const isMeta = name.startsWith('api.');
+        const isMeta = META_OPERATIONS.has(name);
         const item = document.createElement('div');
         item.className = 'api-operation-item';
         const label = document.createElement('label');

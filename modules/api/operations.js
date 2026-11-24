@@ -6,6 +6,7 @@
   'use strict';
 
   const LOGIN_REQUIRED_MESSAGE = '未登录智慧课程平台，请先登录后再试。';
+  const META_OPERATIONS = new Set(['api.operationList', 'api.getDocs', 'api.operationPanel']);
 
   function loginRequiredError() {
     return Object.assign(new Error(LOGIN_REQUIRED_MESSAGE), { code: 'LOGIN_REQUIRED' });
@@ -2742,6 +2743,27 @@ name: 've.teachers_of_',
     },
     {
       module: 'api',
+      name: 'api.startupScript',
+      summary: '获取或修改 app 页面启动脚本与启用状态',
+      doc: { title:'获取或设置启动脚本', blocks:[
+        '无参数读取配置；传入 code 或 enabled 只修改对应字段。默认关闭。每次打开 app.html 并完成页面初始化后，在 app 执行器运行一次；保存不会立即执行，已有页面也不会重放。可使用 dom 及扩展接口，结果会记入 llmExecutionHistory。',
+        ['parameters','`{"code":"可选，JavaScript 源码字符串","enabled":true}`；enabled 为可选布尔值。只有用户明确要求配置启动行为时才修改或启用。'],
+        ['example','`api.startupScript()`；`api.startupScript({"code":"await dom.set(\"#username-input\", \"title\", \"账号\");","enabled":true})`'],
+        ['returnExample','`{"enabled":false,"code":""}`']
+      ]},
+      async run(args = {}) {
+        if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('参数必须是对象');
+        for (const key of Object.keys(args)) if (!['enabled','code'].includes(key)) throw new Error(`未知参数：${key}`);
+        if ('code' in args && typeof args.code !== 'string') throw new Error('code 必须是字符串');
+        if ('enabled' in args && typeof args.enabled !== 'boolean') throw new Error('enabled 必须是布尔值');
+        const stored = (await chrome.storage.local.get('apiStartupScript')).apiStartupScript;
+        const next = { enabled:stored?.enabled === true, code:typeof stored?.code === 'string' ? stored.code : '', ...args };
+        if (Object.keys(args).length) await chrome.storage.local.set({ apiStartupScript:next });
+        return next;
+      }
+    },
+    {
+      module: 'api',
       name: 'api.operationList',
       summary: '列出可按模块分组的所有可用操作名',
       doc: {
@@ -2760,7 +2782,7 @@ name: 've.teachers_of_',
           if (op.hiddenFromPrompt === true) continue;
           const module = String(op.module || '');
           if (availability[module] === false) continue;
-          if (enabledSet && !enabledSet.has(op.name) && !String(op.name).startsWith('api.')) continue;
+          if (enabledSet && !enabledSet.has(op.name) && !META_OPERATIONS.has(op.name)) continue;
           const key = String(op.name).split('.').slice(1).join('.');
           if (!operations[module]) operations[module] = {};
           operations[module][key] = op.summary || op.name;
@@ -3201,7 +3223,7 @@ name: 've.teachers_of_',
     if (op.module === 'academic' && (args == null ? false : (typeof args !== 'object' || Array.isArray(args)))) {
       return { ok: false, name, error: 'academic 操作参数必须是对象', code: 'INVALID_ARGUMENTS' };
     }
-    if (!String(op.name).startsWith('api.')) {
+    if (!META_OPERATIONS.has(op.name)) {
       const enabledSet = await getEnabledOperationSet();
       if (enabledSet && !enabledSet.has(op.name)) {
         return { ok: false, name, error: `操作「${op.name}」已被禁止调用，请先在「操作」面板中启用它。` };

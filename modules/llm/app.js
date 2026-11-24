@@ -14,8 +14,6 @@
   const SCROLL_BOTTOM_ID = 'llm-chat-scroll-bottom';
   const MODEL_ID = 'llm-chat-model';
   const THINKING_ID = 'llm-chat-thinking';
-  const EXECUTION_HISTORY_STORAGE_KEY = 'llmExecutionHistory';
-  const EXECUTION_HISTORY_LIMIT = 20;
   const QWEN_VIEW_ID = global.crypto?.randomUUID?.() || `qwen-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   // 独立页面模式（modules/llm/chat.html）：面板直接展开铺满窗口。
@@ -1436,14 +1434,9 @@
   function rememberExecution(result, execution = {}) {
     try {
       const normalized = global.BjtuApiPage.serializeValue(result);
-      const previous = JSON.parse(localStorage.getItem(EXECUTION_HISTORY_STORAGE_KEY) || '[]');
-      const list = Array.isArray(previous) ? previous : [];
       const mode = String(execution.mode || result?.name?.replace(/^code\./, '') || '');
       const code = String(execution.code || '');
-      const last = list.at(-1);
-      if (last && last.mode === mode && last.code === code && JSON.stringify(last.outcome) === JSON.stringify(normalized)) return;
-      list.push({ recordedAt: Date.now(), mode, code, outcome: normalized });
-      localStorage.setItem(EXECUTION_HISTORY_STORAGE_KEY, JSON.stringify(list.slice(-EXECUTION_HISTORY_LIMIT)));
+      global.BjtuExecutionHistory.append({ mode, code, outcome: normalized });
     } catch {
       // 操作结果历史仅用于后续工作流复用，写入失败不影响当前操作。
     }

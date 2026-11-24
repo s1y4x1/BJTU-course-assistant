@@ -378,4 +378,22 @@
     ready: consoleNamespacesReady
   });
 
+  async function runStartupScript() {
+    if (!/\/app\/app\.html$/i.test(global.location?.pathname || '')) return;
+    if (document.readyState === 'loading') await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve, { once:true }));
+    await global.__bjtuAppInitialization;
+    await consoleNamespacesReady;
+    const config = (await chrome.storage.local.get('apiStartupScript')).apiStartupScript;
+    if (config?.enabled !== true || typeof config.code !== 'string' || !config.code.trim()) return;
+    let outcome;
+    try {
+      outcome = { ok:true, name:'code.app', result:await executeCode(config.code, 'app') };
+    } catch (error) {
+      outcome = { ok:false, name:'code.app', error:String(error?.message || error), code:'CODE_EXECUTION_FAILED' };
+      console.error('[bjtu] 启动脚本执行失败：', error);
+    }
+    global.BjtuExecutionHistory.append({ mode:'app', code:config.code, source:'startup', outcome:jsBridgeSerializable(outcome) });
+  }
+  void runStartupScript().catch(error => console.error('[bjtu] 启动脚本加载失败：', error));
+
 })(globalThis);
