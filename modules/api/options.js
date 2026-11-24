@@ -6,6 +6,11 @@
   let saveTimer = null, saveRevision = 0, codeDirty = false;
   let saveQueue = Promise.resolve();
 
+  function setStartupStatus(message) {
+    const status = document.getElementById('apiStartupStatus');
+    if (status) status.textContent = message;
+  }
+
   function renderHistory() {
     const host = document.getElementById('apiExecutionHistory');
     if (!host || !global.BjtuExecutionHistory) return;
@@ -45,10 +50,10 @@
       await chrome.storage.local.set({ apiStartupScript:config });
       if (revision === saveRevision) {
         codeDirty = false;
-        document.getElementById('apiStartupStatus').textContent = '已自动保存，下次打开扩展全屏页面时生效';
+        setStartupStatus('已自动保存，下次打开扩展全屏页面时生效');
       }
     }).catch(error => {
-      document.getElementById('apiStartupStatus').textContent = `保存失败：${error.message}`;
+      setStartupStatus(`保存失败：${error.message}`);
     });
     return saveQueue;
   }
@@ -59,10 +64,10 @@
     updateStartup(stored.apiStartupScript);
     const code = document.getElementById('apiStartupCode'), enabled = document.getElementById('apiStartupEnabled');
     code.disabled = false; enabled.disabled = false;
-    document.getElementById('apiStartupStatus').textContent = '编辑后自动保存';
+    setStartupStatus('编辑后自动保存');
     const schedule = (delay) => {
       saveRevision++; codeDirty = true;
-      document.getElementById('apiStartupStatus').textContent = '正在保存…';
+      setStartupStatus('正在保存…');
       clearTimeout(saveTimer); saveTimer = setTimeout(flushStartupSave, delay);
     };
     code.addEventListener('input', () => schedule(300));
@@ -99,9 +104,13 @@
       const ok = event?.detail?.ok === true;
       setMessage(ok ? '已保存' : '保存失败', ok);
     });
-    return Promise.all([refresh(), initScriptAndHistory()]).catch((error) => {
-      setMessage(`操作加载失败：${String(error?.message || error)}`, false);
-    });
+    return Promise.all([
+      refresh().catch(error => setMessage(`操作加载失败：${String(error?.message || error)}`, false)),
+      initScriptAndHistory().catch(error => {
+        setStartupStatus(`读取失败：${String(error?.message || error)}`);
+        setMessage(`启动脚本与执行历史加载失败：${String(error?.message || error)}`, false);
+      })
+    ]);
   }
 
   async function reset() {
