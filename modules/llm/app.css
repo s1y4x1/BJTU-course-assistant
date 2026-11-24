@@ -600,6 +600,11 @@ html[data-color-scheme="dark"] .llm-chat-copy-btn {
   align-self: flex-start;
 }
 
+/* 由容器 gap 统一分隔，避免叠加消息行和操作卡片自身的外边距。 */
+#llm-chat-messages .llm-chat-operation-history-content > * {
+  margin-block: 0;
+}
+
 html[data-color-scheme="dark"] .llm-chat-operation-history > summary {
   color: #a5b4fc;
 }

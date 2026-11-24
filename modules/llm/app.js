@@ -1586,7 +1586,11 @@
     const operationsAlways = el('llm-chat-ask-operations');
     const stop = el('llm-chat-ask-stop');
     if (container instanceof HTMLElement) {
-      if (text instanceof HTMLElement) text.textContent = message?.message || '操作调用次数过多，是否继续？';
+      if (text instanceof HTMLElement) {
+        text.textContent = pendingAskMode === 'operation-permission'
+          ? '是否允许执行此操作？'
+          : (message?.message || '操作调用次数过多，是否继续？');
+      }
       const value = Number(message?.count) > 0 ? Number(message.count) : 3;
       if (count instanceof HTMLInputElement) {
         count.value = String(value);
