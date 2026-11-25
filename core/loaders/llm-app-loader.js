@@ -27,6 +27,7 @@
     await global.BjtuModuleRegistry.loadScript('modules/api/operations-ui.js');
     await global.BjtuModuleRegistry.loadScript('modules/llm/local-model.js');
     await global.BjtuModuleRegistry.loadScript('modules/llm/app.js');
+    await global.BjtuModuleRegistry.loadScript('modules/llm/restyle-app.js');
     await global.BjtuModuleRegistry.loadScript('modules/llm/proactive.js');
     await global.BjtuModuleRegistry.loadScript('modules/llm/proactive-app.js');
     return true;

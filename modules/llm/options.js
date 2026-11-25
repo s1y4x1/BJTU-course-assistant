@@ -84,6 +84,18 @@
     const toggle = document.getElementById('qwenEnabled');
     chatroomAvailable=status.chatroomAvailable===true;
     document.getElementById('llmProactiveEnabled').checked=status.proactiveEnabled!==false;
+    document.getElementById('llmProactiveOnStartup').checked=status.proactiveOnStartup!==false;
+    document.getElementById('llmProactiveIntervalEnabled').checked=status.proactiveIntervalEnabled===true;
+    document.getElementById('llmProactiveIncludeInContext').checked=status.proactiveIncludeInContext===true;
+    const interval=Number(status.proactiveIntervalMinutes)||30;
+    const unit=interval%1440===0?1440:interval%60===0?60:1;
+    if(document.activeElement!==document.getElementById('llmProactiveIntervalValue')){
+      document.getElementById('llmProactiveIntervalUnit').value=String(unit);
+      document.getElementById('llmProactiveIntervalValue').value=String(interval/unit);
+    }
+    document.querySelectorAll('.llm-proactive-sub-options input,.llm-proactive-sub-options select').forEach(input=>{input.disabled=status.proactiveEnabled===false;});
+    document.getElementById('llmProactiveIncludeInContext').disabled=status.proactiveEnabled===false;
+    for(const id of ['llmProactiveIntervalValue','llmProactiveIntervalUnit'])document.getElementById(id).disabled=status.proactiveEnabled===false || status.proactiveIntervalEnabled!==true;
     applyEntryChoice(status.enabled!==false);
     if (toggle instanceof HTMLInputElement) toggle.checked = status.enabled !== false;
     applyEnabledState(status.enabled !== false);
@@ -221,6 +233,18 @@
     document.getElementById('llmProactiveEnabled')?.addEventListener('change',event=>{
       void send('QWEN_SETTINGS_SET',{proactiveEnabled:event.target.checked}).then(response=>{if(response?.ok===false)setMessage(response.message,false);});
     });
+    for(const [id,field]of Object.entries({llmProactiveOnStartup:'proactiveOnStartup',llmProactiveIntervalEnabled:'proactiveIntervalEnabled',llmProactiveIncludeInContext:'proactiveIncludeInContext'})){
+      document.getElementById(id)?.addEventListener('change',event=>{
+        void send('QWEN_SETTINGS_SET',{[field]:event.target.checked}).then(response=>{if(response?.ok===false)setMessage(response.message,false);});
+      });
+    }
+    const saveProactiveInterval=async()=>{
+      const minutes=Number(document.getElementById('llmProactiveIntervalValue').value)*Number(document.getElementById('llmProactiveIntervalUnit').value);
+      if(!Number.isFinite(minutes)||minutes<1){setMessage('主动消息间隔不能小于 1 分钟',false);await refresh();return;}
+      const response=await send('QWEN_SETTINGS_SET',{proactiveIntervalMinutes:minutes});
+      if(response?.ok===false)setMessage(response.message,false);
+    };
+    for(const id of ['llmProactiveIntervalValue','llmProactiveIntervalUnit'])document.getElementById(id)?.addEventListener('change',saveProactiveInterval);
 
     document.getElementById('qwenFabColorMode')?.addEventListener('click', (event) => {
       const button = event.target.closest('[data-value]');
@@ -293,6 +317,7 @@
   }
 
   async function reset() {
+    await send('QWEN_SETTINGS_SET',{proactiveOnStartup:true,proactiveIntervalEnabled:false,proactiveIntervalMinutes:30,proactiveIncludeInContext:false});
     const defaults=global.BjtuLlmDefaults.values;
     await send('QWEN_SETTINGS_SET', { provider:'openai',apiPreset:defaults.llmApiPreset,apiBaseUrl:defaults.llmApiBaseUrl,apiKey:defaults.llmApiKey,apiModel:defaults.llmApiModel, proactiveEnabled:true,enabled:!chatroomAvailable, fabColorMode: 'extension', modelId: '', thinkingEnabled: false, maxIterations: 6, alwaysAllow: false, approvalNotificationMode: 'background', completionNotificationMode: 'background' });
     void refresh();
@@ -300,7 +325,7 @@
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== 'local') return;
-    if (changes.qwenProvider || changes.llmProactiveEnabled) void refresh().catch(error => setMessage(error.message,false));
+    if (changes.qwenProvider || Object.keys(changes).some(key=>key.startsWith('llmProactive')&&key!=='llmProactiveMessages')) void refresh().catch(error => setMessage(error.message,false));
     if (changes.qwenEnabled) {
       const enabled = changes.qwenEnabled.newValue !== false;
       applyEntryChoice(enabled);

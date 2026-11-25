@@ -6,6 +6,15 @@
     return 'qwenLocalChat:' + id;
   };
   async function fetchChatHistory(id) { return (await chrome.storage.local.get(key(id)))[key(id)] || []; }
+  const historyWrites=new Map();
+  function updateHistory(id,change){
+    const name=key(id);
+    const task=(historyWrites.get(name)||Promise.resolve()).catch(()=>{}).then(async()=>{
+      const current=(await chrome.storage.local.get(name))[name] || [];
+      await chrome.storage.local.set({[name]:change(current)});
+    });
+    historyWrites.set(name,task);const clean=()=>{if(historyWrites.get(name)===task)historyWrites.delete(name);};task.then(clean,clean);return task;
+  }
   function create(port) {
     const pending = new Map();
     port?.onMessage.addListener(message => {
@@ -27,6 +36,7 @@
       fetchModels:async()=>[{id:'browser-local',name:'浏览器本地模型（Prompt API）'}],
       newChat:async()=>{const id='local-'+crypto.randomUUID(); await chrome.storage.local.set({[key(id)]:[]}); return id;},
       fetchChatHistory,
+      appendAssistantMessage:(id,message)=>updateHistory(id,history=>[...history,message]),
       deleteChat:async id=>chrome.storage.local.remove(key(id)),
       buildUserMessage:({content})=>({role:'user',content:String(content),id:crypto.randomUUID(),timestamp:Math.floor(Date.now()/1000)}),
       async streamCompletions({chatId,messages,parentId,onEvent,signal}) {
@@ -36,8 +46,8 @@
         if (parentId) {
           const index = history.findIndex(item => item.id === parentId);
           if (index < 0) throw new Error('本地会话的父消息不存在，请重新打开会话');
-          history = history.slice(0,index+1);
-        } else history = [];
+          history = [...history.slice(0,index+1),...history.slice(index+1).filter(row=>row.proactive&&row.contextIncluded)];
+        } else history = history.filter(row=>row.proactive&&row.contextIncluded);
         const user = {...messages[0],id:crypto.randomUUID()}, responseId = crypto.randomUUID();
         let text = '';
         const id = crypto.randomUUID();
@@ -54,7 +64,11 @@
             port.postMessage({type:'localModelPrompt',id,history:history.map(({role,content})=>({role,content})),text:user.content});
           });
           signal?.throwIfAborted();
-          await chrome.storage.local.set({[key(chatId)]:[...history,user,{role:'assistant',id:responseId,content:text,timestamp:Math.floor(Date.now()/1000)}]});
+          await updateHistory(chatId,current=>{
+            const ids=new Set(history.map(row=>row.id));
+            const added=current.filter(row=>row.proactive&&row.contextIncluded&&!ids.has(row.id));
+            return [...history,user,{role:'assistant',id:responseId,content:text,timestamp:Math.floor(Date.now()/1000)},...added];
+          });
           return {text,responseId,responseParentId:user.id};
         } finally { pending.delete(id); signal?.removeEventListener('abort',abort); }
       }

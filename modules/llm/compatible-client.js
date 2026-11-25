@@ -3,6 +3,16 @@
   'use strict';
   const PREFIX = 'compatible-';
   const modelCatalog=new Map();
+  const historyWrites=new Map();
+  function updateChat(key,change){
+    const task=(historyWrites.get(key)||Promise.resolve()).catch(()=>{}).then(async()=>{
+      const stored=(await chrome.storage.local.get(key))[key];
+      await chrome.storage.local.set({[key]:await change(stored)});
+    });
+    historyWrites.set(key,task);
+    const clean=()=>{if(historyWrites.get(key)===task)historyWrites.delete(key);};task.then(clean,clean);
+    return task;
+  }
   const storageKey = id => {
     if (!String(id).startsWith(PREFIX)) throw new Error('不是兼容 API 会话，请新建会话');
     return 'llmApiChat:' + id;
@@ -68,6 +78,13 @@
       async prepareAttachments(files,{modelId}){return global.BjtuLlmModelInfo.validate(files,await this.getModelInfo(modelId));},
       newChat:async()=>{const id=PREFIX+crypto.randomUUID(),c=await config();await chrome.storage.local.set({[storageKey(id)]:{base:c.base,messages:[]}});return id;},
       fetchChatHistory,
+      async appendAssistantMessage(id,message){
+        const c=await config();
+        await updateChat(storageKey(id),stored=>{
+          if(stored?.base!==c.base)throw new Error('API 地址已变更，无法加入主动消息');
+          return {...stored,messages:[...(stored.messages||[]),message]};
+        });
+      },
       deleteChat:id=>chrome.storage.local.remove(storageKey(id)),
       buildUserMessage:({content,thinking=false,attachments=[]})=>({id:crypto.randomUUID(),role:'user',content:global.BjtuLlmModelInfo.appendText(content,attachments),images:attachments.filter(f=>f.kind==='image').map(f=>f.dataUrl),attachmentNames:attachments.map(f=>f.name),thinking:thinking===true,timestamp:Math.floor(Date.now()/1000)}),
       async streamCompletions({chatId,modelId,messages,parentId,onEvent,signal}) {
@@ -75,7 +92,7 @@
         const c=await config(),k=storageKey(chatId),stored=(await chrome.storage.local.get(k))[k];
         if(stored?.base!==c.base)throw new Error('API 地址已变更，请新建会话，避免把其他服务的历史发送到当前地址');
         let history=stored?.messages || [];
-        if(parentId){const i=history.findIndex(m=>m.id===parentId);if(i<0)throw new Error('父消息不存在，请新建会话');history=history.slice(0,i+1);}else history=[];
+        if(parentId){const i=history.findIndex(m=>m.id===parentId);if(i<0)throw new Error('父消息不存在，请新建会话');history=[...history.slice(0,i+1),...history.slice(i+1).filter(m=>m.proactive&&m.contextIncluded)];}else history=history.filter(m=>m.proactive&&m.contextIncluded);
         const model=c.model || modelId;
         if(!model)throw new Error('请先选择或填写 API 模型');
         const user={...messages[0],id:crypto.randomUUID()},responseId=crypto.randomUUID();
@@ -132,7 +149,11 @@
         }
         signal?.throwIfAborted();
         if(!finished)throw new Error('API 响应流意外中断，请重试');
-        await chrome.storage.local.set({[k]:{base:c.base,messages:[...history,user,{id:responseId,role:'assistant',content:text,timestamp:Math.floor(Date.now()/1000)}]}});
+        await updateChat(k,current=>{
+          const ids=new Set(history.map(row=>row.id));
+          const added=(current?.messages||[]).filter(row=>row.proactive&&row.contextIncluded&&!ids.has(row.id));
+          return {base:c.base,messages:[...history,user,{id:responseId,role:'assistant',content:text,timestamp:Math.floor(Date.now()/1000)},...added]};
+        });
         return {text,responseId,responseParentId:user.id};
       }
     };

@@ -500,18 +500,7 @@
     return el;
   }
   function setupMessageCollapse(content) {
-    if (!content.isConnected || content.dataset.collapseReady) return;
-    content.dataset.collapseReady = '1';
-    const maxHeight = Math.max(160, Math.min(640, Math.floor(globalThis.innerHeight * 0.55)));
-    if (content.scrollHeight <= maxHeight + 8) return;
-    content.style.maxHeight = `${maxHeight}px`;
-    content.classList.add('message-text-collapsed');
-    const toggle = button('展开全文', () => {
-      const collapsed = content.classList.toggle('message-text-collapsed');
-      content.style.maxHeight = collapsed ? `${maxHeight}px` : '';
-      toggle.textContent = collapsed ? '展开全文' : '收起';
-    }, 'message-expand');
-    content.after(toggle);
+    globalThis.BjtuMessageCollapse.setup(content);
   }
   function renderMessages() {
     if(selected==='llm')return;
@@ -1570,6 +1559,19 @@
     onDisconnect: disconnect, report
   });
   await sidebar.ready;
+  globalThis.BjtuChatroomUi={
+    confirmClear:callback=>sidebar.confirmClear(callback),
+    async sendAssistantPrompt(text){
+      chooseConversation('llm',{interactive:true});
+      const deadline=Date.now()+20000;
+      while(Date.now()<deadline){
+        const chat=$('chatroom-llm-frame')?.contentWindow?.BjtuLlmChat;
+        if(chat)return chat.sendPrompt(text);
+        await new Promise(resolve=>setTimeout(resolve,100));
+      }
+      throw new Error('AI 助手窗口尚未就绪，请稍后重试');
+    }
+  };
   renderState(); connectionStatus(false);
   await attachTransport();
   backgroundMode?.setFileDecisionHandler(async ({peerId,sid,accept}) => {

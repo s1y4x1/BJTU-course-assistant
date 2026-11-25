@@ -27,7 +27,6 @@
     <label class="qwen-toggle"><input type="radio" name="llmEntry" value="standalone"><span>在扩展全屏页面上显示「AI 助手」按钮</span></label>
     <label class="qwen-toggle"><input type="radio" name="llmEntry" value="chatroom"><span>合并入聊天室</span></label>
   </div>
-  <div class="qwen-toggle-row"><label class="qwen-toggle" title="每次打开扩展全屏页面，等待各平台加载结束后，将账号、作业、邮件及教务信息汇总给当前模型，生成一条简短提醒"><input id="llmProactiveEnabled" type="checkbox" checked><span>主动消息</span></label></div>
 
   <div id="qwenFabColorOption" class="qwen-fab-color-option">
     <span class="qwen-setting-label">按钮颜色</span>
@@ -37,6 +36,17 @@
       <button class="theme-mode-btn" type="button" data-value="light" title="浅色">☀️</button>
       <button class="theme-mode-btn" type="button" data-value="dark" title="深色">🌙</button>
     </span>
+  </div>
+
+  <div class="qwen-toggle-row"><label class="qwen-toggle" title="等待各平台加载结束后，将账号、作业、邮件及教务信息汇总给当前模型，生成一条简短提醒"><input id="llmProactiveEnabled" type="checkbox" checked><span>主动消息</span></label></div>
+  <div class="llm-proactive-sub-options">
+    <label class="qwen-toggle"><input id="llmProactiveOnStartup" type="checkbox" checked><span>启动时发送</span></label>
+    <div id="llmProactiveIntervalEditor" class="schedule-interval-editor">
+      <label class="qwen-toggle"><input id="llmProactiveIntervalEnabled" type="checkbox"><span>间隔</span></label>
+      <input id="llmProactiveIntervalValue" class="bjtu-content-sized-input" type="number" min="1" step="any" value="30" aria-label="主动消息间隔">
+      <select id="llmProactiveIntervalUnit" aria-label="主动消息间隔单位"><option value="1">分钟</option><option value="60">小时</option><option value="1440">天</option></select>
+    </div>
+    <label class="qwen-toggle" title="兼容 API 和本地模型仅加入 AI 回复，不加入提醒提示词；qwen.ai 会直接在活跃会话发送提醒提示词并保留对话"><input id="llmProactiveIncludeInContext" type="checkbox"><span>加入对话上下文</span></label>
   </div>
 
   <div class="qwen-sub-options">

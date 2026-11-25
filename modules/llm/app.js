@@ -319,6 +319,7 @@
 
   function finalizeAssistantSuggestions(bubble, { render = true } = {}) {
     if (!(bubble instanceof HTMLElement)) return null;
+    if(CHATROOM_VIEW)requestAnimationFrame(()=>global.BjtuMessageCollapse?.setup(mdContainer(bubble)));
     const parsed = splitSuggestedReplies(mdRawText(bubble), { allowIncomplete: true });
     if (!parsed.suggestions.length) return null;
     const container = mdContainer(bubble);
@@ -657,9 +658,12 @@
   function appendProactiveMessage(message){
     const container=el(MESSAGES_ID);if(!container)return;
     if([...container.querySelectorAll('[data-proactive-id]')].some(node=>node.dataset.proactiveId===message.id))return;
-    const bubble=appendMessage('assistant',message.content,'',message.timestamp);
+    const parsed=splitSuggestedReplies(message.content);
+    const bubble=appendMessage('assistant',parsed.text,'',message.timestamp);
     bubble.dataset.proactiveId=message.id;
+    bubble.dataset.contextIncluded=String(message.contextIncluded===true);
     messageDisplayNode(bubble).dataset.proactiveId=message.id;
+    if(parsed.suggestions.length)renderSuggestedReplies(bubble,parsed.suggestions);
   }
   function renderHistory(messages, { pendingResponseId = '' } = {}) {
     const messagesEl = el(MESSAGES_ID);
@@ -672,7 +676,7 @@
     let lastExecutionBlocks = null;
     let lastHasFunctionCalls = false;
     for (const message of list) {
-      if(message.proactive){appendProactiveMessage(message);continue;}
+      if(message.proactive){appendProactiveMessage(message);if(message.contextIncluded)lastAssistantResponseId=String(message.id||lastAssistantResponseId);continue;}
       const role = String(message?.role || '');
       if (role === 'user') {
         suggestionCandidate = null;
@@ -1126,6 +1130,7 @@
     }
     bubble.classList.toggle('llm-chat-empty-reply', role === 'assistant' && str.trim() === '（无回复）');
     messages.appendChild(anchor);
+    if(CHATROOM_VIEW&&['user','assistant'].includes(role))requestAnimationFrame(()=>global.BjtuMessageCollapse?.setup(mdContainer(bubble)));
     maybeAutoScrollMessages(messages);
     return bubble;
   }
@@ -2304,12 +2309,13 @@
 
   async function init() {
     await global.BjtuMarkdown.ready;
+    if(CHATROOM_VIEW)await global.BjtuModuleRegistry.loadScript('UI/message-collapse.js');
     if(CHATROOM_VIEW){
       await global.BjtuLlmComposer.mount();
       global.BjtuLlmComposer.setContextReader(()=>[
         ...composerHiddenContext,
         ...Array.from(el(MESSAGES_ID)?.querySelectorAll('.llm-chat-md, .llm-chat-op') || [])
-          .filter(node=>!node.closest('[data-proactive-id], [data-draft], .llm-chat-msg.error, .llm-chat-thinking') && (node.matches('.llm-chat-op') || !node.closest('.llm-chat-op')))
+          .filter(node=>!node.closest('[data-draft], .llm-chat-msg.error, .llm-chat-thinking') && (!node.closest('[data-proactive-id]')||node.closest('[data-context-included="true"]')) && (node.matches('.llm-chat-op') || !node.closest('.llm-chat-op')))
           .map(node=>node._mdText ?? node.textContent ?? '')
       ]);
     }
@@ -2401,7 +2407,7 @@
     });
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if(message?.type==='LLM_PROACTIVE_MESSAGE'){
-        if(String(message.chatId||'')===sessionChatId){appendProactiveMessage(message.message);maybeAutoScrollMessages(el(MESSAGES_ID));}
+        if(String(message.chatId||'')===sessionChatId){appendProactiveMessage(message.message);if(message.message?.contextIncluded&&!busy)sessionParentId=String(message.message.id||sessionParentId);maybeAutoScrollMessages(el(MESSAGES_ID));}
         return false;
       }
       if (message?.type === 'BJTUCA_LOCAL_APPROVAL_RESOLVED') {
@@ -2735,8 +2741,11 @@
           composerHiddenContext=[];
           sendOpening();
         };
-        const deleteCurrent = global.confirm(CHATROOM_VIEW?'清空当前 AI 会话的全部记录？':'是否删除当前会话？');
-        if(CHATROOM_VIEW&&!deleteCurrent)return;
+        if(CHATROOM_VIEW){
+          global.parent.BjtuChatroomUi?.confirmClear(()=>currentId?send('QWEN_DELETE_CHAT',{chatId:currentId}).then(doNew):doNew());
+          return;
+        }
+        const deleteCurrent = global.confirm('是否删除当前会话？');
         if (deleteCurrent && currentId) {
           void send('QWEN_DELETE_CHAT', { chatId: currentId }).then(doNew).catch(doNew);
         } else {
@@ -2816,9 +2825,23 @@
     }
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => init(), { once: true });
-  } else {
-    init();
-  }
+  let chatInitialization;
+  const initChat=()=>chatInitialization ||= init();
+  global.BjtuLlmChat={async sendPrompt(text){
+    if(!String(text||'').trim())throw new Error('消息不能为空');
+    await initChat();
+    await setEmbeddedPanelOpen(true);
+    await activateQwenPanel();
+    if(!lastKnownLoggedIn)throw new Error('请先配置或登录 AI 助手');
+    if(!openingCompleted&&!busy){lastKnownEnabled=true;maybeSendOpening();}
+    const deadline=Date.now()+120000;
+    while(busy||!openingCompleted){
+      if(Date.now()>deadline)throw new Error('AI 助手仍在处理其他请求，请稍后重试');
+      await new Promise(resolve=>setTimeout(resolve,100));
+    }
+    sendMessage(String(text));
+    return {ok:true};
+  }};
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded',initChat,{once:true});
+  else void initChat();
 })(globalThis);

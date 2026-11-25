@@ -89,7 +89,7 @@
       label: 'AI 助手',
       dependencies: ['api'],
       styles: ['options.css', 'app.css', 'chat.css'],
-      files: ['background.js', 'defaults.js', 'proactive.js', 'proactive-app.js', 'model-info.js', 'composer.js', 'qwen-client.js', 'qwen-tab-transport.js', 'content-script.js', 'local-client.js', 'compatible-client.js', 'local-model.js', 'agent.js', 'SystemPrompt.md', 'icon.svg', 'app.html', 'app.js', 'chat.html', 'chat.css', 'chatroom.css', 'options.html', 'options.js'],
+      files: ['background.js', 'defaults.js', 'proactive.js', 'proactive-app.js', 'restyle-app.js', 'restyle-christmas.txt', 'model-info.js', 'composer.js', 'qwen-client.js', 'qwen-tab-transport.js', 'content-script.js', 'local-client.js', 'compatible-client.js', 'local-model.js', 'agent.js', 'SystemPrompt.md', 'icon.svg', 'app.html', 'app.js', 'chat.html', 'chat.css', 'chatroom.css', 'options.html', 'options.js'],
       options: {
         fragment: 'options.html',
         style: 'options.css',
