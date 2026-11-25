@@ -24,7 +24,7 @@
   const {visibleConversations, unreadCount} = globalThis.BjtuChatroomConversations;
   const values={},observed=new Set();
   const updateUnread = () => {
-    const assistant=available.llm && values.qwenEnabled===false ? values.llmChatroomActivity || {} : null;
+    const assistant=available.llm && values.llmEnabled===false ? values.llmChatroomActivity || {} : null;
     const count = visibleConversations(values.chatroomState,{assistant}).reduce((total,{view}) => total + unreadCount(view), 0);
     unreadBadge.hidden = count === 0; unreadBadge.textContent = count > 99 ? '99+' : String(count);
     button.title = count ? `局域网聊天室 · ${count} 条未读消息` : '局域网聊天室';
@@ -32,10 +32,10 @@
   chrome.storage.onChanged.addListener((changes,area) => {
     if (area !== 'local') return;
     let dirty=false;
-    for(const key of ['chatroomState','qwenEnabled','llmChatroomActivity'])if(changes[key]){observed.add(key);values[key]=changes[key].newValue;dirty=true;}
+    for(const key of ['chatroomState','llmEnabled','llmChatroomActivity'])if(changes[key]){observed.add(key);values[key]=changes[key].newValue;dirty=true;}
     if(dirty)updateUnread();
   });
-  const stored=await chrome.storage.local.get(['chatroomState','qwenEnabled','llmChatroomActivity']);
+  const stored=await chrome.storage.local.get(['chatroomState','llmEnabled','llmChatroomActivity']);
   for(const key of Object.keys(stored))if(!observed.has(key))values[key]=stored[key];
   updateUnread();
   button.addEventListener('click', () => void globalThis.BjtuChatroomLauncher.open().catch(error => globalThis.showToast?.(error.message,'error')));

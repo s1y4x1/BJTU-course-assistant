@@ -14,8 +14,9 @@
     try {
       const modules=await Promise.all(['llm','api'].map(id=>fetch(chrome.runtime.getURL(`modules/${id}/module.json`))));
       llmInstalled=modules.every(response=>response.ok);
-      const settings=await chrome.storage.local.get(['qwenEnabled','llmChatroomActivity']);
-      globalThis.__bjtuChatroomLlmAvailable=llmInstalled && settings.qwenEnabled===false;
+      if(llmInstalled)await chrome.runtime.sendMessage({type:'LLM_GET_STATUS',payload:{checkLogin:false}});
+      const settings=await chrome.storage.local.get(['llmEnabled','llmChatroomActivity']);
+      globalThis.__bjtuChatroomLlmAvailable=llmInstalled && settings.llmEnabled===false;
       globalThis.__bjtuLlmActivity=settings.llmChatroomActivity || {};
     } catch {globalThis.__bjtuChatroomLlmAvailable=false;}
   }
@@ -856,7 +857,8 @@
     s.accepted = true; s.status = '等待直连'; s.inviteCard?.remove();
     closeFileInvitation(s);
     if (s.type === 'screen') renderScreenMessage(s);
-    createPC(s); await signal(s, 'accept'); touch(s);
+    if(s.type!=='file'||(state.peers.find(peer=>peer.id===s.peerId)?.connection!=='relay'&&typeof RTCPeerConnection==='function'))createPC(s);
+    await signal(s, 'accept'); touch(s);
   }
   async function pastedFileEntry(file) {
     const extension = /^粘贴内容-\d{8}T\d{9}\.(md|html|txt)$/.exec(file.name)?.[1];
@@ -915,6 +917,9 @@
     };
     pc.onconnectionstatechange = () => {
       if (s.ended) return;
+      if (pc.connectionState === 'failed'&&s.type==='file'&&!s.completed&&!s.done&&!s.relay){
+        void (s.outgoing?startRelayFile(s):signal(s,'relay-request')).catch(()=>endSession(s,'文件中转建立失败',true));return;
+      }
       if (pc.connectionState === 'failed' || pc.connectionState === 'closed') endSession(s, s.completed ? (s.completionText || '对方已完整接收') : '直连失败或已关闭', !s.completed);
       else if (pc.connectionState === 'disconnected') touch(s, 15000);
       else if (pc.connectionState === 'connected') {
@@ -936,6 +941,7 @@
     return pc;
   }
   async function startOffer(s) {
+    if(s.type==='file'&&(state.peers.find(peer=>peer.id===s.peerId)?.connection==='relay'||typeof RTCPeerConnection!=='function'))return startRelayFile(s);
     const pc = createPC(s);
     if (s.type === 'file') bindChannel(s, pc.createDataChannel('bjtu-file', { ordered: true }));
     else {
@@ -944,6 +950,20 @@
     }
     await pc.setLocalDescription(await pc.createOffer());
     if (!s.ended) await signal(s, 'offer', { description: { type: pc.localDescription.type, sdp: pc.localDescription.sdp } });
+    if(s.type==='file')s.fileRelayTimer=setTimeout(()=>{if(!s.ended&&!s.done&&s.channel?.readyState!=='open')void startRelayFile(s).catch(()=>endSession(s,'文件中转建立失败',true));},12000);
+  }
+  function relayFileChannel(s){
+    if(s.pc){s.pc.onconnectionstatechange=null;s.pc.ondatachannel=null;s.pc.onicecandidate=null;s.pc.close();s.pc=null;}
+    if(s.channel){s.channel.onclose=s.channel.onerror=null;s.channel.close();s.channel=null;}
+    s.relay=true;
+    const channel=new globalThis.BjtuRelayFileChannel(frame=>signal(s,'relay-data',frame));
+    bindChannel(s,channel);return channel;
+  }
+  async function startRelayFile(s){
+    if(s.ended||s.relay||s.done)return;
+    clearTimeout(s.fileRelayTimer);
+    relayFileChannel(s);s.status='正在建立加密中转';updateTransfer(s);
+    await signal(s,'relay-open');
   }
   async function handleSignal(peerId, payload) {
     if (stopped || !permitted(peerId) || !payload || payload.protocol !== PROTOCOL || typeof payload.sid !== 'string' || payload.sid.length > 80) return;
@@ -992,9 +1012,15 @@
     if (!s || s.ended) return;
     if (kind === 'cancel' || kind === 'reject') { endSession(s, '对方已取消 / 拒绝'); return; }
     try {
-      if (kind === 'accept' && s.outgoing && !s.accepted) {
+      if(kind==='relay-open'&&s.type==='file'&&!s.outgoing&&s.accepted&&!s.done&&!s.relay){
+        const channel=relayFileChannel(s);await signal(s,'relay-ready');channel.open();touch(s);
+      }else if(kind==='relay-request'&&s.type==='file'&&s.outgoing&&s.accepted&&!s.done&&!s.relay){await startRelayFile(s);
+      }else if(kind==='relay-ready'&&s.type==='file'&&s.outgoing&&s.accepted&&s.relay){s.channel.open();touch(s);
+      }else if(kind==='relay-data'&&s.type==='file'&&s.accepted&&s.relay){s.channel.receive(payload);
+      }else if (kind === 'accept' && s.outgoing && !s.accepted) {
         s.accepted = true; s.status = '正在直连'; updateTransfer(s); await startOffer(s); touch(s);
-      } else if (kind === 'offer' && !s.outgoing && s.accepted && !s.pc.remoteDescription) {
+      } else if (kind === 'offer' && !s.outgoing && s.accepted && !s.pc?.remoteDescription) {
+        createPC(s);
         if (payload.description?.type !== 'offer' || typeof payload.description.sdp !== 'string' || payload.description.sdp.length > 262144) throw new Error('无效的直连邀请。');
         await s.pc.setRemoteDescription(payload.description);
         await drainCandidates(s);
@@ -1021,7 +1047,8 @@
   function bindChannel(s, channel) {
     s.channel = channel; channel.binaryType = 'arraybuffer'; channel.bufferedAmountLowThreshold = 64 * 1024;
     channel.onopen = () => {
-      touch(s); s.status = '传输中'; s.startedAt = performance.now(); updateTransfer(s);
+      clearTimeout(s.fileRelayTimer);
+      touch(s); s.status = s.relay?'传输中（服务器中转）':'传输中'; s.startedAt = performance.now(); updateTransfer(s);
       if (!s.outgoing) { s.windowEnd = Math.min(s.size, 256 * 1024); channel.send(JSON.stringify({ type: 'credit', end: s.windowEnd })); }
       else sendFile(s).catch((error) => { if (!s.ended) { report(error); endSession(s, '发送失败', true); } });
     };
@@ -1289,7 +1316,7 @@
   function endSession(s, reason = '已结束', notify = false) {
     if (!s || s.ended) return;
     if (notify && online) signal(s, 'cancel').catch(() => {});
-    s.ended = true; s.status = reason; clearTimeout(s.timer);
+    s.ended = true; s.status = reason; clearTimeout(s.timer);clearTimeout(s.fileRelayTimer);
     clearTimeout(s.transferRenderTimer);
     s.receiveChunks = null;
     closeFileInvitation(s);
@@ -1604,8 +1631,8 @@
     if (navigation?.tabId === tab?.id) chooseConversation(navigation.conversationId);
   };
   const onNavigation = (changes,area) => {
-    if(area==='local' && changes.qwenEnabled){
-      globalThis.__bjtuChatroomLlmAvailable=llmInstalled && changes.qwenEnabled.newValue===false;
+    if(area==='local' && changes.llmEnabled){
+      globalThis.__bjtuChatroomLlmAvailable=llmInstalled && changes.llmEnabled.newValue===false;
       if(!globalThis.__bjtuChatroomLlmAvailable && selected==='llm')chooseConversation('public');
       renderState();
     }

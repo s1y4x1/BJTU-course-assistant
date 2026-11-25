@@ -10,6 +10,7 @@ export const CHATROOM_LIMITS = Object.freeze({
   maxConnections: 128, maxConnectionsPerIp: 16,
   maxPayload: 262144, maxBufferedBytes: 1048576,
   messagesPerWindow: 40, rateWindowMs: 10000,
+  relayMessagesPerWindow: 2048, relayBytesPerWindow: 8388608,
   upgradesPerMinute: 60, maxSessions: 512, maxSessionsPerPeer: 16,
   sessionTtlMs: 300000, heartbeatMs: 30000
 });
@@ -33,6 +34,7 @@ function publicInfo(info) {
     }
   }
   if(typeof info.extensionVersion==='string')result.extensionVersion=info.extensionVersion.slice(0,32);
+  if(info.relayVersion===1)result.relayVersion=1;
   // The directory is untrusted discovery metadata, never an identity authority.
   return result;
 }
@@ -47,7 +49,7 @@ export function parseChatroomPort(args = []) {
   return Number(value);
 }
 
-/** Start a discovery/SDP-only LAN directory. Port 0 is supported for tests.
+/** Start a LAN directory and bounded opaque encrypted-message relay. Port 0 is supported for tests.
  * No process signal handlers or bridge configuration are touched here.
  * Returns { server, wss, port, host, close }, where close() is idempotent.
  */
@@ -96,7 +98,7 @@ export async function startChatroomServer({ port = DEFAULT_CHATROOM_PORT, host =
   }
   function send(peer, message) {
     if (peer.remote) {
-      if (message.type === 'OFFER' || message.type === 'ANSWER') federation?.forward(peer.id, message);
+      if (['OFFER','ANSWER','RELAY'].includes(message.type)) federation?.forward(peer.id, message);
       return;
     }
     if (!peers.has(peer.id) || peer.ws.readyState !== WebSocket.OPEN) return;
@@ -119,6 +121,19 @@ export async function startChatroomServer({ port = DEFAULT_CHATROOM_PORT, host =
     send(from, {type: 'CONNECT', peer: describe(to)});
   }
   const fail = (peer, code) => send(peer, { type: 'ERROR', code });
+  function relayData(peer,message){
+    const {target,sessionId,frame}=message;
+    if(typeof target!=='string'||target.length>160||typeof sessionId!=='string'||!sessionId.length||sessionId.length>80||!frame||typeof frame!=='object'||Array.isArray(frame)||!['hello','auth','close','data'].includes(frame.type))return fail(peer,'INVALID_RELAY');
+    const recipient=peers.get(target)||remotePeers.get(target);
+    if(!recipient||recipient===peer||(peer.remote&&recipient.remote))return fail(peer,'PEER_NOT_FOUND');
+    if(peer.info.relayVersion!==1||recipient.info.relayVersion!==1)return fail(peer,'RELAY_UNSUPPORTED');
+    const clean=frame.type==='data'
+      ? {type:'data',iv:frame.iv,data:frame.data}
+      : {type:frame.type,packet:frame.packet};
+    if(clean.type==='data'&&(typeof clean.iv!=='string'||clean.iv.length!==16||typeof clean.data!=='string'||!clean.data.length||clean.data.length>196608||!/^[A-Za-z0-9_-]+$/.test(clean.iv+clean.data)))return fail(peer,'INVALID_RELAY');
+    if(clean.type!=='data'&&(!clean.packet||typeof clean.packet!=='object'||Array.isArray(clean.packet)||JSON.stringify(clean.packet).length>16384))return fail(peer,'INVALID_RELAY');
+    send(recipient,{type:'RELAY',peer:describe(peer),sessionId,frame:clean});
+  }
   function pruneSessions(now = Date.now()) {
     for (const [id, session] of sessions) if (session.expires <= now) sessions.delete(id);
   }
@@ -199,15 +214,20 @@ export async function startChatroomServer({ port = DEFAULT_CHATROOM_PORT, host =
       ws.on('message', (data, binary) => {
         if (!peers.has(peer.id) || closing) return;
         const time = Date.now();
-        if (time - peer.windowStart >= limits.rateWindowMs) { peer.windowStart = time; peer.count = 0; }
-        if (++peer.count > limits.messagesPerWindow) { disconnect(peer, 1008, 'Rate limit'); return; }
+        if (time - peer.windowStart >= limits.rateWindowMs) { peer.windowStart = time; peer.count = 0; peer.relayCount=0;peer.relayBytes=0; }
         if (binary) { disconnect(peer, 1003, 'Text signaling only'); return; }
-        if (!data.length) return; // LocalSend keepalive
+        if (!data.length) {if(++peer.count>limits.messagesPerWindow)disconnect(peer,1008,'Rate limit');return;}
         let message;
         try {
           message = JSON.parse(data.toString());
           if (!message || typeof message !== 'object' || Array.isArray(message)) throw new Error();
         } catch { disconnect(peer, 1007, 'Invalid JSON'); return; }
+        if(message.type==='RELAY'){
+          peer.relayCount=(peer.relayCount||0)+1;peer.relayBytes=(peer.relayBytes||0)+data.length;
+          if(peer.relayCount>limits.relayMessagesPerWindow||peer.relayBytes>limits.relayBytesPerWindow){disconnect(peer,1008,'Relay rate limit');return;}
+          relayData(peer,message);return;
+        }
+        if (++peer.count > limits.messagesPerWindow) { disconnect(peer, 1008, 'Rate limit'); return; }
         if (message.type === 'UPDATE') {
           try { peer.info = publicInfo(message.info); }
           catch { fail(peer, 'INVALID_INFO'); return; }
@@ -224,7 +244,7 @@ export async function startChatroomServer({ port = DEFAULT_CHATROOM_PORT, host =
         // Construct a fresh envelope: client-supplied peer/from/id never reaches recipients.
         relay(peer, message);
       });
-      send(peer, { type: 'HELLO', service: 'bjtuca-chatroom', client: describe(peer), peers: existing });
+      send(peer, { type: 'HELLO', service: 'bjtuca-chatroom', capabilities:{relay:1}, client: describe(peer), peers: existing });
       if (peers.has(peer.id)) broadcast({ type: 'JOIN', peer: describe(peer) }, peer);
       for (const other of [...peers.values(), ...remotePeers.values()]) arrangeConnection(peer, other);
       federation?.publish();
@@ -269,7 +289,9 @@ export async function startChatroomServer({ port = DEFAULT_CHATROOM_PORT, host =
       },
       onSignal(source, message) {
         const remote = remotePeers.get(source.id);
-        if (!closing && remote && peers.has(message.target)) relay(remote, message);
+        if (!closing && remote && peers.has(message.target)) {
+          if(message.type==='RELAY')relayData(remote,message);else relay(remote,message);
+        }
       }
     });
   }
@@ -309,7 +331,7 @@ export async function runChatroomServer(args = process.argv.slice(2)) {
   for (const entries of Object.values(networkInterfaces())) {
     for (const item of entries || []) if (item.family === 'IPv4' && !item.internal) addresses.add(item.address);
   }
-  process.stdout.write(`聊天室 LAN 信令服务已启动（独立于 Bridge，无需扩展连接）\n${[...addresses].map(ip => `  ws://${ip}:${service.port}/chatroom`).join('\n')}\n已启用局域网组播发现（UDP 1898）和服务器互联；扩展无需更改地址。\n仅用于可信局域网；不转发聊天或文件内容。按 Ctrl+C 关闭。\n`);
+  process.stdout.write(`聊天室 LAN 服务已启动（独立于 Bridge，无需扩展连接）\n${[...addresses].map(ip => `  ws://${ip}:${service.port}/chatroom`).join('\n')}\n已启用局域网组播发现（UDP 1898）和服务器互联；扩展无需更改地址。\n消息和文件直连失败时可使用端到端加密中转；屏幕共享仍需直连。仅用于可信局域网，按 Ctrl+C 关闭。\n`);
   terminal=createChatroomTerminal(process.stdout);terminal.update(service.listPeers());
   const shutdown = () => {
     terminal.close();

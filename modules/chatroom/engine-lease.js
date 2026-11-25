@@ -72,7 +72,7 @@
         const hold = new Promise(done => { releaseLock = done; });
         try {
           if (!globalThis.BjtuChatroomTransport) await script('transport.js');
-          if (!globalThis.BjtuChatroomLink) await script('link.js');
+          if (!globalThis.BjtuChatroomLink) {await script('relay.js');await script('link.js');}
           if (stopped) { releaseLock(); resolve(false); return; }
           if (!draining) change(background ? 'background' : 'foreground');
           resolve(true);

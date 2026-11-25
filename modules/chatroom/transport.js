@@ -730,6 +730,7 @@
       p.online = true; p.lastSeen = Date.now();
       const event = wasOnline ? undefined : publicPresenceEvent(p, true);
       p.reconnectable = value.reconnectable === true;
+      if(value.connection==='relay'||value.connection==='direct')p.connection=value.connection;
       if (!wasOnline && !p.blocked) for (const r of data.rooms) {
         if (!r.members.includes(publicIdentity.id) || !r.members.includes(p.id)) continue;
         enqueue(effects, p.id, 'group-state', groupStatePayload(r));

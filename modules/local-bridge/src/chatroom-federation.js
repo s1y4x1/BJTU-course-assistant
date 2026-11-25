@@ -72,7 +72,7 @@ export function createChatroomFederation({ id, port, listPeers, onPeers, onSigna
         } else if (message.type === 'SIGNAL') {
           const route = routes.get(message.from);
           if (route?.link !== link || typeof message.target !== 'string') throw new Error('Invalid route');
-          onSignal(route.peer, {type:message.signal?.type, sessionId:message.signal?.sessionId, sdp:message.signal?.sdp, target:message.target});
+          onSignal(route.peer, {type:message.signal?.type, sessionId:message.signal?.sessionId, sdp:message.signal?.sdp, frame:message.signal?.frame, target:message.target});
         } else throw new Error('Invalid packet');
       } catch { ws.terminate(); }
     });
@@ -144,7 +144,7 @@ export function createChatroomFederation({ id, port, listPeers, onPeers, onSigna
     forward(target, signal) {
       const route = routes.get(target);
       return !!route && send(route.link, {protocol:PROTOCOL, serverId:id, type:'SIGNAL', from:signal.peer.id, target,
-        signal:{type:signal.type, sdp:signal.sdp, sessionId:signal.sessionId}});
+        signal:{type:signal.type, sdp:signal.sdp, frame:signal.frame, sessionId:signal.sessionId}});
     },
     upgrade(req, socket, head) {
       const remoteId = new URL(req.url, 'http://localhost').searchParams.get('id');

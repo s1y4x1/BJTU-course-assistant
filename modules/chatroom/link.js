@@ -10,7 +10,10 @@
   const sessions = new Map(), discovered = new Map(), listeners = new Set();
   let socket = null, opening = null, ping, rotate, socketId = '', generation = 0, configuredAddress = '';
   let localIP = '';
+  let canRelay=false;
   const engine = () => globalThis.BjtuChatroomTransport;
+  const directConnected=peerId=>[...sessions.values()].some(s=>s.authenticated&&s.peerId===peerId&&!s.closed);
+  const relay=globalThis.BjtuChatroomRelay?.create({engine,emit,send:signalSend,getLocalId:()=>socketId,isDirectConnected:directConnected});
   function emit(type, detail = {}) {
     for (const fn of listeners) { try { fn({ type, ...detail }); } catch {} }
     globalThis.dispatchEvent?.(new CustomEvent('bjtu-chatroom-link-status', { detail: { type, ...detail } }));
@@ -30,12 +33,22 @@
   async function identity() { await engine().ready; return engine().getPublicIdentity(); }
   function drop(s) {
     if (!s || s.closed) return;
-    s.closed = true; clearTimeout(s.timer); clearTimeout(s.disconnectTimer); s.cancelGather?.();
+    s.closed = true; clearTimeout(s.timer); clearTimeout(s.disconnectTimer); clearTimeout(s.connectTimer); s.cancelGather?.();
     s.channel?.close(); s.pc.close(); sessions.delete(s.id);
-    if (s.peerId && ![...sessions.values()].some(x => x.peerId === s.peerId && x.authenticated)) {
+    if (s.peerId && ![...sessions.values()].some(x => x.peerId === s.peerId && x.authenticated) && !relay?.isConnected(s.peerId)) {
       Promise.resolve(engine()?.peerOffline(s.peerId)).catch(() => {});
     }
     emit('peer-closed', { peerId: s.peerId });
+  }
+  async function fallback(s,error){
+    if(s.fallbackPromise)return s.fallbackPromise;
+    const peer=discovered.get(s.target);
+    if(!canRelay||!relay||peer?.relayVersion!==1){drop(s);throw error;}
+    s.fallbackPromise=(async()=>{drop(s);await relay.connect(peer,s.id);emit('peer-fallback',{peerId:peer.identityId,reason:error?.message||'直连不可用'});return {sessionId:s.id,relay:true};})();
+    return s.fallbackPromise;
+  }
+  function watchConnection(s){
+    s.connectTimer=setTimeout(()=>{if(!s.authenticated)void fallback(s,new Error('直连建立超时')).catch(error=>emit('error',{message:error.message}));},12000);
   }
   function makeSession(id = crypto.randomUUID()) {
     if (sessions.size >= MAX_LINKS) throw new Error('直连数量已达上限，请先断开部分连接。');
@@ -44,7 +57,8 @@
     sessions.set(id, s); s.timer = setTimeout(() => drop(s), TTL);
     s.pc.onconnectionstatechange = () => {
       const status = s.pc.connectionState;
-      if (status === 'failed' || status === 'closed') drop(s);
+      if (status === 'failed') void fallback(s,new Error('直连失败')).catch(error=>emit('error',{message:error.message}));
+      if (status === 'closed') drop(s);
       if (status === 'disconnected') s.disconnectTimer ||= setTimeout(() => drop(s), 15000);
       if (status === 'connected') { clearTimeout(s.disconnectTimer); s.disconnectTimer = null; }
     };
@@ -56,7 +70,7 @@
     await new Promise((resolve, reject) => {
       const finish = error => { clearTimeout(timer); s.pc.removeEventListener('icegatheringstatechange', change); s.cancelGather = null; error ? reject(error) : resolve(); };
       const change = () => { if (s.pc.iceGatheringState === 'complete') finish(); };
-      const timer = setTimeout(() => finish(new Error('ICE 候选收集超时，请重新生成配对信息。')), 20000);
+      const timer = setTimeout(() => finish(!s.target&&/^a=candidate:/m.test(s.pc.localDescription?.sdp||'')?null:new Error('ICE 候选收集超时，请重新生成配对信息。')), s.target&&canRelay?4000:20000);
       s.cancelGather = () => finish(new Error('配对已取消。'));
       s.pc.addEventListener('icegatheringstatechange', change); change();
     });
@@ -102,8 +116,8 @@
           const valid = await engine().verifyPacket(frame.packet);
           if (!valid || frame.packet.type !== 'link-auth' || frame.packet.from !== s.remoteIdentity.id || frame.packet?.payload?.nonce !== s.localNonce || frame.packet?.payload?.sessionId !== s.id ||
               frame.packet.payload.senderFingerprint !== fingerprint(s.pc.remoteDescription) || frame.packet.payload.receiverFingerprint !== fingerprint(s.pc.localDescription)) throw new Error('身份验证失败。');
-          s.peerId = s.remoteIdentity.id; s.authenticated = true; clearTimeout(s.timer);
-          const result = await engine().peerOnline({ identity: frame.packet.identity, authenticated: true, ip: s.ip || '', reconnectable:!!s.target });
+          s.peerId = s.remoteIdentity.id; s.authenticated = true; clearTimeout(s.timer); clearTimeout(s.connectTimer);
+          const result = await engine().peerOnline({ identity: frame.packet.identity, authenticated: true, ip: s.ip || '', reconnectable:!!s.target, connection:'direct' });
           if (result?.ok === false) throw new Error('对方已被屏蔽。');
           emit('peer-online', { peerId: s.peerId });
         } else if (frame.type === 'packet' && s.authenticated) {
@@ -146,9 +160,9 @@
   async function publicInfo(refresh=false) {
     if(refresh)try{await engine().refreshAccounts?.();}catch{}
     const info = await identity();
-    return { alias: info.nickname || localIP || '默认IP', identityId: info.id, version: '1', deviceModel: VERSION, deviceType: 'WEB', device: info.device || null, accounts:info.accounts || null, extensionVersion:info.version || '', token: crypto.randomUUID() };
+    return { alias: info.nickname || localIP || '默认IP', identityId: info.id, ...(relay?{relayVersion:1}:{}), version: '1', deviceModel: VERSION, deviceType: 'WEB', device: info.device || null, accounts:info.accounts || null, extensionVersion:info.version || '', token: crypto.randomUUID() };
   }
-  function signalSend(message) { if (socket?.readyState !== 1) throw new Error('请先点击扫描设备，启用在线发现。'); socket.send(JSON.stringify(message)); }
+  function signalSend(message) { if (socket?.readyState !== 1) throw new Error('请先点击扫描设备，启用在线发现。'); if(socket.bufferedAmount>1048576)throw new Error('服务器发送队列繁忙，请稍后重试');socket.send(JSON.stringify(message)); }
   function remember(peer) {
     if (peer?.deviceModel !== VERSION || typeof peer.id !== 'string' || !peer.id || peer.id.length > 160 || discovered.size >= 500) return;
     discovered.set(peer.id, peer); emit('discovery', { peers: [...discovered.values()], deviceId: socketId });
@@ -157,6 +171,7 @@
     if (message.type === 'HELLO') {
       if (message.service !== 'bjtuca-chatroom') { socket?.close(); throw new Error('请使用 BJTUCA Bridge 聊天室服务器。'); }
       socketId = message.client?.id || '';
+      canRelay=message.capabilities?.relay===1;
       if (typeof message.client?.ip === 'string') {
         localIP = message.client.ip;
         await engine().setLocalIP?.(localIP);
@@ -167,15 +182,22 @@
     }
     else if (message.type === 'CONNECT') { remember(message.peer); await connect(message.peer?.id); }
     else if (message.type === 'JOIN' || message.type === 'UPDATE') remember(message.peer);
-    else if (message.type === 'LEFT') { discovered.delete(message.peerId); for(const s of [...sessions.values()])if(s.target===message.peerId&&!s.authenticated)drop(s);emit('discovery', { peers: [...discovered.values()], deviceId: socketId }); }
+    else if (message.type === 'LEFT') { discovered.delete(message.peerId);relay?.closePeer(message.peerId); for(const s of [...sessions.values()])if(s.target===message.peerId&&!s.authenticated)drop(s);emit('discovery', { peers: [...discovered.values()], deviceId: socketId }); }
+    else if(message.type==='RELAY'&&canRelay&&message.peer?.relayVersion===1){
+      remember(message.peer);
+      const direct=sessions.get(message.sessionId);
+      if(message.frame?.type==='hello'&&direct?.target===message.peer.id)drop(direct);
+      await relay?.receive(message);
+    }
     else if (message.type === 'OFFER' && message.peer?.deviceModel === VERSION) {
       if (typeof message.sessionId !== 'string' || message.sessionId.length > 80 || sessions.has(message.sessionId)) return;
       if (message.peer.identityId && isConnected(message.peer.identityId)) return;
       if ([...sessions.values()].some(s => s.target === message.peer.id && !s.closed)) return;
-      const s = makeSession(message.sessionId); s.target = message.peer.id; s.ip = message.peer.ip;
+      if(sessions.size>=MAX_LINKS&&canRelay&&message.peer.relayVersion===1){await relay.connect(message.peer,message.sessionId);return;}
+      const s = makeSession(message.sessionId); s.target = message.peer.id; s.ip = message.peer.ip;watchConnection(s);
       if (message.peer.identityId) s.expectedIdentity = {id: message.peer.identityId};
       try { await s.pc.setRemoteDescription({ type: 'offer', sdp: await codec(message.sdp, false) }); await s.pc.setLocalDescription(await s.pc.createAnswer()); await gather(s); signalSend({ type: 'ANSWER', target: s.target, sessionId: s.id, sdp: await codec(s.pc.localDescription.sdp, true) }); }
-      catch (e) { drop(s); throw e; }
+      catch (e) { await fallback(s,e); }
     } else if (message.type === 'ANSWER') {
       const s = sessions.get(message.sessionId);
       if (s && s.target === message.peer?.id && !s.pc.remoteDescription) {
@@ -201,7 +223,7 @@
           signalSend({type: 'DISCOVER'});
           return {peers: [...discovered.values()], deviceId: socketId};
         }
-        const old = socket; socket = null; old.close(); clearInterval(ping); clearInterval(rotate);
+        const old = socket; socket = null; old.close();relay?.close();canRelay=false; clearInterval(ping); clearInterval(rotate);
         discovered.clear(); socketId = '';
         for (const session of [...sessions.values()]) if (!session.authenticated && session.target) drop(session);
         emit('scan-closed');
@@ -219,7 +241,7 @@
         const fail = () => { if (!settled) { settled = true; clearTimeout(timer); reject(new Error('在线发现连接失败；仍可使用离线配对。')); } };
         const timer = setTimeout(() => { fail(); ws.close(); }, 15000);
         ws.onerror = fail;
-        ws.onclose = () => { fail(); if (socket === ws) { clearInterval(ping); clearInterval(rotate); socket = null; socketId = ''; discovered.clear(); emit('scan-closed'); } };
+        ws.onclose = () => { fail(); if (socket === ws) { clearInterval(ping); clearInterval(rotate); socket = null;relay?.close();canRelay=false; socketId = ''; discovered.clear(); emit('scan-closed'); } };
         ws.onmessage = ({ data }) => {
           if (socket !== ws || typeof data !== 'string' || data.length > MAX) return;
           try {
@@ -258,7 +280,7 @@
           if(refresh)lastAccountReadAt=now;
           for(const s of [...sessions.values()])if(s.target&&!s.authenticated&&now-s.createdAt>=45000)drop(s);
           const missing=[...discovered.values()].some(peer=>peer.identityId!==next.identityId&&(!peer.identityId||!isConnected(peer.identityId)));
-          if(ws===socket&&ws.readyState===1&&missing&&sessions.size<MAX_LINKS&&now-lastDiscoverAt>=10000){
+          if(ws===socket&&ws.readyState===1&&missing&&(sessions.size<MAX_LINKS||canRelay)&&now-lastDiscoverAt>=10000){
             ws.send(JSON.stringify({type:'DISCOVER'}));lastDiscoverAt=now;
           }
           if(ws===socket&&ws.readyState===1&&(signature!==profileSignature||Date.now()-lastProfileAt>=30*60*1000)){
@@ -324,26 +346,28 @@
     if (peer.identityId === own.id) return {};
     const pending = [...sessions.values()].find(s => s.target === id && !s.closed);
     if (pending) return {sessionId: pending.id};
-    const s = makeSession(); s.target = id; s.ip = peer.ip;
+    if((sessions.size>=MAX_LINKS||typeof RTCPeerConnection!=='function')&&canRelay&&peer.relayVersion===1){const s=await relay.connect(peer);return {sessionId:s.id,relay:true};}
+    const s = makeSession(); s.target = id; s.ip = peer.ip;watchConnection(s);
     if (peer.identityId) s.expectedIdentity = {id: peer.identityId};
     try { bind(s, s.pc.createDataChannel(LABEL, { ordered: true })); await s.pc.setLocalDescription(await s.pc.createOffer()); await gather(s); signalSend({ type: 'OFFER', target: id, sessionId: s.id, sdp: await codec(s.pc.localDescription.sdp, true) }); return { sessionId: s.id }; }
-    catch (e) { drop(s); throw e; }
+    catch (e) { return fallback(s,e); }
   }
   async function sendPeer(peerId, packet) {
     const s = [...sessions.values()].find(x => x.authenticated && x.peerId === peerId && !x.closed);
-    if (!s) throw new Error('对方未连接，请先配对。');
+    if (!s){if(relay?.isConnected(peerId))return relay.sendPeer(peerId,packet);throw new Error('对方未连接，请先配对。');}
     send(s, { protocol: VERSION, type: 'packet', packet });
   }
   async function close(input) {
     const peerId = typeof input === 'string' ? input : input?.peerId;
     if (!peerId) {
       generation++; clearInterval(ping); clearInterval(rotate);
-      const old = socket; socket = null; old?.close(); discovered.clear(); socketId = ''; emit('scan-closed');
+      const old = socket; socket = null; old?.close(); discovered.clear(); socketId = '';canRelay=false; emit('scan-closed');
     }
     for (const s of [...sessions.values()]) if (!peerId || s.peerId === peerId || s.id === peerId) drop(s);
+    if(peerId)relay?.closePeer(peerId);else relay?.close();
   }
   function isConnected(peerId) {
-    return [...sessions.values()].some(s => s.authenticated && s.peerId === peerId && !s.closed);
+    return directConnected(peerId)||relay?.isConnected(peerId)||false;
   }
   globalThis.BjtuChatroomLink = { scan, connect, pairCreate, pairAccept, pairComplete, sendPeer, close,
     get discoveryStatus() { return socket?.readyState === 1 ? 'connected' : opening || socket?.readyState === 0 ? 'connecting' : 'disconnected'; },
