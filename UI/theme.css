@@ -88,7 +88,7 @@ html :is(body.options-page, .module-options-standalone, [data-options-fragment])
   min-height: 34px !important;
   max-height: 34px !important;
 }
-.schedule-interval-editor:has(> .bjtu-content-sized-input) {
+:is(.schedule-interval-editor, .campusnet-interval-editor):has(> .bjtu-content-sized-input) {
   grid-template-columns: max-content max-content max-content;
   justify-content: start;
 }
