@@ -260,6 +260,85 @@
     }).observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['style'] });
   }
 
+  function installOptionsControlSizingFallback() {
+    if (globalThis.CSS?.supports?.('field-sizing', 'content')) return;
+    const scope = 'body.options-page, .module-options-standalone, [data-options-fragment]';
+    const controls = 'select, input:not([type]), input:is([type="text"], [type="number"], [type="password"], [type="email"], [type="url"], [type="search"], [type="tel"])';
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    const pending = new Set();
+    let scheduled = false;
+    const eligible = element => element instanceof Element && element.matches(controls)
+      && element.id !== 'localBridgePairCode' && element.closest(scope);
+    function enqueue(element) {
+      if (!eligible(element)) return;
+      pending.add(element);
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(() => {
+        scheduled = false;
+        const measurements = [];
+        for (const control of pending) {
+          if (!control.isConnected || !eligible(control)) continue;
+          const style = getComputedStyle(control);
+          context.font = style.font || `${style.fontSize} ${style.fontFamily}`;
+          const isSelect = control instanceof HTMLSelectElement;
+          const text = isSelect ? (control.selectedOptions[0]?.label || '')
+            : control.type === 'password' && control.value ? '•'.repeat(control.value.length)
+            : control.value || control.placeholder || '';
+          const letters = Number.parseFloat(style.letterSpacing) || 0;
+          const textWidth = context.measureText(text || '0').width + Math.max(0, text.length - 1) * letters;
+          const extras = ['paddingLeft', 'paddingRight', 'borderLeftWidth', 'borderRightWidth']
+            .reduce((sum, name) => sum + (Number.parseFloat(style[name]) || 0), 0);
+          // Native arrows/spinners occupy space outside the text measurement.
+          const decoration = isSelect ? (style.appearance === 'none' ? 0 : 22)
+            : control.type === 'number' ? 18 : 2;
+          measurements.push([control, `${Math.ceil(textWidth + extras + decoration)}px`]);
+        }
+        pending.clear();
+        for (const [control, width] of measurements) {
+          if (control.style.getPropertyValue('--bjtu-options-control-width') !== width)
+            control.style.setProperty('--bjtu-options-control-width', width);
+        }
+      });
+    }
+    function scan(root) {
+      if (!(root instanceof Element) && root !== document) return;
+      enqueue(root);
+      root.querySelectorAll(controls).forEach(enqueue);
+    }
+    ['input', 'change', 'focusin'].forEach(name => document.addEventListener(name, event => enqueue(event.target), true));
+    // Programmatic value assignments do not emit input/change. Only older
+    // engines need these wrappers; preserve native getters/setters exactly.
+    for (const [prototype, names] of [[HTMLInputElement.prototype, ['value', 'placeholder']],
+      [HTMLSelectElement.prototype, ['value', 'selectedIndex']], [HTMLOptionElement.prototype, ['selected', 'text', 'label']]]) {
+      for (const name of names) {
+        const descriptor = Object.getOwnPropertyDescriptor(prototype, name);
+        if (!descriptor?.set || !descriptor.configurable) continue;
+        Object.defineProperty(prototype, name, {...descriptor, set(value) {
+          descriptor.set.call(this, value);
+          enqueue(this instanceof HTMLOptionElement ? this.closest('select') : this);
+        }});
+      }
+    }
+    new MutationObserver(records => {
+      for (const record of records) {
+        const element = record.target instanceof Element ? record.target : record.target.parentElement;
+        enqueue(element?.closest('select') || element);
+        if (record.type === 'attributes' && record.attributeName === 'class') scan(element);
+        record.addedNodes.forEach(scan);
+      }
+    }).observe(document.documentElement, {subtree:true, childList:true, characterData:true,
+      attributes:true, attributeFilter:['value', 'placeholder', 'selected', 'label', 'type', 'class']});
+    const rescan = () => scan(document);
+    window.addEventListener('bjtu-font-size-change', rescan);
+    document.fonts?.addEventListener('loadingdone', rescan);
+    rescan();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', installOptionsControlSizingFallback, {once:true});
+  else installOptionsControlSizingFallback();
+
   const motionPolicy = document.createElement('style');
   motionPolicy.id = 'bjtu-animation-policy';
   motionPolicy.textContent = `

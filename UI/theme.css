@@ -49,6 +49,39 @@ html select.bjtu-content-sized-select {
   max-width: 100%;
 }
 html .bjtu-content-sized-controls { display:flex; align-items:center; gap:8px; }
+/* Options controls size to the current value, not the longest select option.
+   Keep these overrides shared: module styles often specify fixed/100% widths. */
+html :is(body.options-page, .module-options-standalone, [data-options-fragment])
+:is(select, input:not([type]), input:is([type="text"], [type="number"], [type="password"], [type="email"], [type="url"], [type="search"], [type="tel"])) {
+  field-sizing: content;
+  width: auto !important;
+  inline-size: auto !important;
+  min-width: 0 !important;
+  min-inline-size: 0 !important;
+  max-width: 100% !important;
+  max-inline-size: 100% !important;
+  flex: 0 1 auto !important;
+  box-sizing: border-box !important;
+  /* Width changes must not replay the animation-speed editor's input. */
+  transition-property: color, background-color, border-color, box-shadow !important;
+}
+@supports not (field-sizing: content) {
+  html :is(body.options-page, .module-options-standalone, [data-options-fragment])
+  :is(select, input:not([type]), input:is([type="text"], [type="number"], [type="password"], [type="email"], [type="url"], [type="search"], [type="tel"])) {
+    width: var(--bjtu-options-control-width, auto) !important;
+    inline-size: var(--bjtu-options-control-width, auto) !important;
+  }
+}
+html :is(body.options-page, .module-options-standalone, [data-options-fragment]) #localBridgePairCode {
+  field-sizing: fixed;
+  width: calc(6ch + 18px) !important;
+  inline-size: calc(6ch + 18px) !important;
+  min-width: calc(6ch + 18px) !important;
+  min-inline-size: calc(6ch + 18px) !important;
+  padding-inline: 8px !important;
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto !important;
+}
 :where(body.options-page, .module-options-standalone, [data-options-fragment]) input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="hidden"]) {
   box-sizing: border-box !important;
   height: 34px !important;
@@ -550,12 +583,12 @@ html[data-color-scheme="dark"] .platform-qr-login-tip {
 }
 
 /* Shared spacing for the main options page, standalone module options and embedded option cards. */
-:where(#options-controlled-content, [data-options-fragment]) :is(label, .qwen-setting-row, .qwen-toggle-row) {
+:where(#options-controlled-content, [data-options-fragment]) :is(label, .llm-setting-row, .llm-toggle-row) {
   margin-top:4px !important;
   margin-bottom:4px !important;
   font-size:var(--bjtu-font-size-body, 13px) !important;
 }
-:where(#options-controlled-content, [data-options-fragment]) :is(.qwen-setting-row, .qwen-toggle-row) > label {
+:where(#options-controlled-content, [data-options-fragment]) :is(.llm-setting-row, .llm-toggle-row) > label {
   margin-top:0 !important;
   margin-bottom:0 !important;
 }
@@ -566,7 +599,7 @@ html[data-color-scheme="dark"] .platform-qr-login-tip {
 :where(#options-controlled-content, [data-options-fragment]) .platform-option > label {
   font-size:var(--bjtu-font-size-secondaryTitle, 16px) !important;
 }
-:where(#options-controlled-content, [data-options-fragment]) :is(.qwen-setting-row, .qwen-toggle-row) :is(.qwen-setting-label, .qwen-toggle-label) {
+:where(#options-controlled-content, [data-options-fragment]) :is(.llm-setting-row, .llm-toggle-row) :is(.llm-setting-label, .llm-toggle-label) {
   font-size:inherit !important;
 }
 :where(#options-controlled-content, [data-options-fragment]) :is(.open-mode-row > div, .schedule-interval-editor > span, .campusnet-interval-editor > span, .mail-monitor-interval-editor > span) {
