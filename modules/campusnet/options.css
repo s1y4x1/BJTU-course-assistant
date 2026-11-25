@@ -19,6 +19,10 @@
   color:#475569;
   font-size:13px;
 }
+#campusNetworkReconnectAccount,
+#campusNetworkReconnectPassword {
+  width:100% !important;
+}
 .campusnet-interval-editor {
   display:grid;
   grid-template-columns:auto minmax(72px,1fr) auto;
