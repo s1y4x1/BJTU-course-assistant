@@ -154,6 +154,10 @@ body.module-options-standalone label:has(input:not(:disabled), select:not(:disab
 .xuetangx-secret-input-wrap input {
   padding-right:42px;
 }
+#xuetangxSecondCsrfToken,
+#xuetangxSecondSessionId {
+  width:100% !important;
+}
 .xuetangx-secret-toggle {
   position:absolute;
   top:50%;
