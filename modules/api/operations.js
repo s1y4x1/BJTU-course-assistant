@@ -802,6 +802,16 @@
 
   const COURSE_LOGIN_PLATFORMS=new Set(['ve','ykt','mrjzy','jlgj','mooc','xuetangx','citel']);
   function withLoginOptions(operation,doc){
+    if(operation.name.endsWith('.status')&&COURSE_LOGIN_PLATFORMS.has(operation.module)){
+      const run=operation.run;
+      const blocks=[['enabled','无参数查询状态；传入 false 关闭 app.html 中的该平台，不登录、不刷新。再次获取课程或作业前需调用 login()。'],['example','`'+operation.name+'()`；`'+operation.name+'(false)`']];
+      doc=typeof doc==='string'?doc+'\n\n'+blocks.map(([title,text])=>title+'：'+text).join('\n\n'):{...doc,blocks:[...(doc?.blocks||[]),...blocks]};
+      return {doc,operation:{...operation,async run(args){
+        if(args===false)return compactLoginResult(await pageInvoke(operation.module,'loginOptions',{status:false},Number.POSITIVE_INFINITY));
+        if(args===true)throw new Error('启用平台请调用 '+operation.module+'.login()');
+        return run(args);
+      }}};
+    }
     if(!operation.name.endsWith('.login'))return {operation,doc};
     const coursePlatform=COURSE_LOGIN_PLATFORMS.has(operation.module),run=operation.run;
     const refreshDescription=coursePlatform
@@ -809,15 +819,12 @@
       : operation.module==='academic'?'传入 refresh:true 时，登录后重新获取当前学期课表、考试和成绩，并等待全部请求完成才返回成功。'
       : '传入 refresh:true 时，登录后重新获取所选认证平台的个人信息，成功后才返回。统一身份认证没有课程作业列表。';
     const blocks=[['refresh','可选，布尔值，默认 false。'+refreshDescription],
-      ['status',coursePlatform?'可选，布尔值，默认 true；status:false 关闭 app.html 中的平台，不登录、不刷新；再次获取课程或作业前需调用 login()。status:false 优先于 refresh:true。':'本模块没有 app.html 课程平台启用开关，不支持 status:false。'],
-      ['example','`'+operation.name+'({"refresh":true})`'+(coursePlatform?'；`'+operation.name+'({"status":false})`':'')]];
+      ...(coursePlatform?[['关闭平台','调用 `'+operation.module+'.status(false)`；login 不再接受 status 参数。']]:[]),
+      ['example','`'+operation.name+'({"refresh":true})`']];
     doc=typeof doc==='string'?doc+'\n\n'+blocks.map(([title,text])=>title+'：'+text).join('\n\n'):{...doc,blocks:[...(doc?.blocks||[]),...blocks]};
     operation={...operation,async run(args={}){
-      for(const name of ['refresh','status'])if(args[name]!==undefined&&typeof args[name]!=='boolean')throw new Error(name+' 必须是布尔值');
-      if(args.status===false){
-        if(!coursePlatform)throw new Error('该模块没有可关闭的课程平台');
-        return compactLoginResult(await pageInvoke(operation.module,'loginOptions',{status:false},Number.POSITIVE_INFINITY));
-      }
+      if(args&&Object.prototype.hasOwnProperty.call(args,'status'))throw new Error('login 不再支持 status 参数'+(coursePlatform?'，请使用 '+operation.module+'.status(false)':''));
+      if(args.refresh!==undefined&&typeof args.refresh!=='boolean')throw new Error('refresh 必须是布尔值');
       const result=await run(args);
       if(args.refresh!==true||result?.ok===false)return result;
       if(coursePlatform){
@@ -2884,11 +2891,12 @@ name: 've.teachers_of_',
         blocks: [
           '无参数时获取当前主题模式，默认 system；传入 mode 时设置，所有扩展页面立即应用。',
           ['parameters', '`{"mode":"可选，light / dark / system"}`'],
-          ['example', '`appearance.theme()`；`appearance.theme({"mode":"dark"})`'],
+          ['example', '`appearance.theme()`；`appearance.theme({"mode":"dark"})`；`appearance.theme("dark")`'],
           ['returnExample', '`{"mode":"system"}`']
         ]
       },
       async run(args) {
+        if(typeof args==='string')args={mode:args};
         if(args?.mode!==undefined){
           const key=String(args.mode).trim(),aliases={light:'light',亮色:'light',浅色:'light',dark:'dark',暗色:'dark',深色:'dark',system:'system',系统:'system',auto:'system',跟随系统:'system'};
           const mode=aliases[key]||aliases[key.toLowerCase()];
@@ -3085,7 +3093,10 @@ name: 've.teachers_of_',
         return { enabled: raw };
       }
     }
-  ].map(({ doc, ...operation }) => {
+  ].concat(['ve','ykt'].map(module=>({module,name:module+'.status',summary:'查询平台启用状态或关闭平台',doc:{title:'平台状态',blocks:['无参数返回平台启用状态；关闭后不会退出网站账号。']},async run(){
+    const stored=await chrome.storage.local.get('platformEnabled');
+    return {enabled:typeof stored.platformEnabled?.[module]==='boolean'?stored.platformEnabled[module]:PLATFORM_ENABLED_DEFAULTS[module]};
+  }}))).map(({ doc, ...operation }) => {
     const prepared=withLoginOptions(operation,doc);
     return {...prepared.operation,doc:renderOperationDoc(operation.name,prepared.doc)};
   });
