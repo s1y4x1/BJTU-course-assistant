@@ -1,8 +1,10 @@
-(function loadBjtuQwenApp(global) {
+(function loadBjtuLlmApp(global) {
   'use strict';
-  global.__bjtuQwenAppReady = (async () => {
+  global.__bjtuLlmAppReady = (async () => {
     const available = await global.BjtuModuleRegistry.ready;
     if (!await global.__bjtuApiReady || !available.llm) return false;
+    await global.BjtuModuleRegistry.loadScript('modules/llm/defaults.js');
+    await global.BjtuLlmDefaults.ensure();
     await global.BjtuModuleRegistry.loadStyle('UI/file-size-emphasis.css');
     await global.BjtuModuleRegistry.loadStyle('UI/markdown.css');
     await global.BjtuModuleRegistry.loadScript('UI/file-size-emphasis.js');
@@ -11,7 +13,7 @@
     const markupResponse = await fetch(chrome.runtime.getURL('modules/llm/app.html'), {
       cache: 'no-store'
     });
-    if (!markupResponse.ok) throw new Error(`无法加载 Qwen 模块界面：HTTP ${markupResponse.status}`);
+    if (!markupResponse.ok) throw new Error(`无法加载 AI 助手界面：HTTP ${markupResponse.status}`);
     const holder = document.createElement('template');
     holder.innerHTML = await markupResponse.text();
     document.body.appendChild(holder.content.cloneNode(true));
@@ -32,7 +34,7 @@
     await global.BjtuModuleRegistry.loadScript('modules/llm/proactive-app.js');
     return true;
   })().catch((error) => {
-    console.error('[bjtu] qwen module failed to load:', error);
+    console.error('[bjtu] llm module failed to load:', error);
     return false;
   });
 })(globalThis);

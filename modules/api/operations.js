@@ -189,8 +189,9 @@
 
   async function getEnabledOperationSet() {
     try {
-      const stored = await chrome?.storage?.local?.get?.(['qwenEnabledOperations']) || {};
-      const list = stored?.qwenEnabledOperations;
+      await global.__bjtuApiSettingsReady;
+      const stored = await chrome?.storage?.local?.get?.(['APIEnabledOperations']) || {};
+      const list = stored?.APIEnabledOperations;
       return Array.isArray(list) ? new Set(list.map((item) => String(item).trim())) : null;
     } catch {
       return null;

@@ -4,7 +4,14 @@
   if (!global.BJTUCA) return;
   const META_OPERATIONS = Object.freeze(['api.operationList', 'api.getDocs', 'api.operationPanel']);
   const ALWAYS_ALLOWED_KEY = 'APIAlwaysAllowedOperations';
-  const SETTINGS_KEYS = ['qwenEnabledOperations', ALWAYS_ALLOWED_KEY];
+  const SETTINGS_KEYS = ['APIEnabledOperations', ALWAYS_ALLOWED_KEY];
+  const settingsReady=global.__bjtuApiSettingsReady=(async()=>{
+    const stored=await chrome.storage.local.get(['APIEnabledOperations','qwenEnabledOperations']);
+    if(stored.qwenEnabledOperations!==undefined){
+      if(stored.APIEnabledOperations===undefined)await chrome.storage.local.set({APIEnabledOperations:stored.qwenEnabledOperations});
+      await chrome.storage.local.remove('qwenEnabledOperations');
+    }
+  })();
   // 旧键不迁移，直接清掉，避免无主数据继续存在。
   void chrome.storage.local.remove('qwenAlwaysAllowedOperations');
 
@@ -13,24 +20,26 @@
   }
 
   async function getSettings() {
+    await settingsReady;
     const stored = await chrome.storage.local.get(SETTINGS_KEYS);
     return {
-      enabledOperations: Array.isArray(stored.qwenEnabledOperations) ? withMetaOperations(stored.qwenEnabledOperations) : null,
+      enabledOperations: Array.isArray(stored.APIEnabledOperations) ? withMetaOperations(stored.APIEnabledOperations) : null,
       alwaysAllowedOperations: withMetaOperations(stored[ALWAYS_ALLOWED_KEY])
     };
   }
 
   async function saveSettings(patch) {
+    await settingsReady;
     const next = {};
     if (patch.enabledOperations !== undefined) {
-      next.qwenEnabledOperations = Array.isArray(patch.enabledOperations) ? withMetaOperations(patch.enabledOperations) : null;
+      next.APIEnabledOperations = Array.isArray(patch.enabledOperations) ? withMetaOperations(patch.enabledOperations) : null;
     }
     if (patch.alwaysAllowedOperations !== undefined) {
       next[ALWAYS_ALLOWED_KEY] = withMetaOperations(patch.alwaysAllowedOperations);
       if (patch.enabledOperations === undefined) {
         const current = await getSettings();
         if (Array.isArray(current.enabledOperations)) {
-          next.qwenEnabledOperations = [...new Set([...current.enabledOperations, ...next[ALWAYS_ALLOWED_KEY]])];
+          next.APIEnabledOperations = [...new Set([...current.enabledOperations, ...next[ALWAYS_ALLOWED_KEY]])];
         }
       }
     }

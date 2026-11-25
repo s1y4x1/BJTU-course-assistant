@@ -1,5 +1,5 @@
-/* Qwen 聊天面板（加载于 app 页面；chat.html 以独立页面模式复用同一面板）。 */
-(function initQwenChatApp(global) {
+/* AI 助手聊天面板（加载于 app 页面；chat.html 以独立页面模式复用同一面板）。 */
+(function initLlmChatApp(global) {
   'use strict';
 
   const FAB_ID = 'llm-chat-fab';
@@ -14,7 +14,7 @@
   const SCROLL_BOTTOM_ID = 'llm-chat-scroll-bottom';
   const MODEL_ID = 'llm-chat-model';
   const THINKING_ID = 'llm-chat-thinking';
-  const QWEN_VIEW_ID = global.crypto?.randomUUID?.() || `qwen-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const LLM_VIEW_ID = global.crypto?.randomUUID?.() || `llm-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   // 独立页面模式（modules/llm/chat.html）：面板直接展开铺满窗口。
   const STANDALONE_CHAT = /\/modules\/llm\/chat\.html$/i.test(global.location?.pathname || '');
@@ -44,7 +44,7 @@
     if(title instanceof HTMLInputElement){if(document.activeElement!==title){title.value=chatroomNames.assistant;title.dataset.savedValue=title.value;}}
     else if(title && title.textContent!==chatroomNames.assistant)title.textContent=chatroomNames.assistant;
     document.querySelectorAll('[data-llm-author]').forEach(name=>{const text=chatroomNames[name.dataset.llmAuthor];if(name.textContent!==text)name.textContent=text;});
-    reportQwenViewState();
+    reportLlmViewState();
   });
   if (SIDE_PANEL_VIEW) document.documentElement.classList.add('llm-side-panel-view');
 
@@ -100,19 +100,19 @@
     }
   }
 
-  function currentQwenViewState() {
+  function currentLlmViewState() {
     const panel = el(PANEL_ID);
     return {
       context: CHATROOM_VIEW ? 'chatroom' : SIDE_PANEL_VIEW ? 'sidepanel' : (STANDALONE_CHAT ? 'standalone' : 'app'),
-      viewId: QWEN_VIEW_ID,
+      viewId: LLM_VIEW_ID,
       visible: document.visibilityState === 'visible'
         && (!CHATROOM_VIEW || chatroomVisible)
         && (STANDALONE_CHAT || (panel instanceof HTMLElement && !panel.hidden))
     };
   }
 
-  function reportQwenViewState() {
-    try { port?.postMessage({ type: 'uiState', ...currentQwenViewState() }); } catch {}
+  function reportLlmViewState() {
+    try { port?.postMessage({ type: 'uiState', ...currentLlmViewState() }); } catch {}
   }
 
   async function setEmbeddedPanelOpen(open, { activate = true, focusInput = true } = {}) {
@@ -130,7 +130,7 @@
       if (open) {
         if (!panel.hidden) {
           global.BjtuFullscreenWindowLayers?.bringToFront?.(panel);
-          reportQwenViewState();
+          reportLlmViewState();
           return;
         }
         fab.style.removeProperty('display');
@@ -141,19 +141,19 @@
           animations?.animateWindowFromButton?.(panel, sourceRect, true),
           animateButton(false)
         ]);
-        if (activate) void activateQwenPanel();
+        if (activate) void activateLlmPanel();
         if (historyNeedsInitialScroll) {
           scrollMessagesToBottom(el(MESSAGES_ID), { force: true });
           historyNeedsInitialScroll = false;
         }
         const input = el(INPUT_ID);
         if (focusInput && input instanceof HTMLTextAreaElement) input.focus();
-        reportQwenViewState();
+        reportLlmViewState();
         return;
       }
       if (panel.hidden) {
         fab.hidden = false;
-        reportQwenViewState();
+        reportLlmViewState();
         return;
       }
       fab.style.removeProperty('display');
@@ -164,13 +164,13 @@
       ]);
       panel.hidden = true;
       global.BjtuFullscreenWindowLayers?.remove?.(panel);
-      reportQwenViewState();
+      reportLlmViewState();
     } finally {
       delete panel.dataset.transitioning;
     }
   }
 
-  function escapeHtmlQwen(value) {
+  function escapeHtmlLlm(value) {
     return String(value).replace(/[&<>"']/g, (c) => ({
       '&': '&amp;',
       '<': '&lt;',
@@ -180,7 +180,7 @@
     }[c]));
   }
 
-  function safeUrlQwen(href, allowed) {
+  function safeUrlLlm(href, allowed) {
     try {
       const url = new URL(href, global.location?.href);
       return allowed.has(url.protocol) ? url.href : '';
@@ -189,9 +189,9 @@
     }
   }
 
-  let qwenMarkdownParser = null;
-  function getQwenMarkdownParser() {
-    if (qwenMarkdownParser) return qwenMarkdownParser;
+  let llmMarkdownParser = null;
+  function getLlmMarkdownParser() {
+    if (llmMarkdownParser) return llmMarkdownParser;
     const markedApi = global.marked;
     if (!markedApi?.Marked || !markedApi?.Renderer) return null;
     const renderer = global.BjtuMarkdown.createRenderer(markedApi);
@@ -207,19 +207,19 @@
     renderer.blockquote = function renderBlockquote({ tokens }) {
       return `<blockquote class="llm-md-blockquote">${this.parser.parse(tokens || [])}</blockquote>`;
     };
-    qwenMarkdownParser = global.BjtuMarkdown.createChatParser({renderer});
-    return qwenMarkdownParser;
+    llmMarkdownParser = global.BjtuMarkdown.createChatParser({renderer});
+    return llmMarkdownParser;
   }
 
-  function renderQwenMarkdown(text) {
+  function renderLlmMarkdown(text) {
     const source = String(text || '').replace(/\r\n?/g, '\n');
     if (!source) return '';
-    const parser = getQwenMarkdownParser();
-    if (!parser) return escapeHtmlQwen(source);
+    const parser = getLlmMarkdownParser();
+    if (!parser) return escapeHtmlLlm(source);
     try {
       return parser.parse(source, { async: false });
     } catch {
-      return escapeHtmlQwen(source);
+      return escapeHtmlLlm(source);
     }
   }
 
@@ -282,14 +282,14 @@
     const messages = el(MESSAGES_ID);
     if (!(messages instanceof HTMLElement)) return null;
     let container = [...messages.querySelectorAll(':scope > .llm-chat-suggestions')]
-      .find((item) => item._qwenSuggestionBubble === bubble);
+      .find((item) => item._llmSuggestionBubble === bubble);
     messages.querySelectorAll(':scope > .llm-chat-suggestions').forEach((item) => {
       if (item !== container) item.remove();
     });
     if (!(container instanceof HTMLElement)) {
       container = document.createElement('div');
       container.className = 'llm-chat-suggestions';
-      container._qwenSuggestionBubble = bubble;
+      container._llmSuggestionBubble = bubble;
       anchor.after(container);
     }
     container.querySelectorAll('.llm-chat-cursor').forEach((node) => node.remove());
@@ -324,14 +324,14 @@
     if (!parsed.suggestions.length) return null;
     const container = mdContainer(bubble);
     container._mdText = parsed.text;
-    container.innerHTML = renderQwenMarkdown(parsed.text);
+    container.innerHTML = renderLlmMarkdown(parsed.text);
     enhanceOperationResultControls(container);
     const candidate = { bubble, suggestions: parsed.suggestions };
     if (render) renderSuggestedReplies(candidate.bubble, candidate.suggestions);
     return candidate;
   }
 
-  async function copyQwenText(text, button) {
+  async function copyLlmText(text, button) {
     return global.BjtuMarkdown.copyText(text, button);
   }
 
@@ -341,7 +341,7 @@
     button.className = className;
     button.textContent = '复制';
     button.title = '复制 Markdown 原文';
-    button.addEventListener('click', () => void copyQwenText(getText?.(), button));
+    button.addEventListener('click', () => void copyLlmText(getText?.(), button));
     return button;
   }
 
@@ -427,7 +427,7 @@
         if (body instanceof HTMLElement) {
           const container = mdContainer(body);
           container._mdText = thinking;
-          container.innerHTML = renderQwenMarkdown(thinking);
+          container.innerHTML = renderLlmMarkdown(thinking);
           enhanceOperationResultControls(container);
         }
         collapseThinking(bubble);
@@ -838,7 +838,7 @@
         resolve();
       };
 
-      resumePort = chrome.runtime.connect({ name: 'bjtu-qwen-history-resume' });
+      resumePort = chrome.runtime.connect({ name: 'bjtu-llm-history-resume' });
       port = resumePort;
       resumePort.onMessage.addListener((message) => {
         if (renderStreamEvent(message)) return;
@@ -869,7 +869,7 @@
     const loadingEl = el(HISTORY_LOADING_ID);
     if (loadingEl instanceof HTMLElement) loadingEl.hidden = false;
     try {
-      const response = await send('QWEN_GET_CHAT_HISTORY', { chatId: targetChatId });
+      const response = await send('LLM_GET_CHAT_HISTORY', { chatId: targetChatId });
       if (sessionChatId !== targetChatId) return;
       if (response?.ok && Array.isArray(response.messages)) {
         historyNeedsInitialScroll = true;
@@ -887,9 +887,9 @@
         pendingEdit = false;
         openingStarted = false;
         openingCompleted = false;
-        const stored = await chrome.storage.local.get(['qwenLastChatId']).catch(() => ({}));
-        if (String(stored?.qwenLastChatId || '') === targetChatId) {
-          await chrome.storage.local.remove(['qwenLastChatId', 'qwenOpeningPendingChatId']).catch(() => { });
+        const stored = await chrome.storage.local.get(['llmLastChatId']).catch(() => ({}));
+        if (String(stored?.llmLastChatId || '') === targetChatId) {
+          await chrome.storage.local.remove(['llmLastChatId', 'llmOpeningPendingChatId']).catch(() => { });
         }
       }
     } finally {
@@ -1125,7 +1125,7 @@
       const container = mdContainer(bubble);
       if(CHATROOM_VIEW)container.classList.add('message-text');
       container._mdText = str;
-      container.innerHTML = renderQwenMarkdown(str);
+      container.innerHTML = renderLlmMarkdown(str);
       enhanceOperationResultControls(container);
     }
     bubble.classList.toggle('llm-chat-empty-reply', role === 'assistant' && str.trim() === '（无回复）');
@@ -1226,7 +1226,7 @@
     const messages = el(MESSAGES_ID);
     if (messages instanceof HTMLElement) {
       messages.querySelectorAll(':scope > .llm-chat-suggestions').forEach((container) => {
-        if (container._qwenSuggestionBubble === bubble) {
+        if (container._llmSuggestionBubble === bubble) {
           container.querySelectorAll('.llm-chat-cursor').forEach((node) => node.remove());
         }
       });
@@ -1347,7 +1347,7 @@
     }
     for (const [key, child] of Object.entries(value)) {
       if (['image', 'image_url'].includes(String(key).toLowerCase()) && typeof child === 'string') {
-        const url = safeUrlQwen(child, new Set(['https:']));
+        const url = safeUrlLlm(child, new Set(['https:']));
         if (url && !output.includes(url)) output.push(url);
       } else {
         toolResultImageUrls(child, output, seen);
@@ -1469,8 +1469,8 @@
   async function refreshModels() {
     const select = el(MODEL_ID);
     if (!(select instanceof HTMLSelectElement)) return;
-    const status = await send('QWEN_GET_STATUS', { checkLogin: false });
-    const response = await send('QWEN_LIST_MODELS');
+    const status = await send('LLM_GET_STATUS', { checkLogin: false });
+    const response = await send('LLM_LIST_MODELS');
     select.replaceChildren();
     if (response?.ok && Array.isArray(response.models) && response.models.length) {
       for (const model of response.models) {
@@ -1493,11 +1493,11 @@
   }
 
   async function refreshStatus({ checkLogin = false, allowOpening = true } = {}) {
-    const status = await send('QWEN_GET_STATUS', { checkLogin: checkLogin === true });
+    const status = await send('LLM_GET_STATUS', { checkLogin: checkLogin === true });
     lastKnownLoggedIn = status?.loggedIn === true;
     lastKnownEnabled = STANDALONE_CHAT || status?.enabled !== false;
     if (status?.provider === 'local') {
-      const state = await global.BjtuQwenLocalModel.availability().catch(error => String(error.message));
+      const state = await global.BjtuLlmLocalModel.availability().catch(error => String(error.message));
       lastKnownLoggedIn = state === 'available';
       status.loggedIn = lastKnownLoggedIn;
       setStatus(state === 'available' ? '本地模型已就绪' : ({downloadable:'请先在选项中准备本地模型',downloading:'本地模型正在下载',unavailable:'本地模型不可用'})[state] || state,state === 'available' ? 'ok' : 'error');
@@ -1536,7 +1536,7 @@
     const container = mdContainer(bubble);
     container._mdText = String(container._mdText || '') + String(text);
     const parsed = splitSuggestedReplies(container._mdText, { allowIncomplete: true });
-    container.innerHTML = renderQwenMarkdown(parsed.text);
+    container.innerHTML = renderLlmMarkdown(parsed.text);
     bubble?.classList?.toggle('llm-chat-empty-reply', String(parsed.text || '').trim() === '（无回复）');
     enhanceOperationResultControls(container);
     if (parsed.found) renderSuggestedReplies(bubble, parsed.suggestions);
@@ -1803,10 +1803,10 @@
     });
 
     const connectPort = () => {
-      const chatPort = chrome.runtime.connect({ name: 'bjtu-qwen-chat' });
+      const chatPort = chrome.runtime.connect({ name: 'bjtu-llm-chat' });
       port = chatPort;
       chatPort.onMessage.addListener((message) => {
-        if (global.BjtuQwenLocalModel.handlePort(chatPort,message)) return;
+        if (global.BjtuLlmLocalModel.handlePort(chatPort,message)) return;
         if (renderStreamEvent(message)) return;
         if (message?.type === 'operation') {
           setStatus('操作中…');
@@ -1851,7 +1851,7 @@
           if (openingStarted) {
             openingStarted = false;
             openingCompleted = true;
-            void chrome.storage.local.remove('qwenOpeningPendingChatId');
+            void chrome.storage.local.remove('llmOpeningPendingChatId');
           }
           hideAsk();
           if (inThinking) {
@@ -1882,7 +1882,7 @@
           if (openingStarted) {
             openingStarted = false;
             openingCompleted = true;
-            void chrome.storage.local.remove('qwenOpeningPendingChatId');
+            void chrome.storage.local.remove('llmOpeningPendingChatId');
           }
           if (inThinking) {
             collapseThinking(activeBubble);
@@ -1901,7 +1901,7 @@
           const stoppedChatId = String(message?.chatId || '');
           if (stoppedChatId) {
             sessionChatId = stoppedChatId;
-            if (openingStarted) void chrome.storage.local.set({ qwenOpeningPendingChatId: stoppedChatId });
+            if (openingStarted) void chrome.storage.local.set({ llmOpeningPendingChatId: stoppedChatId });
           }
           if (openingStarted) openingStarted = false;
           sessionParentId = String(message?.responseId || message?.retryParentId || requestParentId || '');
@@ -1953,7 +1953,7 @@
           const retryId = String(message?.retryId || '');
           if (retryChatId) {
             sessionChatId = retryChatId;
-            if (openingStarted) void chrome.storage.local.set({ qwenOpeningPendingChatId: retryChatId });
+            if (openingStarted) void chrome.storage.local.set({ llmOpeningPendingChatId: retryChatId });
           }
           if (inThinking) {
             collapseThinking(activeBubble);
@@ -2057,7 +2057,7 @@
           const errorChatId = String(message.chatId || '');
           if (errorChatId) {
             sessionChatId = errorChatId;
-            if (openingStarted) void chrome.storage.local.set({ qwenOpeningPendingChatId: errorChatId });
+            if (openingStarted) void chrome.storage.local.set({ llmOpeningPendingChatId: errorChatId });
           }
           if (openingStarted) openingStarted = false;
           ensureRequestUserMessageVisible();
@@ -2152,7 +2152,7 @@
         attachments,
         isOpening: wasOpeningStream,
         thinking: (el(THINKING_ID) instanceof HTMLInputElement) && el(THINKING_ID).checked,
-        uiState: currentQwenViewState(),
+        uiState: currentLlmViewState(),
         chatId: sessionChatId,
         parentId: requestParentId,
         editParentGiven: isEditSend || wasOpeningStream
@@ -2192,7 +2192,7 @@
     openingStarted = true;
     setBusy(true);
     setStatus('思考中…');
-    void send('QWEN_BUILD_SYSTEM_PROMPT').then((response) => {
+    void send('LLM_BUILD_SYSTEM_PROMPT').then((response) => {
       const text = String(response?.text || '').trim();
       if (!text) throw new Error('系统提示词为空');
       composerHiddenContext=[text];
@@ -2207,10 +2207,10 @@
   function loadChatStateFromStorage() {
     if (chatStateLoaded) return Promise.resolve();
     if (chatStateLoadPromise) return chatStateLoadPromise;
-    chatStateLoadPromise = chrome.storage.local.get(['qwenLastChatId', 'qwenOpeningPendingChatId']).then((data) => {
-      sessionChatId = String(data?.qwenLastChatId || '');
+    chatStateLoadPromise = chrome.storage.local.get(['llmLastChatId', 'llmOpeningPendingChatId']).then((data) => {
+      sessionChatId = String(data?.llmLastChatId || '');
       syncChatIdInput();
-      const pendingOpeningChatId = String(data?.qwenOpeningPendingChatId || '');
+      const pendingOpeningChatId = String(data?.llmOpeningPendingChatId || '');
       openingCompleted = !!sessionChatId && pendingOpeningChatId !== sessionChatId;
       chatStateLoaded = true;
       if (sessionChatId && !port && !openingStarted) setBusy(false);
@@ -2272,8 +2272,8 @@
       return;
     }
     try {
-      await chrome.storage.local.remove('qwenOpeningPendingChatId');
-      await chrome.storage.local.set({ qwenLastChatId: nextChatId });
+      await chrome.storage.local.remove('llmOpeningPendingChatId');
+      await chrome.storage.local.set({ llmLastChatId: nextChatId });
       adoptSharedChatId(nextChatId);
     } catch (error) {
       syncChatIdInput();
@@ -2281,7 +2281,7 @@
     }
   }
 
-  function activateQwenPanel() {
+  function activateLlmPanel() {
     panelActivated = true;
     if (panelActivationPromise) return panelActivationPromise;
     panelActivationPromise = (async () => {
@@ -2308,6 +2308,7 @@
   }
 
   async function init() {
+    await global.BjtuModuleRegistry.ready;
     await global.BjtuMarkdown.ready;
     if(CHATROOM_VIEW)await global.BjtuModuleRegistry.loadScript('UI/message-collapse.js');
     if(CHATROOM_VIEW){
@@ -2359,7 +2360,7 @@
           }
           if (panel instanceof HTMLElement) panel.hidden = true;
           if (panel instanceof HTMLElement) global.BjtuFullscreenWindowLayers?.remove?.(panel);
-          reportQwenViewState();
+          reportLlmViewState();
         } else if (fab instanceof HTMLButtonElement && (!(panel instanceof HTMLElement) || panel.hidden)) {
           fab.style.removeProperty('display');
           if (fab.hidden) {
@@ -2373,13 +2374,13 @@
           }
         }
       };
-      void chrome.storage.local.get(['qwenEnabled', 'qwenFabColorMode']).then((data) => {
-        applyFabColorMode(data?.qwenFabColorMode);
-        applyEnabled(data?.qwenEnabled !== false, { animate: false });
+      void chrome.storage.local.get(['llmEnabled', 'llmFabColorMode']).then((data) => {
+        applyFabColorMode(data?.llmFabColorMode);
+        applyEnabled(data?.llmEnabled !== false, { animate: false });
       });
       chrome.storage.onChanged.addListener((changes, area) => {
-        if (area === 'local' && changes.qwenEnabled) applyEnabled(changes.qwenEnabled.newValue !== false);
-        if (area === 'local' && changes.qwenFabColorMode) applyFabColorMode(changes.qwenFabColorMode.newValue);
+        if (area === 'local' && changes.llmEnabled) applyEnabled(changes.llmEnabled.newValue !== false);
+        if (area === 'local' && changes.llmFabColorMode) applyFabColorMode(changes.llmFabColorMode.newValue);
       });
       const systemTheme = global.matchMedia?.('(prefers-color-scheme: dark)');
       systemTheme?.addEventListener?.('change', () => {
@@ -2393,15 +2394,15 @@
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local') return;
       if(changes.llmProactiveEnabled){const checkbox=el('llm-chat-proactive');if(checkbox)checkbox.checked=changes.llmProactiveEnabled.newValue!==false;}
-      if (changes.qwenProvider) {
+      if (changes.llmProvider) {
         try {port?.postMessage({type:'stop'});port?.disconnect();} catch {}
         port=null;setBusy(false);
         void refreshModels();
         void refreshStatus({allowOpening:false});
       }
-      if (changes.qwenLastChatId) adoptSharedChatId(changes.qwenLastChatId.newValue);
+      if (changes.llmLastChatId) adoptSharedChatId(changes.llmLastChatId.newValue);
     });
-    document.addEventListener('visibilitychange', reportQwenViewState);
+    document.addEventListener('visibilitychange', reportLlmViewState);
     global.addEventListener('focus', () => {
       if (panelActivated && !busy) void refreshStatus().catch(() => {});
     });
@@ -2432,12 +2433,12 @@
         });
         return true;
       }
-      if (message?.type === 'QWEN_OPEN_CHAT_PANEL' && String(message?.viewId || '') === QWEN_VIEW_ID) {
+      if (message?.type === 'LLM_OPEN_CHAT_PANEL' && String(message?.viewId || '') === LLM_VIEW_ID) {
         void setEmbeddedPanelOpen(true).then(() => sendResponse({ ok: true }));
         return true;
       }
-      if (message?.type === 'QWEN_SHARED_CHAT_UPDATED') {
-        if (message.sourceViewId === QWEN_VIEW_ID) return false;
+      if (message?.type === 'LLM_SHARED_CHAT_UPDATED') {
+        if (message.sourceViewId === LLM_VIEW_ID) return false;
         adoptSharedChatId(message?.chatId, { reload: true });
         return false;
       }
@@ -2450,7 +2451,7 @@
         if (panelActivated) {
           showLoginHint(false);
           if (!wasLoggedIn && !busy && !pendingWafRetryAction && !activeWafFlowId
-            && !panelActivationPromise) void activateQwenPanel();
+            && !panelActivationPromise) void activateLlmPanel();
         }
         return false;
       }
@@ -2518,7 +2519,20 @@
 
     if (messagesScroller instanceof HTMLElement) {
       lastMessagesScrollTop = messagesScroller.scrollTop;
+      let userScrollUntil = 0;
+      const noteUserScroll = () => { userScrollUntil = performance.now() + 1000; };
+      const noteScrollbarDrag = event => {
+        const rect=messagesScroller.getBoundingClientRect();
+        if(event.target===messagesScroller && event.clientX>=rect.right-16)noteUserScroll();
+      };
+      messagesScroller.addEventListener('pointerdown', noteScrollbarDrag, { passive:true });
+      messagesScroller.addEventListener('pointermove', event => { if(event.buttons)noteScrollbarDrag(event); }, { passive:true });
+      messagesScroller.addEventListener('touchmove', noteUserScroll, { passive:true });
+      messagesScroller.addEventListener('keydown', event => {
+        if(['ArrowUp','ArrowDown','PageUp','PageDown','Home','End',' '].includes(event.key))noteUserScroll();
+      });
       messagesScroller.addEventListener('wheel', (event) => {
+        noteUserScroll();
         if (event.deltaY < 0) {
           autoScrollEnabled = false;
           updateScrollBottomButton(messagesScroller);
@@ -2527,7 +2541,8 @@
       messagesScroller.addEventListener('scroll', () => {
         const current = messagesScroller.scrollTop;
         if (isMessagesAtBottom(messagesScroller)) autoScrollEnabled = true;
-        else if (current < lastMessagesScrollTop - 1) autoScrollEnabled = false;
+        // 内容折叠/iframe 改变高度会让浏览器钳制 scrollTop；不是用户向上翻阅。
+        else if (current < lastMessagesScrollTop - 1 && performance.now() < userScrollUntil) autoScrollEnabled = false;
         lastMessagesScrollTop = current;
         updateScrollBottomButton(messagesScroller);
       }, { passive: true });
@@ -2668,7 +2683,7 @@
     const modelSelect = el(MODEL_ID);
     if (modelSelect instanceof HTMLSelectElement) {
       modelSelect.addEventListener('change', () => {
-        void send('QWEN_SETTINGS_SET', { modelId: modelSelect.value });
+        void send('LLM_SETTINGS_SET', { modelId: modelSelect.value });
         if(CHATROOM_VIEW)void global.BjtuLlmComposer.refresh();
       });
     }
@@ -2677,7 +2692,7 @@
       thinkingToggle.addEventListener('change', () => {
         const thinkingEnabled = thinkingToggle.checked === true;
         try { port?.postMessage({ type: 'thinkingChanged', enabled: thinkingEnabled }); } catch {}
-        void send('QWEN_SETTINGS_SET', { thinkingEnabled });
+        void send('LLM_SETTINGS_SET', { thinkingEnabled });
       });
     }
     if (closeBtn instanceof HTMLButtonElement) {
@@ -2719,14 +2734,14 @@
         const label=document.createElement('label');label.className='llm-chat-proactive-toggle';
         const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.id='llm-chat-proactive';checkbox.checked=true;
         label.append(checkbox,document.createTextNode('主动消息'));newChatBtn.after(label);
-        void send('QWEN_GET_STATUS',{checkLogin:false}).then(status=>{checkbox.checked=status.proactiveEnabled!==false;});
-        checkbox.addEventListener('change',()=>void send('QWEN_SETTINGS_SET',{proactiveEnabled:checkbox.checked}));
+        void send('LLM_GET_STATUS',{checkLogin:false}).then(status=>{checkbox.checked=status.proactiveEnabled!==false;});
+        checkbox.addEventListener('change',()=>void send('LLM_SETTINGS_SET',{proactiveEnabled:checkbox.checked}));
       }
       newChatBtn.addEventListener('click', () => {
         if(busy)return;
         const currentId = sessionChatId;
         const doNew = async () => {
-          await chrome.storage.local.remove(['qwenLastChatId', 'qwenOpeningPendingChatId']);
+          await chrome.storage.local.remove(['llmLastChatId', 'llmOpeningPendingChatId']);
           sessionChatId = '';
           syncChatIdInput();
           sessionParentId = '';
@@ -2742,12 +2757,12 @@
           sendOpening();
         };
         if(CHATROOM_VIEW){
-          global.parent.BjtuChatroomUi?.confirmClear(()=>currentId?send('QWEN_DELETE_CHAT',{chatId:currentId}).then(doNew):doNew());
+          global.parent.BjtuChatroomUi?.confirmClear(()=>currentId?send('LLM_DELETE_CHAT',{chatId:currentId}).then(doNew):doNew());
           return;
         }
         const deleteCurrent = global.confirm('是否删除当前会话？');
         if (deleteCurrent && currentId) {
-          void send('QWEN_DELETE_CHAT', { chatId: currentId }).then(doNew).catch(doNew);
+          void send('LLM_DELETE_CHAT', { chatId: currentId }).then(doNew).catch(doNew);
         } else {
           void doNew();
         }
@@ -2815,7 +2830,7 @@
 
     // 独立页面模式：面板已展开，直接激活（登录检查 + 历史加载）并聚焦输入框。
     if (STANDALONE_CHAT) {
-      void activateQwenPanel();
+      void activateLlmPanel();
       if (historyNeedsInitialScroll) {
         scrollMessagesToBottom(el(MESSAGES_ID), { force: true });
         historyNeedsInitialScroll = false;
@@ -2831,7 +2846,7 @@
     if(!String(text||'').trim())throw new Error('消息不能为空');
     await initChat();
     await setEmbeddedPanelOpen(true);
-    await activateQwenPanel();
+    await activateLlmPanel();
     if(!lastKnownLoggedIn)throw new Error('请先配置或登录 AI 助手');
     if(!openingCompleted&&!busy){lastKnownEnabled=true;maybeSendOpening();}
     const deadline=Date.now()+120000;

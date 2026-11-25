@@ -36,7 +36,7 @@
       const snapshot=global.BjtuLlmProactive.sanitize(await global.__bjtuLlmPageSnapshot?.());
       const response=await chrome.runtime.sendMessage({type:'LLM_PROACTIVE',payload:{id:crypto.randomUUID(),snapshot,reason}});
       if(response?.localPrompt){
-        const text=await global.BjtuQwenLocalModel.generateText(response.localPrompt);
+        const text=await global.BjtuLlmLocalModel.generateText(response.localPrompt);
         if(!closed)await chrome.runtime.sendMessage({type:'LLM_PROACTIVE_RESULT',payload:{id:response.requestId,text}});
       }else if(response?.ok===false)throw new Error(response.message);
     }catch(error){if(!closed)console.warn('[llm] 主动消息生成失败：',error);}

@@ -57,5 +57,5 @@
     const session=await api().create();
     try{return await session.prompt(text);}finally{session.destroy();}
   }
-  global.BjtuQwenLocalModel = {availability,prepare,handlePort,settingsUrl,generateText};
+  global.BjtuLlmLocalModel = {availability,prepare,handlePort,settingsUrl,generateText};
 })(globalThis);

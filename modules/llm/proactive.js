@@ -97,7 +97,7 @@
       const contextIncluded=request.includeContext===true&&settings.proactiveIncludeInContext===true;
       const row={id:request.responseId||'proactive-'+id,chatId:request.chatId,role:'assistant',content,timestamp:Math.floor(Date.now()/1000),proactive:true,contextIncluded,...(request.promptId?{promptId:request.promptId}:{})};
       if(contextIncluded&&settings.provider!=='qwen'){
-        const client=settings.provider==='openai'?global.BjtuLlmCompatibleClient.create():global.BjtuQwenLocalClient.create();
+        const client=settings.provider==='openai'?global.BjtuLlmCompatibleClient.create():global.BjtuLlmLocalClient.create();
         await client.appendAssistantMessage(request.chatId,row);
       }
       await locked(async()=>{const stored=await chrome.storage.local.get(KEY);await chrome.storage.local.set({[KEY]:[...(stored[KEY]||[]),row]});});
@@ -112,7 +112,7 @@
       requests.set(id,{starting:true});
       if(requests.size>100)requests.delete(requests.keys().next().value);
       const settings=await getSettings();if(!settings.proactiveEnabled || (reason==='startup'&&settings.proactiveOnStartup===false) || (reason==='interval'&&settings.proactiveIntervalEnabled!==true)){requests.delete(id);return {ok:true,skipped:true};}
-      const client=settings.provider==='openai'?global.BjtuLlmCompatibleClient.create():settings.provider==='local'?global.BjtuQwenLocalClient.create():global.BjtuQwenClient;
+      const client=settings.provider==='openai'?global.BjtuLlmCompatibleClient.create():settings.provider==='local'?global.BjtuLlmLocalClient.create():global.BjtuQwenClient;
       let model=settings.provider==='openai'?settings.apiModel:settings.provider==='local'?'browser-local':settings.modelId;
       if(!model)model=String((await client.fetchModels())[0]?.id||'');
       const chatId=await resolveSharedChatId(client,model);

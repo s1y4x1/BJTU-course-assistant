@@ -272,7 +272,7 @@ async function initFullscreenModuleButtons() {
     return;
   }
   const available = await globalThis.BjtuModuleRegistry.ready;
-  const keys = ['qwenEnabled', 'mailMonitorStatus', 'academicUnreadChanges', ...Object.values(FULLSCREEN_MODULE_BUTTONS)
+  const keys = ['llmEnabled', 'mailMonitorStatus', 'academicUnreadChanges', ...Object.values(FULLSCREEN_MODULE_BUTTONS)
     .flatMap((item) => [item.key, item.iconKey].filter(Boolean))];
   const stored = await chrome.storage.local.get(keys);
   const moduleViewPromises = new Map();
@@ -1273,19 +1273,19 @@ function clearPlatformData(platform) {
 // Open options button in top inline controls
 const openOptionsBtn = document.getElementById('open-options-btn');
 const sidePanelView = new URLSearchParams(window.location.search).get('view') === 'sidepanel';
-let sidePanelQwenAvailable = false;
+let sidePanelLlmAvailable = false;
 if (openOptionsBtn) {
   if (sidePanelView) {
     void fetch(chrome.runtime.getURL('modules/llm/module.json'), { cache: 'no-store' }).then((response) => {
       if (!response.ok) return;
-      sidePanelQwenAvailable = true;
+      sidePanelLlmAvailable = true;
       openOptionsBtn.textContent = '🔄';
       openOptionsBtn.title = '切换到AI 助手';
     }).catch(() => {});
   }
   openOptionsBtn.addEventListener('click', () => {
     if (typeof popupMode !== 'undefined' && popupMode) {
-      if (sidePanelView && sidePanelQwenAvailable) {
+      if (sidePanelView && sidePanelLlmAvailable) {
         try { window.parent?.postMessage({ type: 'BJTU_SIDE_PANEL_TOGGLE' }, '*'); } catch { }
         return;
       }

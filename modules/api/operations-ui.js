@@ -309,7 +309,7 @@
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== 'local') return;
-    if (!changes.qwenEnabledOperations && !changes.APIAlwaysAllowedOperations) return;
+    if (!changes.APIEnabledOperations && !changes.APIAlwaysAllowedOperations) return;
     void refresh();
   });
 

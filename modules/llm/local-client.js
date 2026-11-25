@@ -3,7 +3,7 @@
   'use strict';
   const key = id => {
     if (!String(id).startsWith('local-')) throw new Error('本地模型只能打开本地会话，请新建会话');
-    return 'qwenLocalChat:' + id;
+    return 'llmLocalChat:' + id;
   };
   async function fetchChatHistory(id) { return (await chrome.storage.local.get(key(id)))[key(id)] || []; }
   const historyWrites=new Map();
@@ -74,5 +74,5 @@
       }
     };
   }
-  global.BjtuQwenLocalClient = {create};
+  global.BjtuLlmLocalClient = {create};
 })(globalThis);

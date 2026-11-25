@@ -11,26 +11,26 @@
   <link rel="stylesheet" href="options.css">
 </head>
 <body class="module-options-standalone" data-options-module="llm">
-<section class="qwen-options-card" data-options-fragment>
+<section class="llm-options-card" data-options-fragment>
   <div class="section-title">
     <a class="module-options-page-link" data-module-options-link="llm" href="options.html"
       title="在当前页面打开AI 助手选项">AI 助手</a>
   </div>
 
-  <div id="llmStandaloneToggle" class="qwen-toggle-row">
-    <label class="qwen-toggle">
-      <input type="checkbox" id="qwenEnabled">
-      <span class="qwen-toggle-label">在扩展全屏页面上显示「AI 助手」按钮</span>
+  <div id="llmStandaloneToggle" class="llm-toggle-row">
+    <label class="llm-toggle">
+      <input type="checkbox" id="llmEnabled">
+      <span class="llm-toggle-label">在扩展全屏页面上显示「AI 助手」按钮</span>
     </label>
   </div>
-  <div id="llmEntryChoices" class="qwen-toggle-row" hidden>
-    <label class="qwen-toggle"><input type="radio" name="llmEntry" value="standalone"><span>在扩展全屏页面上显示「AI 助手」按钮</span></label>
-    <label class="qwen-toggle"><input type="radio" name="llmEntry" value="chatroom"><span>合并入聊天室</span></label>
+  <div id="llmEntryChoices" class="llm-toggle-row" hidden>
+    <label class="llm-toggle"><input type="radio" name="llmEntry" value="standalone"><span>在扩展全屏页面上显示「AI 助手」按钮</span></label>
+    <label class="llm-toggle"><input type="radio" name="llmEntry" value="chatroom"><span>合并入聊天室</span></label>
   </div>
 
-  <div id="qwenFabColorOption" class="qwen-fab-color-option">
-    <span class="qwen-setting-label">按钮颜色</span>
-    <span id="qwenFabColorMode" class="theme-mode-btns qwen-fab-color-modes">
+  <div id="llmFabColorOption" class="llm-fab-color-option">
+    <span class="llm-setting-label">按钮颜色</span>
+    <span id="llmFabColorMode" class="theme-mode-btns llm-fab-color-modes">
       <button class="theme-mode-btn theme-mode-btn--text" type="button" data-value="extension" title="跟随扩展">跟随扩展</button>
       <button class="theme-mode-btn theme-mode-btn--text" type="button" data-value="system" title="跟随系统">跟随系统</button>
       <button class="theme-mode-btn" type="button" data-value="light" title="浅色">☀️</button>
@@ -38,92 +38,93 @@
     </span>
   </div>
 
-  <div class="qwen-toggle-row"><label class="qwen-toggle" title="等待各平台加载结束后，将账号、作业、邮件及教务信息汇总给当前模型，生成一条简短提醒"><input id="llmProactiveEnabled" type="checkbox" checked><span>主动消息</span></label></div>
+  <div class="llm-toggle-row"><label class="llm-toggle" title="等待各平台加载结束后，将账号、作业、邮件及教务信息汇总给当前模型，生成一条简短提醒"><input id="llmProactiveEnabled" type="checkbox" checked><span>主动消息</span></label></div>
   <div class="llm-proactive-sub-options">
-    <label class="qwen-toggle"><input id="llmProactiveOnStartup" type="checkbox" checked><span>启动时发送</span></label>
+    <label class="llm-toggle"><input id="llmProactiveOnStartup" type="checkbox" checked><span>启动时发送</span></label>
     <div id="llmProactiveIntervalEditor" class="schedule-interval-editor">
-      <label class="qwen-toggle"><input id="llmProactiveIntervalEnabled" type="checkbox"><span>间隔</span></label>
+      <label class="llm-toggle"><input id="llmProactiveIntervalEnabled" type="checkbox"><span>间隔</span></label>
       <input id="llmProactiveIntervalValue" class="bjtu-content-sized-input" type="number" min="1" step="any" value="30" aria-label="主动消息间隔">
       <select id="llmProactiveIntervalUnit" aria-label="主动消息间隔单位"><option value="1">分钟</option><option value="60">小时</option><option value="1440">天</option></select>
+      <span>发送</span>
     </div>
-    <label class="qwen-toggle" title="兼容 API 和本地模型仅加入 AI 回复，不加入提醒提示词；qwen.ai 会直接在活跃会话发送提醒提示词并保留对话"><input id="llmProactiveIncludeInContext" type="checkbox"><span>加入对话上下文</span></label>
+    <label class="llm-toggle" title="兼容 API 和本地模型仅加入 AI 回复，不加入提醒提示词；qwen.ai 会直接在活跃会话发送提醒提示词并保留对话"><input id="llmProactiveIncludeInContext" type="checkbox"><span>加入对话上下文</span></label>
   </div>
 
-  <div class="qwen-sub-options">
-    <div class="qwen-setting-row">
-      <label class="qwen-setting-label" for="qwenProvider">模型来源</label>
-      <select id="qwenProvider">
+  <div class="llm-sub-options">
+    <div class="llm-setting-row">
+      <label class="llm-setting-label" for="llmProvider">模型来源</label>
+      <select id="llmProvider">
         <option value="qwen">qwen.ai</option>
         <option value="local">浏览器本地模型（Prompt API）</option>
         <option value="openai">OpenAI-compatible API</option>
       </select>
     </div>
     <div id="llmApiOptions" hidden>
-      <div class="qwen-setting-row"><label for="llmApiPreset">服务预设</label><select id="llmApiPreset"><option value="ollama">Ollama</option><option value="agnes">Agnes AI</option><option value="deepseek">DeepSeek</option><option value="custom">自定义</option></select></div>
-      <div class="qwen-setting-row"><label for="llmApiBaseUrl">API 基础地址</label><input id="llmApiBaseUrl" type="url" placeholder="http://127.0.0.1:11434/v1" autocomplete="off"></div>
-      <div class="qwen-setting-row"><label for="llmApiKey">API Key</label><input id="llmApiKey" type="password" autocomplete="new-password" placeholder="本机 Ollama 可留空"></div>
-      <div class="qwen-setting-row"><label for="llmApiTemperature">Temperature</label><input id="llmApiTemperature" class="bjtu-content-sized-input" type="number" min="0" max="2" step="any" placeholder="默认"></div>
-      <div class="qwen-setting-row"><label for="llmApiTopP">Top-p</label><input id="llmApiTopP" class="bjtu-content-sized-input" type="number" min="0.000000001" max="1" step="any" placeholder="默认"></div>
-      <div id="llmApiTopKRow" class="qwen-setting-row"><label for="llmApiTopK">Top-k</label><input id="llmApiTopK" class="bjtu-content-sized-input" type="number" min="1" step="1" placeholder="默认"></div>
-      <div class="qwen-setting-row"><label for="llmApiMaxTokens">最大输出 Tokens</label><input id="llmApiMaxTokens" class="bjtu-content-sized-input" type="number" min="1" step="1" placeholder="默认"></div>
-      <div class="qwen-setting-row"><label for="llmApiThinkingProtocol">思考参数格式</label><select id="llmApiThinkingProtocol"><option value="auto">自动（按服务预设）</option><option value="thinking">thinking.type</option><option value="template">chat_template_kwargs</option><option value="reasoning_effort">reasoning_effort</option><option value="none">不发送</option></select></div>
+      <div class="llm-setting-row"><label for="llmApiPreset">服务预设</label><select id="llmApiPreset"><option value="ollama">Ollama</option><option value="agnes">Agnes AI</option><option value="deepseek">DeepSeek</option><option value="custom">自定义</option></select></div>
+      <div class="llm-setting-row"><label for="llmApiBaseUrl">API 基础地址</label><input id="llmApiBaseUrl" type="url" placeholder="http://127.0.0.1:11434/v1" autocomplete="off"></div>
+      <div class="llm-setting-row"><label for="llmApiKey">API Key</label><input id="llmApiKey" type="password" autocomplete="new-password" placeholder="本机 Ollama 可留空"></div>
+      <div class="llm-setting-row"><label for="llmApiTemperature">Temperature</label><input id="llmApiTemperature" class="bjtu-content-sized-input" type="number" min="0" max="2" step="any" placeholder="默认"></div>
+      <div class="llm-setting-row"><label for="llmApiTopP">Top-p</label><input id="llmApiTopP" class="bjtu-content-sized-input" type="number" min="0.000000001" max="1" step="any" placeholder="默认"></div>
+      <div id="llmApiTopKRow" class="llm-setting-row"><label for="llmApiTopK">Top-k</label><input id="llmApiTopK" class="bjtu-content-sized-input" type="number" min="1" step="1" placeholder="默认"></div>
+      <div class="llm-setting-row"><label for="llmApiMaxTokens">最大输出 Tokens</label><input id="llmApiMaxTokens" class="bjtu-content-sized-input" type="number" min="1" step="1" placeholder="默认"></div>
+      <div class="llm-setting-row"><label for="llmApiThinkingProtocol">思考参数格式</label><select id="llmApiThinkingProtocol"><option value="auto">自动（按服务预设）</option><option value="thinking">thinking.type</option><option value="template">chat_template_kwargs</option><option value="reasoning_effort">reasoning_effort</option><option value="none">不发送</option></select></div>
       <div class="tip">参数留空使用服务默认值，思考功能取决于模型；自定义服务需选择其支持的思考参数格式。DeepSeek 思考模式不发送 Temperature；Ollama 使用原生 /api/chat 支持 think 和 Top-k，其他兼容服务使用 /chat/completions。密钥保存在本机扩展设置中，请求直接发送到填写的地址；更换地址会清除旧密钥并新建会话。模型能力及费用由服务商决定。</div>
     </div>
-    <div id="qwenLocalModelOptions" hidden>
-      <div class="qwen-setting-row"><button type="button" id="qwenPrepareLocalModel" class="btn">准备本地模型</button><button type="button" id="qwenLocalModelSettings" class="btn" title="在实验设置中搜索 Prompt API，设为 Enabled 并重启浏览器">打开 Prompt API 设置</button><span id="qwenLocalModelStatus" role="status"></span></div>
+    <div id="llmLocalModelOptions" hidden>
+      <div class="llm-setting-row"><button type="button" id="llmPrepareLocalModel" class="btn">准备本地模型</button><button type="button" id="llmLocalModelSettings" class="btn" title="在实验设置中搜索 Prompt API，设为 Enabled 并重启浏览器">打开 Prompt API 设置</button><span id="llmLocalModelStatus" role="status"></span></div>
       <div class="tip">首次使用由浏览器下载模型，之后在本机生成回复，不登录或发送对话到 qwen.ai。需浏览器启用 Prompt API 且设备满足要求；中文和操作调用能力取决于浏览器模型。不支持独立思考开关。</div>
     </div>
-    <div class="qwen-setting-row">
-      <label class="qwen-setting-label" for="qwenModelSelect">模型</label>
-      <select id="qwenModelSelect" class="qwen-model-select" disabled>
+    <div class="llm-setting-row">
+      <label class="llm-setting-label" for="llmModelSelect">模型</label>
+      <select id="llmModelSelect" class="llm-model-select" disabled>
         <option value="">加载模型中…</option>
       </select>
       <span id="llmApiManualModelRow" hidden><input id="llmApiModel" type="text" aria-label="模型" placeholder="未能获取列表，请填写模型 ID" autocomplete="off"><span id="llmApiModelError" class="llm-model-error" role="status"></span></span>
       <button id="llmRefreshModels" class="btn" type="button" hidden>刷新模型</button>
     </div>
 
-    <div class="qwen-toggle-row">
-      <label class="qwen-toggle">
-        <input type="checkbox" id="qwenThinkingEnabled">
-        <span class="qwen-toggle-label">回答前让模型思考</span>
+    <div class="llm-toggle-row">
+      <label class="llm-toggle">
+        <input type="checkbox" id="llmThinkingEnabled">
+        <span class="llm-toggle-label">回答前让模型思考</span>
       </label>
     </div>
 
-    <div class="qwen-setting-row">
-      <label class="qwen-setting-label" for="qwenMaxIterations">操作循环上限</label>
-      <input type="number" id="qwenMaxIterations" class="qwen-model-select bjtu-content-sized-input" min="1" step="1"><span>次</span>
-      <div class="tip">AI 连续调用操作达到该次数后，会询问是否继续（发送新消息时生效）。</div>
+    <div class="llm-setting-row">
+      <label class="llm-setting-label" for="llmMaxIterations">操作循环上限</label>
+      <input type="number" id="llmMaxIterations" class="llm-model-select bjtu-content-sized-input" min="1" step="1" placeholder="∞"><span>次</span>
+      <div class="tip">AI 连续调用操作达到该次数后，会询问是否继续；留空表示不设限制。填写次数会取消「始终允许」（发送新消息时生效）。</div>
     </div>
 
-    <div class="qwen-toggle-row">
-      <label class="qwen-toggle">
-        <input type="checkbox" id="qwenAlwaysAllow">
-        <span class="qwen-toggle-label">始终允许 AI 循环调用操作（忽略次数限制）</span>
+    <div class="llm-toggle-row">
+      <label class="llm-toggle">
+        <input type="checkbox" id="llmAlwaysAllow">
+        <span class="llm-toggle-label">始终允许 AI 循环调用操作（忽略次数限制）</span>
       </label>
     </div>
 
-    <div class="qwen-setting-row">
-      <label class="qwen-setting-label" for="qwenApprovalNotificationMode">操作需要批准时</label>
-      <select id="qwenApprovalNotificationMode" class="qwen-model-select qwen-notification-mode">
+    <div class="llm-setting-row">
+      <label class="llm-setting-label" for="llmApprovalNotificationMode">操作需要批准时</label>
+      <select id="llmApprovalNotificationMode" class="llm-model-select llm-notification-mode">
         <option value="always">总是</option>
         <option value="background" selected>若处于后台</option>
         <option value="never">不</option>
       </select>
-      <span class="qwen-setting-label">发送系统通知</span>
+      <span class="llm-setting-label">发送系统通知</span>
     </div>
 
-    <div class="qwen-setting-row">
-      <label class="qwen-setting-label" for="qwenCompletionNotificationMode">回复生成完毕后</label>
-      <select id="qwenCompletionNotificationMode" class="qwen-model-select qwen-notification-mode">
+    <div class="llm-setting-row">
+      <label class="llm-setting-label" for="llmCompletionNotificationMode">回复生成完毕后</label>
+      <select id="llmCompletionNotificationMode" class="llm-model-select llm-notification-mode">
         <option value="always">总是</option>
         <option value="background" selected>若处于后台</option>
         <option value="never">不</option>
       </select>
-      <span class="qwen-setting-label">发送系统通知</span>
+      <span class="llm-setting-label">发送系统通知</span>
     </div>
 
-    <div class="qwen-toggle-row">
-      <a id="qwenOpenChatStandalone" class="btn" style="text-decoration:none;">打开AI 助手</a>
+    <div class="llm-toggle-row">
+      <a id="llmOpenChatStandalone" class="btn" style="text-decoration:none;">打开AI 助手</a>
     </div>
 
   </div>

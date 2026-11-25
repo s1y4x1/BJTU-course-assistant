@@ -3,9 +3,9 @@
   if(!/\/app\/app\.html$/i.test(location.pathname)||new URLSearchParams(location.search).has('autoUpdate')||new URLSearchParams(location.search).get('view')==='sidepanel'||new URLSearchParams(location.search).get('popup')==='1')return;
   const pause=()=>new Promise(resolve=>setTimeout(resolve,150));
   async function sendPrompt(text){
-    const stored=await chrome.storage.local.get('qwenEnabled');
+    const stored=await chrome.storage.local.get('llmEnabled');
     const available=await global.BjtuModuleRegistry.ready;
-    if(available.chatroom&&stored.qwenEnabled===false){
+    if(available.chatroom&&stored.llmEnabled===false){
       await global.BjtuModuleRegistry.loadScript('modules/chatroom/launch.js');
       await global.BjtuChatroomLauncher.open();
       const deadline=Date.now()+20000;

@@ -46,7 +46,7 @@
       mail: global.BjtuMailOptions,
       'local-bridge': global.BjtuLocalBridgeOptions,
       MJ: global.BjtuMjOptions,
-      llm: global.BjtuQwenOptions
+      llm: global.BjtuLlmOptions
     };
     const controller = controllers[id];
     if (!controller?.init) {

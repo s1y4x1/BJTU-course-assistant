@@ -1,10 +1,10 @@
-/* 通义千问智能代理：解析 sandbox/app/background 代码块并按顺序循环执行。 */
-(function initBjtuQwenAgent(global) {
+/* AI 助手代理：解析最后一个 sandbox/app/background 代码块并循环执行。 */
+(function initBjtuLlmAgent(global) {
   'use strict';
 
   const EXECUTION_BLOCK_PATTERN = /```(sandbox|app|background)\s*\n?([\s\S]*?)```/gi;
   const SYSTEM_PROMPT_PATH = 'modules/llm/SystemPrompt.md';
-  const SYSTEM_PROMPT_DOCS_PLACEHOLDER = '{{QWEN_DOCS}}';
+  const SYSTEM_PROMPT_DOCS_PLACEHOLDER = '{{LLM_DOCS}}';
   let systemPromptTemplatePromise = null;
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -90,13 +90,13 @@
     return systemPromptTemplatePromise;
   }
 
-  async function buildSystemPrompt({ qwenDocs = '' } = {}) {
+  async function buildSystemPrompt({ llmDocs = '' } = {}) {
     const template = await loadSystemPromptTemplate();
-    return template.replace(SYSTEM_PROMPT_DOCS_PLACEHOLDER, String(qwenDocs || '').trim());
+    return template.replace(SYSTEM_PROMPT_DOCS_PLACEHOLDER, String(llmDocs || '').trim());
   }
 
   async function ensureLoggedIn(client) {
-    if (!client) throw new Error('通义千问客户端未就绪');
+    if (!client) throw new Error('AI 助手客户端未就绪');
     if (await client.isLoggedIn()) return;
     throw Object.assign(new Error('尚未登录通义千问，请先打开 https://chat.qwen.ai/ 登录'), { code: 'NOT_LOGGED_IN' });
   }
@@ -126,7 +126,7 @@
     } = options || {};
     const client = options?.client || global.BjtuQwenClient;
     const operations = global.BJTUCA;
-    if (!client || !operations) throw new Error('通义千问模块未就绪');
+    if (!client || !operations) throw new Error('AI 助手模块未就绪');
     await ensureLoggedIn(client);
 
     const providedChatId = String(chatId || '');
@@ -166,7 +166,7 @@
     const turnAllowedModes = new Set();
     const persistentAllowedOperations = new Set((alwaysAllowedOperations || []).map(String));
     if (alwaysAllow === true) loopSession.alwaysAllow = true;
-    const iterationLimit = Number(maxIterations) > 0 ? Number(maxIterations) : 6;
+    const iterationLimit = maxIterations === null || maxIterations === '' ? Infinity : Number(maxIterations) > 0 ? Number(maxIterations) : 6;
     let effectiveLimit = loopSession.alwaysAllow === true ? Infinity : iterationLimit;
     let iteration = 0;
 
@@ -318,7 +318,7 @@
               executionMode: execution.mode,
               operationNames,
               message: [
-                `通义千问请求在 ${execution.mode} 环境执行 JavaScript，是否允许？`,
+                `AI 助手请求在 ${execution.mode} 环境执行 JavaScript，是否允许？`,
                 explanation ? `操作说明：${explanation}` : '',
                 preview ? `代码：\n${preview}` : ''
               ].filter(Boolean).join('\n\n'),
@@ -361,7 +361,7 @@
     }
   }
 
-  global.BjtuQwenAgent = {
+  global.BjtuLlmAgent = {
     parseTrailingExecution,
     parseExecutionBlocks,
     operationNamesInCode,

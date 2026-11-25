@@ -3,12 +3,23 @@ html.llm-chatroom-view body.chatroom-page.llm-chat-standalone {
   margin:0; padding:0; height:100dvh; max-width:none;
   background:var(--bjtu-card-background,#fff);
 }
+/* 嵌入窗口只允许消息区滚动，不能让输入区把它挤出 iframe 视口。 */
+html.llm-chatroom-view { height:100%; overflow:hidden; }
+html.llm-chatroom-view body.llm-chat-standalone .llm-chat-panel {
+  height:100% !important;
+  width:100% !important;
+}
+html.llm-chatroom-view .llm-chat-header { flex:0 1 auto; max-height:25%; overflow:auto; }
+html.llm-chatroom-view .llm-chat-composer { flex:0 1 auto; min-height:0; max-height:45%; overflow:auto; }
+html.llm-chatroom-view .llm-chat-ask { max-height:30%; min-height:0; overflow:auto; }
 html.llm-chatroom-view .llm-chat-panel { background:var(--bjtu-card-background,#fff); color:inherit; }
 html.llm-chatroom-view .llm-chat-header { background:transparent; border-color:var(--chat-line); }
 html.llm-chatroom-view .llm-chat-title { color:inherit; }
 html.llm-chatroom-view .llm-chat-messages { gap:0; padding:18px 18px 0; }
 html.llm-chatroom-view .llm-chat-messages-wrap,
 html.llm-chatroom-view .llm-chat-messages-scroll { flex:1 1 0; }
+html.llm-chatroom-view .llm-chat-messages-scroll { overflow-anchor:none; overscroll-behavior:contain; }
+html.llm-chatroom-view .llm-chat-messages { flex:none; }
 html.llm-chatroom-view .llm-chat-messages > * { flex-shrink:0; }
 html.llm-chatroom-view .llm-chat-msg-row { margin-bottom:12px; width:fit-content; max-width:96%; }
 html.llm-chatroom-view .llm-chat-msg-row > .llm-chat-msg.message {

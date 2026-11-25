@@ -1,21 +1,21 @@
-/* Qwen 模块后台：存储设置、查询状态、执行操作、转发聊天。 */
-(function initBjtuQwenBackground(global) {
+/* AI 助手后台：存储设置、查询状态、执行操作、转发聊天。 */
+(function initBjtuLlmBackground(global) {
   'use strict';
   if (!global.BJTUCA || !global.BjtuApiSettings) return;
 
-  const SETTINGS_KEYS = ['qwenEnabled', 'qwenProvider', 'qwenFabColorMode', 'qwenModelId', 'qwenThinkingEnabled', 'qwenMaxIterations', 'qwenAlwaysAllow', 'qwenApprovalNotificationMode', 'qwenCompletionNotificationMode', 'llmApiBaseUrl', 'llmApiKey', 'llmApiModel', 'llmApiPreset', 'llmApiTemperature', 'llmApiTopP', 'llmApiTopK', 'llmApiMaxTokens', 'llmApiThinkingProtocol'];
+  const SETTINGS_KEYS = ['llmEnabled', 'llmProvider', 'llmFabColorMode', 'qwenModelId', 'llmThinkingEnabled', 'llmMaxIterations', 'llmAlwaysAllow', 'llmApprovalNotificationMode', 'llmCompletionNotificationMode', 'llmApiBaseUrl', 'llmApiKey', 'llmApiModel', 'llmApiPreset', 'llmApiTemperature', 'llmApiTopP', 'llmApiTopK', 'llmApiMaxTokens', 'llmApiThinkingProtocol'];
   const normalizeProvider = value => ['local','openai'].includes(value) ? value : 'qwen';
   SETTINGS_KEYS.push('llmProactiveEnabled','llmProactiveOnStartup','llmProactiveIntervalEnabled','llmProactiveIntervalMinutes','llmProactiveIncludeInContext');
-  const providerHistoryKey = value => ({local:'qwenLocalLastChatId',openai:'llmApiLastChatId',qwen:'qwenCloudLastChatId'})[normalizeProvider(value)];
+  const providerHistoryKey = value => ({local:'llmLocalLastChatId',openai:'llmApiLastChatId',qwen:'qwenCloudLastChatId'})[normalizeProvider(value)];
   const providerForChat = id => String(id).startsWith('local-') ? 'local' : String(id).startsWith('compatible-') ? 'openai' : 'qwen';
-  const clientForChat = id => providerForChat(id) === 'local' ? global.BjtuQwenLocalClient.create() : providerForChat(id) === 'openai' ? global.BjtuLlmCompatibleClient.create() : global.BjtuQwenClient;
+  const clientForChat = id => providerForChat(id) === 'local' ? global.BjtuLlmLocalClient.create() : providerForChat(id) === 'openai' ? global.BjtuLlmCompatibleClient.create() : global.BjtuQwenClient;
   const LOGIN_TAB_ID_KEY = 'qwenLoginTabId';
   const LOGIN_ORIGIN_KEY = 'qwenLoginOrigin';
   const WAF_NOTIFICATION_ID = 'bjtu-qwen-waf-verification';
   const WAF_FLOW_STATE_KEY = 'qwenWafFlowState';
-  const CHAT_PERMISSION_SESSIONS_KEY = 'qwenChatPermissionSessions';
-  const ASK_NOTIFICATION_PREFIX = 'bjtu-qwen-ask-limit:';
-  const COMPLETION_NOTIFICATION_PREFIX = 'bjtu-qwen-complete:';
+  const CHAT_PERMISSION_SESSIONS_KEY = 'llmChatPermissionSessions';
+  const ASK_NOTIFICATION_PREFIX = 'bjtu-llm-ask-limit:';
+  const COMPLETION_NOTIFICATION_PREFIX = 'bjtu-llm-complete:';
   const pendingAskNotifications = new Map();
   const chatPermissionSessions = new Map();
   let qwenLoginCompletionPromise = null;
@@ -57,7 +57,7 @@
     await chrome.storage.session.set({ [CHAT_PERMISSION_SESSIONS_KEY]: sessions }).catch(() => {});
   }
 
-  async function findOpenQwenAppTab(excludeTabId = null) {
+  async function findOpenLlmAppTab(excludeTabId = null) {
     const appUrl = chrome.runtime.getURL('app/app.html');
     const tabs = await chrome.tabs.query({}).catch(() => []);
     return tabs
@@ -266,9 +266,9 @@
     }
   }
 
-  async function focusQwenAppPage() {
+  async function focusLlmAppPage() {
     const appUrl = chrome.runtime.getURL('app/app.html');
-    const appTab = await findOpenQwenAppTab();
+    const appTab = await findOpenLlmAppTab();
     const tab = appTab
       ? await chrome.tabs.update(appTab.id, { active: true }).catch(() => appTab)
       : await global.BjtuTabs.create({ url: appUrl, active: true }).catch(() => null);
@@ -317,7 +317,7 @@
         await chrome.tabs.remove(loginTabId).catch(() => {});
       }
       if (openedFromSidePanel) return;
-      await focusQwenAppPage();
+      await focusLlmAppPage();
     })().finally(() => {
       qwenLoginCompletionPromise = null;
       const nextToken = qwenLoginPendingToken;
@@ -339,8 +339,8 @@
       proactiveIntervalEnabled: stored.llmProactiveIntervalEnabled === true,
       proactiveIntervalMinutes: Number(stored.llmProactiveIntervalMinutes)>0 ? Number(stored.llmProactiveIntervalMinutes) : 30,
       proactiveIncludeInContext: stored.llmProactiveIncludeInContext === true,
-      enabled: stored.qwenEnabled !== false,
-      provider: normalizeProvider(stored.qwenProvider),
+      enabled: stored.llmEnabled !== false,
+      provider: normalizeProvider(stored.llmProvider),
       apiBaseUrl: String(stored.llmApiBaseUrl || 'http://127.0.0.1:11434/v1'),
       apiKey: String(stored.llmApiKey || ''),
       apiModel: String(stored.llmApiModel || ''),
@@ -350,19 +350,19 @@
       apiTopK: stored.llmApiTopK ?? '',
       apiMaxTokens: stored.llmApiMaxTokens ?? '',
       apiThinkingProtocol: stored.llmApiThinkingProtocol || 'auto',
-      fabColorMode: ['dark', 'light', 'system', 'extension'].includes(stored.qwenFabColorMode)
-        ? stored.qwenFabColorMode
+      fabColorMode: ['dark', 'light', 'system', 'extension'].includes(stored.llmFabColorMode)
+        ? stored.llmFabColorMode
         : 'extension',
       modelId: String(stored.qwenModelId || ''),
       ...operationSettings,
-      thinkingEnabled: stored.qwenThinkingEnabled === true,
-      maxIterations: Number(stored.qwenMaxIterations) > 0 ? Number(stored.qwenMaxIterations) : 6,
-      alwaysAllow: stored.qwenAlwaysAllow === true,
-      approvalNotificationMode: ['always', 'background', 'never'].includes(stored.qwenApprovalNotificationMode)
-        ? stored.qwenApprovalNotificationMode
+      thinkingEnabled: stored.llmThinkingEnabled === true,
+      maxIterations: stored.llmMaxIterations === null || stored.llmMaxIterations === '' ? null : Number(stored.llmMaxIterations) > 0 ? Number(stored.llmMaxIterations) : 6,
+      alwaysAllow: stored.llmAlwaysAllow === true,
+      approvalNotificationMode: ['always', 'background', 'never'].includes(stored.llmApprovalNotificationMode)
+        ? stored.llmApprovalNotificationMode
         : 'background',
-      completionNotificationMode: ['always', 'background', 'never'].includes(stored.qwenCompletionNotificationMode)
-        ? stored.qwenCompletionNotificationMode
+      completionNotificationMode: ['always', 'background', 'never'].includes(stored.llmCompletionNotificationMode)
+        ? stored.llmCompletionNotificationMode
         : 'background'
     };
   }
@@ -397,13 +397,13 @@
       next[key]=n;
     }
     if (patch?.provider !== undefined) {
-      const stored = await chrome.storage.local.get(['qwenProvider','qwenLastChatId','qwenLocalLastChatId','qwenCloudLastChatId','llmApiLastChatId']);
-      const oldProvider = normalizeProvider(stored.qwenProvider);
-      next.qwenProvider = normalizeProvider(patch.provider);
-      if (oldProvider !== next.qwenProvider) {
-        next[providerHistoryKey(oldProvider)] = String(stored.qwenLastChatId || '');
-        next.qwenLastChatId = String(stored[providerHistoryKey(next.qwenProvider)] || '');
-        next.qwenOpeningPendingChatId = '';
+      const stored = await chrome.storage.local.get(['llmProvider','llmLastChatId','llmLocalLastChatId','qwenCloudLastChatId','llmApiLastChatId']);
+      const oldProvider = normalizeProvider(stored.llmProvider);
+      next.llmProvider = normalizeProvider(patch.provider);
+      if (oldProvider !== next.llmProvider) {
+        next[providerHistoryKey(oldProvider)] = String(stored.llmLastChatId || '');
+        next.llmLastChatId = String(stored[providerHistoryKey(next.llmProvider)] || '');
+        next.llmOpeningPendingChatId = '';
       }
     }
     for (const [field,key] of Object.entries({apiBaseUrl:'llmApiBaseUrl',apiKey:'llmApiKey',apiModel:'llmApiModel'})) {
@@ -412,15 +412,15 @@
     if(patch?.apiBaseUrl!==undefined){
       const url=new URL(next.llmApiBaseUrl);
       if(!['http:','https:'].includes(url.protocol)||url.username||url.password||url.search||url.hash)throw new Error('请输入有效的 HTTP(S) API 基础地址');
-      const previous=await chrome.storage.local.get(['llmApiBaseUrl','qwenProvider']);
+      const previous=await chrome.storage.local.get(['llmApiBaseUrl','llmProvider']);
       if(previous.llmApiBaseUrl!==next.llmApiBaseUrl){
         if(patch.apiKey===undefined)next.llmApiKey='';
-        next.llmApiLastChatId='';if((next.qwenProvider || previous.qwenProvider)==='openai'){next.qwenLastChatId='';next.qwenOpeningPendingChatId='';}
+        next.llmApiLastChatId='';if((next.llmProvider || previous.llmProvider)==='openai'){next.llmLastChatId='';next.llmOpeningPendingChatId='';}
       }
     }
-    if (typeof patch?.enabled === 'boolean') next.qwenEnabled = patch.enabled;
+    if (typeof patch?.enabled === 'boolean') next.llmEnabled = patch.enabled;
     if (patch?.fabColorMode !== undefined) {
-      next.qwenFabColorMode = ['dark', 'light', 'system', 'extension'].includes(patch.fabColorMode)
+      next.llmFabColorMode = ['dark', 'light', 'system', 'extension'].includes(patch.fabColorMode)
         ? patch.fabColorMode
         : 'extension';
     }
@@ -431,20 +431,33 @@
     if (patch?.enabledOperations !== undefined || patch?.alwaysAllowedOperations !== undefined) {
       await global.BjtuApiSettings.save(patch);
     }
-    if (typeof patch?.thinkingEnabled === 'boolean') next.qwenThinkingEnabled = patch.thinkingEnabled;
+    if (typeof patch?.thinkingEnabled === 'boolean') next.llmThinkingEnabled = patch.thinkingEnabled;
     if (patch?.maxIterations !== undefined) {
-      next.qwenMaxIterations = Math.max(1, Math.floor(Number(patch.maxIterations) || 6));
+      const value=patch.maxIterations;
+      if(value===null || value==='')next.llmMaxIterations=null;
+      else {
+        if(!Number.isSafeInteger(Number(value)) || Number(value)<1)throw new Error('操作循环上限应为正整数，或留空表示不设限制');
+        next.llmMaxIterations=Number(value);
+        next.llmAlwaysAllow=false;
+      }
     }
-    if (typeof patch?.alwaysAllow === 'boolean') next.qwenAlwaysAllow = patch.alwaysAllow;
+    if (typeof patch?.alwaysAllow === 'boolean') next.llmAlwaysAllow = patch.alwaysAllow;
     if (patch?.approvalNotificationMode !== undefined) {
-      next.qwenApprovalNotificationMode = ['always', 'background', 'never'].includes(patch.approvalNotificationMode)
+      next.llmApprovalNotificationMode = ['always', 'background', 'never'].includes(patch.approvalNotificationMode)
         ? patch.approvalNotificationMode
         : 'background';
     }
     if (patch?.completionNotificationMode !== undefined) {
-      next.qwenCompletionNotificationMode = ['always', 'background', 'never'].includes(patch.completionNotificationMode)
+      next.llmCompletionNotificationMode = ['always', 'background', 'never'].includes(patch.completionNotificationMode)
         ? patch.completionNotificationMode
         : 'background';
+    }
+    if (next.llmAlwaysAllow === false) {
+      const stored=await chrome.storage.session.get(CHAT_PERMISSION_SESSIONS_KEY);
+      const sessions=stored[CHAT_PERMISSION_SESSIONS_KEY] || {};
+      for(const session of Object.values(sessions))delete session.alwaysAllow;
+      for(const session of chatPermissionSessions.values())delete session.alwaysAllow;
+      await chrome.storage.session.set({[CHAT_PERMISSION_SESSIONS_KEY]:sessions});
     }
     if (Object.keys(next).length) await chrome.storage.local.set(next);
     return getSettings();
@@ -455,9 +468,9 @@
   let activityQueue=Promise.resolve();
   function updateAssistantActivity(operation) {
     const task=activityQueue.then(async()=>{
-      const stored=await chrome.storage.local.get(['llmChatroomActivity','qwenEnabled']);
+      const stored=await chrome.storage.local.get(['llmChatroomActivity','llmEnabled']);
       const previous=stored.llmChatroomActivity || {};
-      const next=await operation(previous,stored.qwenEnabled);
+      const next=await operation(previous,stored.llmEnabled);
       if(next)await chrome.storage.local.set({llmChatroomActivity:next});
     });
     activityQueue=task.catch(error=>console.warn('[llm] 无法更新会话提醒',error));return task;
@@ -469,26 +482,26 @@
     await updateAssistantActivity(async(previous,enabled)=>{
       if(previous.responseId && previous.responseId===result.responseId)return null;
       let read=enabled!==false;
-      for(const [port,state]of chatViews)if(!await qwenViewIsInBackground(port,state())){read=true;break;}
+      for(const [port,state]of chatViews)if(!await llmViewIsInBackground(port,state())){read=true;break;}
       return {unread:read?0:Math.max(0,Number(previous.unread)||0)+1,lastAt:Date.now(),lastText:text.slice(0,160),responseId:result.responseId || ''};
     });
   }
   const sharedChatCreationPromises = new Map();
   const proactive=global.BjtuLlmProactive.create({getSettings,resolveSharedChatId,recordAssistantReply,isConversationBusy:()=>activeChatPorts.size>0,
-    notifyReply:result=>notifyQwenBackgroundCompletion(null,{},result,{proactive:true})});
+    notifyReply:result=>notifyLlmBackgroundCompletion(null,{},result,{proactive:true})});
   let sharedOpeningInFlight = null;
 
   async function resolveSharedChatId(client, modelId) {
     const provider = (await getSettings()).provider;
-    const stored = await chrome.storage.local.get('qwenLastChatId').catch(() => ({}));
-    const existing = String(stored?.qwenLastChatId || '');
+    const stored = await chrome.storage.local.get('llmLastChatId').catch(() => ({}));
+    const existing = String(stored?.llmLastChatId || '');
     if (existing && providerForChat(existing) === provider) return existing;
     if (!sharedChatCreationPromises.has(provider)) {
       const promise = client.newChat(modelId).then(async (chatId) => {
         const id = String(chatId || '');
         if (!id) throw new Error('新建共享会话失败：未返回会话 ID');
         if ((await getSettings()).provider !== provider) throw new DOMException('模型来源已切换','AbortError');
-        await chrome.storage.local.set({ qwenLastChatId: id });
+        await chrome.storage.local.set({ llmLastChatId: id });
         return id;
       }).finally(() => {
         sharedChatCreationPromises.delete(provider);
@@ -501,7 +514,7 @@
   function broadcastSharedChatUpdated(chatId, sourceViewId) {
     const id = String(chatId || '');
     if (!id) return;
-    void chrome.runtime.sendMessage({ type: 'QWEN_SHARED_CHAT_UPDATED', chatId: id, sourceViewId }).catch(() => {});
+    void chrome.runtime.sendMessage({ type: 'LLM_SHARED_CHAT_UPDATED', chatId: id, sourceViewId }).catch(() => {});
   }
 
   function postCompletionStreamEvent(port, event) {
@@ -512,7 +525,7 @@
     if (event?.functionResult) port.postMessage({ type: 'functionResult', functionResult: event.functionResult });
   }
 
-  async function qwenViewIsInBackground(port, uiState) {
+  async function llmViewIsInBackground(port, uiState) {
     if (uiState?.visible !== true) return true;
     const senderTab = port?.sender?.tab;
     const windowId = Number(senderTab?.windowId);
@@ -530,11 +543,11 @@
     return tab?.active !== true;
   }
 
-  async function notifyQwenBackgroundCompletion(port, uiState, result, {proactive=false}={}) {
+  async function notifyLlmBackgroundCompletion(port, uiState, result, {proactive=false}={}) {
     const settings = await getSettings();
     if (settings.completionNotificationMode === 'never') return;
     if (!proactive && settings.completionNotificationMode === 'background'
-      && !await qwenViewIsInBackground(port, uiState)) return;
+      && !await llmViewIsInBackground(port, uiState)) return;
     const responseId = String(result?.responseId || Date.now());
     const tabId = Number(port?.sender?.tab?.id);
     const windowId = Number(port?.sender?.tab?.windowId);
@@ -569,7 +582,7 @@
     });
   }
 
-  async function focusQwenCompletionTarget(notificationId) {
+  async function focusLlmCompletionTarget(notificationId) {
     const id = String(notificationId || '');
     if (!id.startsWith(COMPLETION_NOTIFICATION_PREFIX)) return;
     const parts = id.slice(COMPLETION_NOTIFICATION_PREFIX.length).split(':');
@@ -598,7 +611,7 @@
     }
     if (tab?.id) tab = await chrome.tabs.update(tab.id, { active: true }).catch(() => tab);
     if (context === 'app' && tab?.id) {
-      await chrome.runtime.sendMessage({ type: 'QWEN_OPEN_CHAT_PANEL', viewId }).catch(() => null);
+      await chrome.runtime.sendMessage({ type: 'LLM_OPEN_CHAT_PANEL', viewId }).catch(() => null);
       return;
     }
     if (context === 'sidepanel') {
@@ -610,7 +623,7 @@
       } else if (Number.isInteger(targetWindowId)) {
         await chrome.sidePanel.open({ windowId: targetWindowId }).catch(() => null);
       }
-      await chrome.runtime.sendMessage({ type: 'QWEN_SHOW_SIDE_PANEL_CHAT' }).catch(() => null);
+      await chrome.runtime.sendMessage({ type: 'LLM_SHOW_SIDE_PANEL_CHAT' }).catch(() => null);
       return;
     }
     if (!tab) {
@@ -621,7 +634,7 @@
   if (typeof chrome === 'object' && chrome?.notifications?.onClicked) {
     chrome.notifications.onClicked.addListener((notificationId) => {
       if (!String(notificationId || '').startsWith(COMPLETION_NOTIFICATION_PREFIX)) return;
-      void focusQwenCompletionTarget(notificationId).finally(() => {
+      void focusLlmCompletionTarget(notificationId).finally(() => {
         chrome.notifications.clear(notificationId, () => void chrome.runtime.lastError);
       });
     });
@@ -629,7 +642,7 @@
 
   if (typeof chrome === 'object' && chrome?.runtime?.onConnect) {
     chrome.runtime.onConnect.addListener((port) => {
-      if (String(port.name || '') === 'bjtu-qwen-history-resume') {
+      if (String(port.name || '') === 'bjtu-llm-history-resume') {
         const resumeAbortController = new AbortController();
         let started = false;
         let resumeChatId = '';
@@ -672,10 +685,10 @@
         });
         return;
       }
-      if (String(port.name || '') !== 'bjtu-qwen-chat') return;
+      if (String(port.name || '') !== 'bjtu-llm-chat') return;
       activeChatPorts.add(port);
       const abortController = new AbortController();
-      const localClient = global.BjtuQwenLocalClient.create(port);
+      const localClient = global.BjtuLlmLocalClient.create(port);
       const turnRef = {};
       let pendingAsk = null;
       let pendingRetry = null;
@@ -724,7 +737,7 @@
             viewId: String(message.viewId || activeUiState.viewId || ''),
             visible: message.visible === true
           };
-          if(message.visible===true)void qwenViewIsInBackground(port,activeUiState).then(hidden=>{if(!hidden)return markAssistantRead();}).catch(()=>{});
+          if(message.visible===true)void llmViewIsInBackground(port,activeUiState).then(hidden=>{if(!hidden)return markAssistantRead();}).catch(()=>{});
           return;
         }
         if (message?.type === 'thinkingChanged') {
@@ -750,7 +763,7 @@
           if (action === 'always' && pendingAsk.mode === 'iterate') {
             const askId = pendingAsk.id;
             void saveSettings({ alwaysAllow: true })
-              .catch((error) => console.error('[qwen] 保存全局循环许可失败：', error))
+              .catch((error) => console.error('[llm] 保存全局循环许可失败：', error))
               .finally(() => {
                 if (pendingAsk?.id === askId) settlePendingAsk(action, message.count);
               });
@@ -801,7 +814,7 @@
             };
             const client = settings.provider === 'local' ? localClient : settings.provider === 'openai' ? global.BjtuLlmCompatibleClient.create() : global.BjtuQwenClient;
             const operations = global.BJTUCA;
-            // qwenEnabled controls only the full-page shortcut, not access to chat.
+            // llmEnabled controls only the full-page shortcut, not access to chat.
             const modelId = settings.provider === 'local' ? 'browser-local' : (settings.provider==='openai'?settings.apiModel:settings.modelId) || await resolveDefaultModel(client);
             const groups = await operations.groups();
             const sourceChatId = String(message.chatId || '');
@@ -825,7 +838,7 @@
               };
             }
             loopSession = requestedChatId ? await loadChatPermissionSession(requestedChatId) : {};
-            const result = await global.BjtuQwenAgent.runTurn({
+            const result = await global.BjtuLlmAgent.runTurn({
               client,
               modelId,
               userText: String(message.text || ''),
@@ -867,7 +880,7 @@
                 const approvalNotificationMode = notificationSettings.approvalNotificationMode;
                 const shouldNotify = approvalNotificationMode === 'always'
                   || (approvalNotificationMode === 'background'
-                    && await qwenViewIsInBackground(port, activeUiState));
+                    && await llmViewIsInBackground(port, activeUiState));
                 return new Promise((resolve) => {
                 const id = `ask-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
                 const count = Number(payload?.count) || 3;
@@ -901,7 +914,7 @@
                     chrome.notifications.create(notificationId, {
                       type: 'basic',
                       iconUrl: chrome.runtime.getURL('icons/128.png'),
-                      title: mode === 'operation-permission' ? '千问请求执行 JavaScript' : 'AI 助手',
+                      title: mode === 'operation-permission' ? 'AI 助手请求执行 JavaScript' : 'AI 助手',
                       message: safeMessage,
                       priority: 2,
                       requireInteraction: true,
@@ -930,14 +943,14 @@
             });
             if (result.chatId) await saveChatPermissionSession(result.chatId, loopSession);
             if (result.chatId) {
-              const shared = await chrome.storage.local.get('qwenLastChatId').catch(() => ({}));
-              if (String(shared?.qwenLastChatId || '') === String(result.chatId)) {
+              const shared = await chrome.storage.local.get('llmLastChatId').catch(() => ({}));
+              if (String(shared?.llmLastChatId || '') === String(result.chatId)) {
                 broadcastSharedChatUpdated(result.chatId, activeUiState.viewId);
               }
             }
             if (result.stoppedByLimit !== true) {
               await recordAssistantReply(result);
-              await notifyQwenBackgroundCompletion(port, activeUiState, result);
+              await notifyLlmBackgroundCompletion(port, activeUiState, result);
             }
             if (port.disconnected) return;
             if (result.historyReloadRequired === true) {
@@ -1000,10 +1013,10 @@
         void task.then(sendResponse,error=>sendResponse({ok:false,message:String(error.message||error)}));return true;
       }
       if(type==='LLM_MARK_CHATROOM_READ'){
-        void qwenViewIsInBackground({sender},{context:'chatroom',visible:true}).then(hidden=>hidden?null:markAssistantRead()).then(()=>sendResponse({ok:true}),error=>sendResponse({ok:false,message:String(error.message)}));
+        void llmViewIsInBackground({sender},{context:'chatroom',visible:true}).then(hidden=>hidden?null:markAssistantRead()).then(()=>sendResponse({ok:true}),error=>sendResponse({ok:false,message:String(error.message)}));
         return true;
       }
-      if (type === 'QWEN_GET_STATUS') {
+      if (type === 'LLM_GET_STATUS') {
         void (async () => {
           const settings = await getSettings();
           const client = global.BjtuQwenClient;
@@ -1033,7 +1046,7 @@
         })();
         return true;
       }
-      if (type === 'QWEN_GET_CHAT_HISTORY') {
+      if (type === 'LLM_GET_CHAT_HISTORY') {
         void (async () => {
           const chatId = String(message?.payload?.chatId || '');
           const client = clientForChat(chatId);
@@ -1064,7 +1077,7 @@
         })();
         return true;
       }
-      if (type === 'QWEN_DELETE_CHAT') {
+      if (type === 'LLM_DELETE_CHAT') {
         void (async () => {
           const chatId = String(message?.payload?.chatId || '');
           const client = clientForChat(chatId);
@@ -1121,11 +1134,11 @@
         })();
         return true;
       }
-      if (type === 'QWEN_LIST_MODELS') {
+      if (type === 'LLM_LIST_MODELS') {
         void (async () => {
           try {
             const settings = await getSettings();
-            const client = settings.provider === 'local' ? global.BjtuQwenLocalClient.create() : settings.provider==='openai' ? global.BjtuLlmCompatibleClient.create() : global.BjtuQwenClient;
+            const client = settings.provider === 'local' ? global.BjtuLlmLocalClient.create() : settings.provider==='openai' ? global.BjtuLlmCompatibleClient.create() : global.BjtuQwenClient;
             if (!client) throw new Error('通义千问客户端未就绪');
             const models = await client.fetchModels();
             sendResponse({ ok: true, models });
@@ -1146,31 +1159,31 @@
           }catch(error){sendResponse({ok:false,message:String(error.message || error)});}
         })();return true;
       }
-      if (type === 'QWEN_BUILD_SYSTEM_PROMPT') {
-        const agent = global.BjtuQwenAgent;
+      if (type === 'LLM_BUILD_SYSTEM_PROMPT') {
+        const agent = global.BjtuLlmAgent;
         const operations = global.BJTUCA;
         if (!agent?.buildSystemPrompt) {
-          sendResponse({ ok: false, message: '通义千问代理未就绪' });
+          sendResponse({ ok: false, message: 'AI 助手代理未就绪' });
           return false;
         }
         void (async () => {
           try {
-            const qwenDocs = [
+            const llmDocs = [
               operations?.getDocs?.('api.operationList')?.doc,
               operations?.getDocs?.('api.getDocs')?.doc
             ].filter(Boolean).join('\n\n');
-            sendResponse({ ok: true, text: await agent.buildSystemPrompt({ qwenDocs }) });
+            sendResponse({ ok: true, text: await agent.buildSystemPrompt({ llmDocs }) });
           } catch (error) {
             sendResponse({ ok: false, message: String(error?.message || error) });
           }
         })();
         return true;
       }
-      if (type === 'QWEN_SETTINGS_GET') {
+      if (type === 'LLM_SETTINGS_GET') {
         void getSettings().then((settings) => sendResponse({ ok: true, ...settings }));
         return true;
       }
-      if (type === 'QWEN_SETTINGS_SET') {
+      if (type === 'LLM_SETTINGS_SET') {
         void saveSettings(message?.payload || {}).then((settings) => sendResponse({ ok: true, ...settings })).catch(error=>sendResponse({ok:false,message:String(error?.message || error)}));
         return true;
       }

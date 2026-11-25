@@ -1,10 +1,10 @@
 (function(global){
   'use strict';
-  const dataKeys=new Set(['chatroomState','llmProactiveMessages','llmExecutionHistory','homeworkBackgroundKnownAssignments','versionAutoReloadCompleted','savedUploads','savedUploadedFiles','extensionDownloads']);
+  const dataKeys=new Set(['llmSettingsMigrated1','chatroomState','llmProactiveMessages','llmExecutionHistory','homeworkBackgroundKnownAssignments','versionAutoReloadCompleted','savedUploads','savedUploadedFiles','extensionDownloads']);
   function isSetting(key){
     return !dataKeys.has(key)
       && !/(?:cache|snapshots?)(?::|$)/i.test(key)
-      && !/^(?:llmApiChat:|qwenLocalChat:|homeworkReminder(?:Snapshot|Observed|Notified)|homeworkBackgroundKnownAssignments)/.test(key)
+      && !/^(?:llmApiChat:|llmLocalChat:|homeworkReminder(?:Snapshot|Observed|Notified)|homeworkBackgroundKnownAssignments)/.test(key)
       && !/(?:Status|Progress|PendingNotifications|NotificationTargets|Notified|Observed|Events)(?::|$)/.test(key);
   }
   function prepare(stored){
