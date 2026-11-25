@@ -1176,6 +1176,7 @@ html[data-color-scheme="dark"] .btn.resource-select-compact:not(#extension-downl
 }
 body.popup-mode .top-inline-controls { padding-right: 80px; }
 .android-recommendation .version-modal-card { text-align: center; }
+.compress-upload-choice { font-size:var(--bjtu-font-size-body,13px); }
 .android-recommendation p { font-size: var(--bjtu-font-size-body, 13px); }
 .android-recommendation-qr { width: 180px; height: 180px; max-width: 100%; display: grid; place-items: center; margin: auto; background: #fff; }
 .android-recommendation-qr iframe { width: 100%; height: 100%; border: 0; grid-area: 1 / 1; }

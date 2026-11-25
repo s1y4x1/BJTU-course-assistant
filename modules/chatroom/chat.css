@@ -14,7 +14,7 @@ html:has(> body.chatroom-page) { height:100%; overflow:hidden; }
 .muted { color:var(--chat-muted); font-size:var(--bjtu-font-size-auxiliary,11px); overflow-wrap:anywhere; }
 .chat-layout { display:grid; grid-template-columns:300px minmax(0,1fr); grid-template-rows:minmax(0,1fr); height:100%; min-height:0; gap:16px; align-items:stretch; }
 .card { background:var(--bjtu-card-background,#fff); border:1px solid var(--chat-line); border-radius:12px; overflow:hidden; min-width:0; }
-#sidebar-host { padding:0; height:100%; min-height:0; overflow:auto; }
+#sidebar-host { padding:0; height:100%; min-height:0; overflow:auto; scrollbar-width:thin; }
 .chatroom-page .secondary { background:var(--chat-soft); color:inherit; border:1px solid var(--chat-line); }
 .chatroom-page .danger { background:#b91c1c; color:#fff; }
 .chatroom-page .actions { display:flex; flex-wrap:wrap; gap:6px; }
