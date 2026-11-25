@@ -5,8 +5,11 @@
 .cas-platform-choice label { display:inline-flex; align-items:center; gap:4px; }
 .cas-platform-choice input { width:auto; margin:0; }
 [data-cas-platform][hidden] { display:none; }
-.cas-account-row { display:block; }
-.cas-account-row select { width:100%; min-width:0; }
+.cas-account-row { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:center; gap:8px; margin:4px 0; }
+.cas-account-row > label { margin:0 !important; white-space:nowrap; }
+.cas-options-card .cas-account-row > #casAccountSelect { width:100% !important; min-width:0; }
+.cas-options-card > #casLoginName,
+.cas-options-card > #casPassword { width:100% !important; }
 .cas-login-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:12px; }
 .cas-captcha-modal { position:fixed; inset:0; z-index:2147483000; display:flex; align-items:center; justify-content:center; padding:18px; background:rgba(15,23,42,.55); }
 .cas-captcha-modal[hidden] { display:none; }
