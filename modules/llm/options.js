@@ -78,7 +78,7 @@
     const revision=++refreshRevision;
     const [status, themeSettings] = await Promise.all([
       send('LLM_GET_STATUS'),
-      chrome.storage.local.get('themeMode').catch(() => ({}))
+      chrome.storage.local.get(['themeMode', 'llmRestyleReminderMode', 'llmRestyleReminderDismissed']).catch(() => ({}))
     ]);
     extensionThemeMode = global.BjtuTheme?.normalizeMode(themeSettings?.themeMode) || 'system';
     const toggle = document.getElementById('llmEnabled');
@@ -133,6 +133,10 @@
     const completionNotification = document.getElementById('llmCompletionNotificationMode');
     if (completionNotification instanceof HTMLSelectElement) {
       completionNotification.value = status.completionNotificationMode || 'background';
+    }
+    const restyleReminder = document.getElementById('llmRestyleReminderMode');
+    if (restyleReminder instanceof HTMLSelectElement) {
+      restyleReminder.value = themeSettings.llmRestyleReminderMode === 'never' || themeSettings.llmRestyleReminderDismissed === true ? 'never' : 'open';
     }
 
     const modelsResponse = await send('LLM_LIST_MODELS');
@@ -317,6 +321,20 @@
       });
     }
 
+    const restyleReminder = document.getElementById('llmRestyleReminderMode');
+    if (restyleReminder instanceof HTMLSelectElement) {
+      restyleReminder.addEventListener('change', async () => {
+        const never = restyleReminder.value === 'never';
+        if (never) {
+          await chrome.storage.local.set({ llmRestyleReminderMode: 'never', llmRestyleReminderDismissed: true });
+        } else {
+          await chrome.storage.local.set({ llmRestyleReminderMode: 'open' });
+          await chrome.storage.local.remove('llmRestyleReminderDismissed');
+        }
+        setMessage('已保存');
+      });
+    }
+
     const select = document.getElementById('llmModelSelect');
     if (select instanceof HTMLSelectElement) {
       select.addEventListener('change', () => {
@@ -368,6 +386,14 @@
       if (completionNotification instanceof HTMLSelectElement) {
         completionNotification.value = changes.llmCompletionNotificationMode.newValue || 'background';
       }
+    }
+    if (changes.llmRestyleReminderMode || changes.llmRestyleReminderDismissed) {
+      void chrome.storage.local.get(['llmRestyleReminderMode', 'llmRestyleReminderDismissed']).then((stored) => {
+        const restyleReminder = document.getElementById('llmRestyleReminderMode');
+        if (restyleReminder instanceof HTMLSelectElement) {
+          restyleReminder.value = stored.llmRestyleReminderMode === 'never' || stored.llmRestyleReminderDismissed === true ? 'never' : 'open';
+        }
+      });
     }
     if (changes.llmFabColorMode) applyFabColorMode(changes.llmFabColorMode.newValue);
     if (changes.themeMode) {

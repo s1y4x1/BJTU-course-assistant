@@ -26,6 +26,7 @@ html[data-color-scheme="dark"] .llm-options-card {
   margin-bottom: 0;
   font-size: var(--bjtu-font-size-body, 13px);
 }
+.llm-restyle-reminder { margin-top: 8px; }
 
 .llm-sub-options {
   margin-top: 2px;

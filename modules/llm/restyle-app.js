@@ -20,7 +20,8 @@
   }
   void(async()=>{
     await global.__bjtuAppInitialization;
-    if((await chrome.storage.local.get('llmRestyleReminderDismissed')).llmRestyleReminderDismissed)return;
+    const reminder=await chrome.storage.local.get(['llmRestyleReminderMode','llmRestyleReminderDismissed']);
+    if(reminder.llmRestyleReminderMode==='never'||reminder.llmRestyleReminderDismissed===true)return;
     while([...document.querySelectorAll('.version-modal-mask')].some(node=>node.getClientRects().length))await pause();
     const mask=document.createElement('div');mask.id='llm-restyle-reminder';mask.className='version-modal-mask';mask.style.display='flex';
     mask.innerHTML='<section class="version-modal-card" role="dialog" aria-modal="true" aria-labelledby="llm-restyle-title"><div class="version-modal-header"><h2 id="llm-restyle-title">使用 AI 助手为扩展焕新</h2></div><div class="bjtu-dialog-actions"><button type="button" class="btn bjtu-dialog-primary" data-action="try">尝试圣诞风格</button><button type="button" class="btn bjtu-dialog-danger" data-action="never">不再提醒</button><button type="button" class="btn bjtu-dialog-secondary" data-action="later">稍后再说</button></div></section>';
@@ -29,7 +30,7 @@
     mask.querySelector('[data-action="never"]').addEventListener('click',async()=>{
       try{
         const stored=await chrome.storage.local.get('apiStartupScript');
-        await chrome.storage.local.set({llmRestyleReminderDismissed:true,apiStartupScript:{...stored.apiStartupScript,enabled:false}});
+        await chrome.storage.local.set({llmRestyleReminderMode:'never',llmRestyleReminderDismissed:true,apiStartupScript:{...stored.apiStartupScript,enabled:false}});
         mask.remove();
       }catch(error){global.showToast?.(error.message,'error');}
     });
