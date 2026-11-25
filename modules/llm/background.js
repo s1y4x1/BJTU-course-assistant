@@ -842,6 +842,7 @@
               client,
               modelId,
               userText: String(message.text || ''),
+              systemPrompt: String(message.systemPrompt || ''),
               attachments:Array.isArray(message.attachments)?message.attachments:[],
               chatId: requestedChatId,
               parentId: keepSourceParent ? String(message.parentId || '') : '',

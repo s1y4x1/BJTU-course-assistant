@@ -2,7 +2,7 @@
   'use strict';
   if(!/\/app\/app\.html$/i.test(location.pathname)||new URLSearchParams(location.search).has('autoUpdate')||new URLSearchParams(location.search).get('view')==='sidepanel'||new URLSearchParams(location.search).get('popup')==='1')return;
   const pause=()=>new Promise(resolve=>setTimeout(resolve,150));
-  async function sendPrompt(text){
+  async function sendPrompt(text, options){
     const stored=await chrome.storage.local.get('llmEnabled');
     const available=await global.BjtuModuleRegistry.ready;
     if(available.chatroom&&stored.llmEnabled===false){
@@ -11,12 +11,12 @@
       const deadline=Date.now()+20000;
       while(Date.now()<deadline){
         const ui=document.querySelector('#chatroom-module-window iframe')?.contentWindow?.BjtuChatroomUi;
-        if(ui)return ui.sendAssistantPrompt(text);
+        if(ui)return ui.sendAssistantPrompt(text, options);
         await pause();
       }
       throw new Error('聊天室尚未就绪，请稍后重试');
     }
-    return global.BjtuLlmChat.sendPrompt(text);
+    return global.BjtuLlmChat.sendPrompt(text, options);
   }
   void(async()=>{
     await global.__bjtuAppInitialization;
@@ -37,10 +37,10 @@
     mask.querySelector('[data-action="try"]').addEventListener('click',async event=>{
       const button=event.currentTarget;button.disabled=true;
       try{
-        const response=await fetch(chrome.runtime.getURL('modules/llm/restyle-christmas.txt'));
+        const response=await fetch(chrome.runtime.getURL('modules/llm/restyle-christmas.md'));
         if(!response.ok)throw new Error(`无法读取圣诞风格提示词：HTTP ${response.status}`);
         mask.style.display='none';
-        await sendPrompt(await response.text());mask.remove();
+        await sendPrompt(await response.text(),{withSystemPrompt:true});mask.remove();
       }catch(error){mask.style.display='flex';button.disabled=false;global.showToast?.(error.message,'error');}
     });
   })().catch(error=>console.warn('[llm] 风格推荐弹窗加载失败：',error));

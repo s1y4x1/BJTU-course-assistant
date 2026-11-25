@@ -105,6 +105,7 @@
     const {
       modelId,
       userText,
+      systemPrompt = '',
       chatId,
       parentId: previousParentId = '',
       enabledOps,
@@ -200,7 +201,10 @@
         continue;
       }
 
-      const content = iteration === 0 ? userText : lastResultText;
+      const systemText = String(systemPrompt || '');
+      const content = iteration === 0
+        ? (systemText ? `${systemText}\n\n---\n\n${userText}` : userText)
+        : lastResultText;
       if (turnRef) {
         turnRef.retryText = content;
         turnRef.retryParentId = parentId;

@@ -1588,12 +1588,12 @@
   await sidebar.ready;
   globalThis.BjtuChatroomUi={
     confirmClear:callback=>sidebar.confirmClear(callback),
-    async sendAssistantPrompt(text){
+    async sendAssistantPrompt(text, options){
       chooseConversation('llm',{interactive:true});
       const deadline=Date.now()+20000;
       while(Date.now()<deadline){
         const chat=$('chatroom-llm-frame')?.contentWindow?.BjtuLlmChat;
-        if(chat)return chat.sendPrompt(text);
+        if(chat)return chat.sendPrompt(text, options);
         await new Promise(resolve=>setTimeout(resolve,100));
       }
       throw new Error('AI 助手窗口尚未就绪，请稍后重试');

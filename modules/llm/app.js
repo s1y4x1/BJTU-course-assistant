@@ -64,6 +64,7 @@
   let lastKnownEnabled = true;
   let openingStarted = false;
   let openingCompleted = false;
+  let suppressNextOpening = false;
   let autoScrollEnabled = true;
   let lastMessagesScrollTop = 0;
   let historyLoadPromise = null;
@@ -1734,7 +1735,7 @@
     };
   }
 
-  function startStream({ text, editParent = '', isEditSend = false, showUserBubble = true, attachments = [] }) {
+  function startStream({ text, editParent = '', isEditSend = false, showUserBubble = true, attachments = [], systemPrompt = '' }) {
     clearSuggestedReplies();
     const wasOpeningStream = openingStarted;
     const requestParentId = wasOpeningStream ? '' : (editParent || sessionParentId);
@@ -2149,6 +2150,7 @@
       chatPort.postMessage({
         type: 'send',
         text,
+        systemPrompt: String(systemPrompt || ''),
         attachments,
         isOpening: wasOpeningStream,
         thinking: (el(THINKING_ID) instanceof HTMLInputElement) && el(THINKING_ID).checked,
@@ -2167,7 +2169,7 @@
     }
   }
 
-  function sendMessage(text) {
+  function sendMessage(text, options = {}) {
     if (busy) return;
     hideHistoryExecuteButton();
     if (!chatStateLoaded || !openingCompleted) {
@@ -2178,10 +2180,11 @@
     pendingEditParentId = '';
     const isEditSend = pendingEdit;
     pendingEdit = false;
-    startStream({ text, editParent, isEditSend, showUserBubble: true, attachments: CHATROOM_VIEW ? global.BjtuLlmComposer.files() : [] });
+    startStream({ text, editParent, isEditSend, showUserBubble: true, attachments: CHATROOM_VIEW ? global.BjtuLlmComposer.files() : [], systemPrompt: String(options?.systemPrompt || '') });
   }
 
   function maybeSendOpening() {
+    if (suppressNextOpening) return;
     if (!chatStateLoaded || !lastKnownEnabled || !lastKnownLoggedIn
       || openingCompleted || openingStarted || historyLoadPromise) return;
     sendOpening();
@@ -2842,19 +2845,38 @@
 
   let chatInitialization;
   const initChat=()=>chatInitialization ||= init();
-  global.BjtuLlmChat={async sendPrompt(text){
+  global.BjtuLlmChat={async sendPrompt(text, options={}){
     if(!String(text||'').trim())throw new Error('消息不能为空');
+    const withSystemPrompt=options?.withSystemPrompt===true;
     await initChat();
-    await setEmbeddedPanelOpen(true);
-    await activateLlmPanel();
+    await loadChatStateFromStorage();
+    // 只有真正的新会话（未完成开场、也没有开场请求在飞）才把 SystemPrompt 并在这次 prompt 里一起发。
+    const freshSession=withSystemPrompt&&!openingCompleted&&!openingStarted&&!busy;
+    if(freshSession)suppressNextOpening=true;
+    try{
+      await setEmbeddedPanelOpen(true);
+      await activateLlmPanel();
+    }finally{
+      suppressNextOpening=false;
+    }
     if(!lastKnownLoggedIn)throw new Error('请先配置或登录 AI 助手');
+    let systemPrompt='';
+    if(freshSession&&!openingStarted){
+      const built=await send('LLM_BUILD_SYSTEM_PROMPT');
+      const builtText=String(built?.text||'').trim();
+      if(!built?.ok||!builtText)throw new Error(String(built?.message||'系统提示词为空'));
+      systemPrompt=builtText;
+      // 合并发送视为已开场，避免再单独发一次 SystemPrompt。
+      openingCompleted=true;
+      await chrome.storage.local.remove('llmOpeningPendingChatId').catch(()=>{});
+    }
     if(!openingCompleted&&!busy){lastKnownEnabled=true;maybeSendOpening();}
     const deadline=Date.now()+120000;
     while(busy||!openingCompleted){
       if(Date.now()>deadline)throw new Error('AI 助手仍在处理其他请求，请稍后重试');
       await new Promise(resolve=>setTimeout(resolve,100));
     }
-    sendMessage(String(text));
+    sendMessage(String(text),systemPrompt?{systemPrompt}:undefined);
     return {ok:true};
   }};
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded',initChat,{once:true});
