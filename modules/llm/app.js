@@ -656,7 +656,7 @@
     }
   }
 
-  function appendProactiveMessage(message){
+  function appendProactiveMessage(message, { renderSuggestions = true } = {}){
     const container=el(MESSAGES_ID);if(!container)return;
     if([...container.querySelectorAll('[data-proactive-id]')].some(node=>node.dataset.proactiveId===message.id))return;
     const parsed=splitSuggestedReplies(message.content);
@@ -664,7 +664,12 @@
     bubble.dataset.proactiveId=message.id;
     bubble.dataset.contextIncluded=String(message.contextIncluded===true);
     messageDisplayNode(bubble).dataset.proactiveId=message.id;
-    if(parsed.suggestions.length)renderSuggestedReplies(bubble,parsed.suggestions);
+    const candidate=parsed.suggestions.length?{bubble,suggestions:parsed.suggestions}:null;
+    if(renderSuggestions){
+      if(message.contextIncluded)clearSuggestedReplies();
+      if(candidate)renderSuggestedReplies(candidate.bubble,candidate.suggestions);
+    }
+    return candidate;
   }
   function renderHistory(messages, { pendingResponseId = '' } = {}) {
     const messagesEl = el(MESSAGES_ID);
@@ -677,7 +682,14 @@
     let lastExecutionBlocks = null;
     let lastHasFunctionCalls = false;
     for (const message of list) {
-      if(message.proactive){appendProactiveMessage(message);if(message.contextIncluded)lastAssistantResponseId=String(message.id||lastAssistantResponseId);continue;}
+      if(message.proactive){
+        const candidate=appendProactiveMessage(message,{renderSuggestions:false});
+        if(message.contextIncluded){
+          suggestionCandidate=candidate;
+          lastAssistantResponseId=String(message.id||lastAssistantResponseId);
+        }
+        continue;
+      }
       const role = String(message?.role || '');
       if (role === 'user') {
         suggestionCandidate = null;
