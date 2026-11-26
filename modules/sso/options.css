@@ -7,8 +7,8 @@
 [data-cas-platform][hidden] { display:none; }
 .cas-account-row { display:flex; align-items:center; gap:8px; margin:4px 0; }
 .cas-account-row > label { flex:0 0 auto; margin:0 !important; white-space:nowrap; }
-.cas-options-card > #casLoginName,
-.cas-options-card > #casPassword { width:100% !important; }
+.cas-options-card #casLoginName,
+.cas-options-card #casPassword { display:block; width:100% !important; inline-size:100% !important; field-sizing:fixed; box-sizing:border-box; }
 .cas-login-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:12px; }
 .cas-captcha-modal { position:fixed; inset:0; z-index:2147483000; display:flex; align-items:center; justify-content:center; padding:18px; background:rgba(15,23,42,.55); }
 .cas-captcha-modal[hidden] { display:none; }

@@ -1,6 +1,9 @@
 .academic-options-card { margin:0; padding:10px 12px; border:1px solid #e5e7eb; border-radius:8px; background:#f9fafb; }
-.academic-account-row { display:block; }
-.academic-account-row select { width:100%; min-width:0; }
+.academic-account-row { display:flex; align-items:center; gap:8px; }
+.academic-account-row > label { flex:0 0 auto; margin:0 !important; white-space:nowrap; }
+.academic-account-row select { width:auto; min-width:0; }
+.academic-options-card #academicStudentId,
+.academic-options-card #academicPassword { display:block; width:100% !important; inline-size:100% !important; field-sizing:fixed; box-sizing:border-box; }
 .academic-login-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:12px; }
 #bindAcademicSystemBtn { background:#16a34a; }
 .academic-external-script-header { display:flex; align-items:baseline; justify-content:flex-start; gap:4px; margin:14px 0 7px; }
