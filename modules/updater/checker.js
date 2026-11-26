@@ -69,7 +69,8 @@ let versionHistoryNextUrl = null;
 let versionHistoryEnded = false;
 let versionQueuedRelease = null;
 const VERSION_DOWNLOAD_URL = 'https://codeload.github.com/s1y4x1/BJTU-course-assistant/zip/refs/heads/main';
-const VERSION_LATEST_URL = 'https://s1y4x1.github.io/release.json';
+const VERSION_LATEST_URL = 'https://github.com/s1y4x1/s1y4x1.github.io/raw/refs/heads/main/release.json';
+const VERSION_LATEST_FALLBACK_URL = 'https://s1y4x1.github.io/release.json';
 const VERSION_COMMITS_URL = 'https://api.github.com/repos/s1y4x1/BJTU-course-assistant/commits';
 const VERSION_IGNORE_KEY = 'ignoredUpdateVersion';
 const VERSION_UPDATE_NOTIFICATION_ID = 'bjtu-update-download-complete';
@@ -1727,6 +1728,9 @@ function markVersionUpdateError(error, stage) {
 }
 
 function getVersionUpdateFailurePresentation(error) {
+  if (String(error?.message || '').includes('请将下载源切换为「开发版」')) {
+    return { title: '下载更新包失败', body: String(error.message), toast: '下载失败，请将下载源切换为「开发版」后重试' };
+  }
   const stage = String(error?.updateStage || '').trim();
   if (stage === 'network') {
     return {
@@ -1974,6 +1978,9 @@ async function fetchUpdateArchiveWithProgress(url) {
     });
     return bytes;
   } catch (error) {
+    if (url === 'https://s1y4x1.github.io/BJTU-course-assistant-main.zip') {
+      throw markVersionUpdateError(new Error(`${controller.signal.aborted ? '连接更新源超时' : String(error?.message || error)}；请将下载源切换为「开发版」后重试`), 'source');
+    }
     if (controller.signal.aborted) {
       throw markVersionUpdateError(new Error('连接更新源超时（连续 30 秒无响应）'), 'network');
     }
@@ -2411,7 +2418,7 @@ async function prepareCaptchaAssets({
 
 async function fetchModuleArchive(onProgress) {
   onProgress?.({ phase: 'download', loaded: 0, total: 0 });
-  const release = await fetchLatestReleaseFromUrl(VERSION_LATEST_URL);
+  const release = await fetchPreferredLatestRelease();
   const response = await fetch(pickReleaseDownloadUrl(release), { cache: 'no-store' });
   if (!response.ok) throw new Error(`模块下载失败 (${response.status})`);
   const total = Math.max(0, Number(response.headers.get('content-length') || 0));
@@ -3048,9 +3055,14 @@ async function fetchLatestReleaseFromUrl(sourceUrl) {
 
 async function fetchFallbackLatestRelease() {
   if (versionLatestReleaseRequestPromise) return versionLatestReleaseRequestPromise;
-  versionLatestReleaseRequestPromise = fetchLatestReleaseFromUrl(VERSION_LATEST_URL)
+  versionLatestReleaseRequestPromise = fetchPreferredLatestRelease()
     .finally(() => { versionLatestReleaseRequestPromise = null; });
   return versionLatestReleaseRequestPromise;
+}
+
+async function fetchPreferredLatestRelease() {
+  try { return await fetchLatestReleaseFromUrl(VERSION_LATEST_URL); }
+  catch { return await fetchLatestReleaseFromUrl(VERSION_LATEST_FALLBACK_URL); }
 }
 
 function queueHigherVersionRelease(release) {

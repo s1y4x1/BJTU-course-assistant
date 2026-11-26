@@ -16,6 +16,7 @@
   const COMPLETE_NOTIFICATION_PREFIX = 'bjtu-background-update-complete:';
   const ISSUE_NOTIFICATION_PREFIX = 'bjtu-background-update-issue:';
   const SOURCE_URLS = [
+    'https://github.com/s1y4x1/s1y4x1.github.io/raw/refs/heads/main/release.json',
     'https://s1y4x1.github.io/release.json'
   ];
   const APPLIED_WITHOUT_RELOAD_KEY = 'appliedUpdateWithoutReload';
@@ -293,17 +294,12 @@
   }
 
   async function fetchLatestRelease() {
-    const settled = await Promise.allSettled(SOURCE_URLS.map((sourceUrl) => (
-      retryNetworkOperation(() => fetchRelease(sourceUrl), 2)
-    )));
-    const releases = settled.filter((item) => item.status === 'fulfilled').map((item) => item.value);
-    if (!releases.length) {
-      const reason = settled.find((item) => item.status === 'rejected')?.reason;
-      throw new Error(`无法连接更新源${reason ? `：${String(reason.message || reason)}` : ''}`);
+    let reason;
+    for (const sourceUrl of SOURCE_URLS) {
+      try { return await retryNetworkOperation(() => fetchRelease(sourceUrl), 2); }
+      catch (error) { reason = error; }
     }
-    return releases.reduce((latest, release) => (
-      compareVersions(release.version, latest.version) > 0 ? release : latest
-    ));
+    throw new Error(`无法连接更新源${reason ? `：${String(reason.message || reason)}` : ''}`);
   }
 
   async function readDirectoryHandle() {
@@ -680,6 +676,11 @@
         offset += chunk.byteLength;
       }
       return bytes.buffer;
+    } catch (error) {
+      if (url === 'https://s1y4x1.github.io/BJTU-course-assistant-main.zip') {
+        throw new Error(`${String(error?.message || error)}；请将下载源切换为「开发版」后重试`);
+      }
+      throw error;
     } finally {
       clearTimeout(timer);
     }
