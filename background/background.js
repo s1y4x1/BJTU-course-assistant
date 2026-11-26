@@ -354,6 +354,7 @@ tryImportModuleScripts('../UI/theme.js','../UI/colors.js');
 tryImportModuleScripts('../modules/captcha/mis-assets.js');
 tryImportModuleScripts('../modules/captcha/recognizer.js');
 if (veBackgroundReady) tryImportModuleScripts('../modules/ve/login-service.js');
+if (veBackgroundReady) tryImportModuleScripts('../modules/ve/anti-debug.js');
 const academicBackgroundReady = tryImportModuleScripts(
   '../modules/academic/score-statistics.js',
   '../modules/academic/cache-store.js',
