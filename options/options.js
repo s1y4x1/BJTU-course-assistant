@@ -19,7 +19,7 @@ const DEFAULT_PLATFORM_AUTO_LOGIN_ON_EXPIRY = Object.freeze({
   xuetangx: true
 });
 
-const DEFAULT_OPEN_MODE = 'popup';
+const DEFAULT_OPEN_MODE = 'page';
 const DEFAULT_POPUP_WIDTH_PX = 500;
 const DEFAULT_POPUP_HEIGHT_PX = 600;
 const DEFAULT_PREFER_EXISTING_FULLSCREEN_PAGE = true;
@@ -2742,8 +2742,8 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
     updateHomeworkReminderDisabled();
     updatePlatformDetailDisabled();
     document.getElementById('autoLoadCourseResourcesEnabled').checked = DEFAULT_AUTO_LOAD_COURSE_RESOURCES_ENABLED;
-    document.getElementById('openModePopup').checked = true;
-    document.getElementById('openModePage').checked = false;
+    document.getElementById('openModePopup').checked = false;
+    document.getElementById('openModePage').checked = true;
     document.getElementById('openModeSidePanel').checked = false;
     document.getElementById('preferExistingFullscreenPage').checked = DEFAULT_PREFER_EXISTING_FULLSCREEN_PAGE;
     document.getElementById('groupExtensionTabsEnabled').checked = DEFAULT_GROUP_EXTENSION_TABS_ENABLED;

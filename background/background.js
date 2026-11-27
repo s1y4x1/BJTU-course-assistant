@@ -1310,8 +1310,8 @@ let currentOpenMode = '';
 async function refreshActionPopupFromStorage() {
   try {
     const r = await chrome.storage.local.get('openMode');
-    const storedMode = String(r.openMode || 'popup');
-    const mode = ['popup', 'page', 'sidepanel'].includes(storedMode) ? storedMode : 'popup';
+    const storedMode = String(r.openMode || 'page');
+    const mode = ['popup', 'page', 'sidepanel'].includes(storedMode) ? storedMode : 'page';
     currentOpenMode = mode;
     if (mode === 'page' || mode === 'sidepanel') {
       try { await chrome.action.setPopup({ popup: '' }); } catch (e) {}
@@ -2258,7 +2258,7 @@ chrome.runtime.onConnect.addListener((port) => {
 
 chrome.action.onClicked.addListener(async (clickedTab) => {
   try {
-    const mode = currentOpenMode || (await chrome.storage.local.get('openMode')).openMode || 'popup';
+    const mode = currentOpenMode || (await chrome.storage.local.get('openMode')).openMode || 'page';
     if (mode === 'page') {
       const stored = await chrome.storage.local.get(['preferExistingFullscreenPage']).catch(() => ({}));
       const preferExisting = stored.preferExistingFullscreenPage !== false;
