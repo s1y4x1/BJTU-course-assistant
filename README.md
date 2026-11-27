@@ -27,27 +27,6 @@
 
 不同平台和账号支持的功能不同，具体以扩展界面为准。部分系统需要校园网或 VPN。
 
-### AI 助手
-
-在扩展选项的「AI 助手」中选择模型来源：qwen.ai、浏览器 Prompt API，或 OpenAI-compatible API。
-
-- Ollama：先启动本机 Ollama 并下载模型，选择预设（`http://127.0.0.1:11434/v1`），API Key 可留空，刷新并选择已安装模型。
-- Agnes AI：选择预设，填写在 Agnes 平台申请的 API Key，默认选择 `agnes-3.0-flash`（若模型列表包含它）。限流或额度不足时会显示服务返回的具体原因。
-- DeepSeek：选择预设，填写 API Key，再从模型列表中选择模型。
-- 其他兼容服务：填写包含 `/v1` 的 API 基础地址和密钥。优先通过 `/models` 获取可用模型；获取失败或列表为空时才显示手动输入框。
-
-可设置 Temperature、Top-p、最大输出 Tokens；Ollama 和 Agnes AI 还可设置 Top-k，留空采用服务默认值。「回答前让模型思考」按预设转换为对应服务参数，也可手动选择思考参数格式。是否支持这些参数取决于具体模型；DeepSeek 思考模式不发送 Temperature。Ollama 使用原生 `/api/chat`，以支持 `think`、Top-k 和流式思考输出。
-
-Ollama 返回空正文的 HTTP 403 时，通常是来源限制：将 `OLLAMA_ORIGINS` 配置为允许 `chrome-extension://<本扩展ID>`（在扩展管理页查看 ID），保留原有允许来源，并完全退出、重新启动 Ollama。只重新加载扩展不会改变服务端的来源配置。[官方说明](https://docs.ollama.com/faq#how-can-i-allow-additional-web-origins-to-access-ollama)
-
-兼容接口的会话保存在扩展本机；聊天内容将发送到设置的服务地址。切换服务地址会清除旧密钥并开始新会话，避免串用其他服务的历史。请勿公开导出的设置，其中可能包含密钥。
-
-同时安装 LLM 与聊天室后，可在选项中二选一：「在扩展全屏页面上显示 AI 助手按钮」或「合并入聊天室」，首次检测默认选择后者。选择独立按钮时，聊天室不显示 AI 助手。合并后，未读回复计入助手会话和聊天室图标的角标，查看后清零。助手与其他会话一起排序，可长按或右键手动置顶，不默认置顶；聊天记录和操作授权共用。
-
-接口参考：[Ollama](https://docs.ollama.com/api/openai-compatibility)、[Agnes AI](https://github.com/AgnesAI-Labs/skills/blob/main/agnes-ai-models/references/agent_compatibility.md)。
-
-qwen.ai 的新建会话、生成请求优先在扩展后台完成：读取当前网页版本，并通过官方刷新接口校验/刷新令牌。预检查无法完成时，仅尝试复用已打开的 `chat.qwen.ai` 页面，沿用站点 token 管理器及安全组件，不自动新建或跳转标签页；如果需要登录或验证，请手动在站点完成。生成请求已经发出后，不会因失败而静默重发。`thinking_format` 保持 `detail`；`Bad_Request` 这一通用错误本身不能确定具体原因。
-
 ## 快速开始
 
 - 手动加载扩展
